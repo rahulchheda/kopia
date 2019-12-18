@@ -27,6 +27,8 @@ func oidOf(entry fs.Entry) object.ID {
 }
 
 func findInUseContentIDs(ctx context.Context, rep repo.Repository, used *sync.Map) error {
+	start := time.Now() // allow:no-inject-time
+
 	ids, err := snapshot.ListSnapshotManifests(ctx, rep, nil)
 	if err != nil {
 		return errors.Wrap(err, "unable to list snapshot manifest IDs")
@@ -69,6 +71,8 @@ func findInUseContentIDs(ctx context.Context, rep repo.Repository, used *sync.Ma
 	if err := w.Run(ctx); err != nil {
 		return errors.Wrap(err, "error walking snapshot tree")
 	}
+
+	log(ctx).Infof("found in-use content in %s", time.Since(start)) // allow:no-inject-time
 
 	return nil
 }
