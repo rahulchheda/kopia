@@ -85,6 +85,9 @@ func Run(ctx context.Context, rep *repo.DirectRepository, params maintenance.Sna
 
 	var st Stats
 
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	if err := findInUseContentIDs(ctx, rep, &used); err != nil {
 		return st, errors.Wrap(err, "unable to find in-use content ID")
 	}
@@ -94,6 +97,10 @@ func Run(ctx context.Context, rep *repo.DirectRepository, params maintenance.Sna
 	log(ctx).Infof("looking for unreferenced contents")
 
 	err := rep.Content.IterateContents(ctx, content.IterateOptions{}, func(ci content.Info) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
 		if manifest.ContentPrefix == ci.ID.Prefix() {
 			system.Add(int64(ci.Length))
 			return nil
