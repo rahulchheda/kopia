@@ -29,24 +29,11 @@ func oidOf(entry fs.Entry) object.ID {
 func findInUseContentIDs(ctx context.Context, rep repo.Repository, ids []manifest.ID, used *sync.Map) error {
 	start := time.Now() // allow:no-inject-time
 
-	manifests, err := snapshot.LoadSnapshots(ctx, rep, ids)
-	if err != nil {
-		return errors.Wrap(err, "unable to load manifest IDs")
-	}
+	defer func() {
+		log(ctx).Infof("found in-use content in %s", time.Since(start)) // allow:no-inject-time
+	}()
 
-	w := snapshotfs.NewTreeWalker()
-	w.EntryID = func(e fs.Entry) interface{} { return oidOf(e) }
-
-	for _, m := range manifests {
-		root, err := snapshotfs.SnapshotRoot(rep, m)
-		if err != nil {
-			return errors.Wrap(err, "unable to get snapshot root")
-		}
-
-		w.RootEntries = append(w.RootEntries, root)
-	}
-
-	w.ObjectCallback = func(entry fs.Entry) error {
+	return walkSnapshots(ctx, rep, ids, func(entry fs.Entry) error {
 		oid := oidOf(entry)
 		contentIDs, err := rep.VerifyObject(ctx, oid)
 
@@ -59,17 +46,41 @@ func findInUseContentIDs(ctx context.Context, rep repo.Repository, ids []manifes
 		}
 
 		return nil
+	})
+}
+
+func walkSnapshots(ctx context.Context, rep repo.Repository, ids []manifest.ID, callback func(entry fs.Entry) error) error {
+	roots, err := rootsForSnapshotIDs(ctx, rep, ids)
+	if err != nil {
+		return errors.Wrap(err, "unable to load manifest IDs")
 	}
 
-	log(ctx).Infof("looking for active contents")
+	w := snapshotfs.NewTreeWalker()
+	w.EntryID = func(e fs.Entry) interface{} { return oidOf(e) }
+	w.RootEntries = roots
+	w.ObjectCallback = callback
 
-	if err := w.Run(ctx); err != nil {
-		return errors.Wrap(err, "error walking snapshot tree")
+	return w.Run(ctx)
+}
+
+func rootsForSnapshotIDs(ctx context.Context, rep repo.Repository, ids []manifest.ID) (fs.Entries, error) {
+	manifests, err := snapshot.LoadSnapshots(ctx, rep, ids)
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to load manifest IDs")
 	}
 
-	log(ctx).Infof("found in-use content in %s", time.Since(start)) // allow:no-inject-time
+	var roots fs.Entries
 
-	return nil
+	for _, m := range manifests {
+		root, err := snapshotfs.SnapshotRoot(rep, m)
+		if err != nil {
+			return nil, errors.Wrapf(err, "unable to get root for snapshot %v", m.ID)
+		}
+
+		roots = append(roots, root)
+	}
+
+	return roots, nil
 }
 
 // Run performs garbage collection on all the snapshots in the repository.
