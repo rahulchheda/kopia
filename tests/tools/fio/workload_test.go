@@ -15,7 +15,7 @@ func TestWriteFiles(t *testing.T) {
 	defer r.Cleanup()
 
 	relativeWritePath := "some/path/to/check"
-	writeSizeB := int64(7 * 1024 * 1024 * 1024) // 7 GiB
+	writeSizeB := int64(3 * 1024 * 1024 * 1024) // 3 GiB
 	numFiles := 13
 
 	// Test a call to WriteFiles
