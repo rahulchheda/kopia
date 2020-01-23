@@ -9,5 +9,6 @@ func (opt Options) Merge(otherOpt Options) map[string]string {
 	for k, v := range otherOpt {
 		opt[k] = v
 	}
+
 	return opt
 }

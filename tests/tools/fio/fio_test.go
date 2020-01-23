@@ -10,6 +10,7 @@ import (
 func TestFIORun(t *testing.T) {
 	r, err := NewRunner()
 	testenv.AssertNoError(t, err)
+
 	defer r.Cleanup()
 
 	stdout, stderr, err := r.Run()
@@ -30,6 +31,7 @@ func TestFIORun(t *testing.T) {
 func TestFIORunConfig(t *testing.T) {
 	r, err := NewRunner()
 	testenv.AssertNoError(t, err)
+
 	defer r.Cleanup()
 
 	cfg := Config{
@@ -44,7 +46,7 @@ func TestFIORunConfig(t *testing.T) {
 	stdout, stderr, err := r.RunConfigs(cfg)
 	testenv.AssertNoError(t, err)
 
-	if len(stderr) != 0 {
+	if stderr != "" {
 		t.Error("Stderr was not empty")
 	}
 
@@ -56,6 +58,7 @@ func TestFIORunConfig(t *testing.T) {
 func TestFIOGlobalConfigOverride(t *testing.T) {
 	r, err := NewRunner()
 	testenv.AssertNoError(t, err)
+
 	defer r.Cleanup()
 
 	cfgs := []Config{

@@ -12,7 +12,7 @@ import (
 func (fr *Runner) WriteFiles(path string, sizeB int64, numFiles int, opt Options) error {
 	fullPath := filepath.Join(fr.DataDir, path)
 
-	err := os.MkdirAll(fullPath, 0777)
+	err := os.MkdirAll(fullPath, 0700)
 	if err != nil {
 		return err
 	}

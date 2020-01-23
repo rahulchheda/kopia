@@ -1,3 +1,7 @@
+// Package fio wraps calls to the fio tool.
+// It assumes the tool is executable by "fio", but
+// gives the option to specify another executable
+// path by setting environment variable FIO_EXE.
 package fio
 
 import (
@@ -71,11 +75,9 @@ func (fr *Runner) RunConfigs(cfgs ...Config) (stdout, stderr string, err error) 
 
 	// Apply global config before any other configs
 	for _, cfg := range append(append([]Config{}, fr.Global), cfgs...) {
-
 		log.Printf("Applying config:\n%s", cfg)
 
 		for _, job := range cfg {
-
 			args = append(args, JobNameFlag, job.Name)
 			for flagK, flagV := range job.Options {
 				args = append(args, "--"+flagK)
@@ -94,6 +96,7 @@ func (fr *Runner) RunConfigs(cfgs ...Config) (stdout, stderr string, err error) 
 func (fr *Runner) Run(args ...string) (stdout, stderr string, err error) {
 	argsStr := strings.Join(args, " ")
 	log.Printf("running '%s %v'", fr.Exe, argsStr)
+	// nolint:gosec
 	c := exec.Command(fr.Exe, args...)
 
 	stderrPipe, err := c.StderrPipe()

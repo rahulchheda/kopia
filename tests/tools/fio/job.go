@@ -15,11 +15,13 @@ type Job struct {
 // as it would appear in a well-formed fio config file.
 func (job Job) String() string {
 	ret := []string{fmt.Sprintf("[%s]", job.Name)}
+
 	for k, v := range job.Options {
 		if v == "" {
 			ret = append(ret, k)
 			continue
 		}
+
 		ret = append(ret, fmt.Sprintf("%s=%s", k, v))
 	}
 
