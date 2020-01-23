@@ -11,6 +11,8 @@ type Job struct {
 	Options Options
 }
 
+// String implements the stringer interface, formats the Job
+// as it would appear in a well-formed fio config file.
 func (job Job) String() string {
 	ret := []string{fmt.Sprintf("[%s]", job.Name)}
 	for k, v := range job.Options {
