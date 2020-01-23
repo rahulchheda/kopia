@@ -121,7 +121,7 @@ func (wr *Runner) Run(args ...string) (stdout, stderr string, err error) {
 
 	wg.Wait()
 
-	log.Printf("finished '%s %v' with err=%v and output:\n%v\n%v", wr.Exe, argsStr, err, string(o), string(errOut))
+	log.Printf("finished '%s %v' with err=%v and output:\nSTDOUT:\n%v\nSTDERR:\n%v\n", wr.Exe, argsStr, err, string(o), string(errOut))
 
 	return string(o), string(errOut), err
 }
