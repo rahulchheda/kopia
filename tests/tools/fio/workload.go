@@ -9,7 +9,7 @@ import (
 
 // WriteFiles writes files to the directory specified by path, up to the
 // provided size and number of files
-func (fr *Runner) WriteFiles(path string, sizeB int64, numFiles int) error {
+func (fr *Runner) WriteFiles(path string, sizeB int64, numFiles int, opt Options) error {
 	fullPath := filepath.Join(fr.DataDir, path)
 
 	err := os.MkdirAll(fullPath, 0777)
@@ -20,11 +20,11 @@ func (fr *Runner) WriteFiles(path string, sizeB int64, numFiles int) error {
 	_, _, err = fr.RunConfigs(Config{
 		{
 			Name: fmt.Sprintf("write-%vB-%v", sizeB, numFiles),
-			Options: map[string]string{
+			Options: opt.Merge(Options{
 				"size":      strconv.Itoa(int(sizeB)),
 				"nrfiles":   strconv.Itoa(numFiles),
 				"directory": fullPath,
-			},
+			}),
 		},
 	})
 

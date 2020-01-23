@@ -2,6 +2,7 @@ package fio
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/kopia/kopia/tests/testenv"
@@ -13,13 +14,33 @@ func TestFIORun(t *testing.T) {
 	defer r.Cleanup()
 
 	stdout, stderr, err := r.Run()
-	testenv.AssertNoError(t, err)
-
 	fmt.Println(stdout)
-	fmt.Println("ERR", stderr)
+	fmt.Println(stderr)
+	fmt.Println(err)
 }
 
 func TestFIORunConfig(t *testing.T) {
+	r, err := NewRunner()
+	testenv.AssertNoError(t, err)
+	defer r.Cleanup()
+
+	cfg := Config{
+		{
+			Name: "write-10g",
+			Options: map[string]string{
+				"size":    "1g",
+				"nrfiles": "10",
+			},
+		},
+	}
+	stdout, stderr, err := r.RunConfigs(cfg)
+	testenv.AssertNoError(t, err)
+
+	fmt.Println(stdout)
+	fmt.Println("STDERR", stderr)
+}
+
+func TestFIOGlobalConfigOverride(t *testing.T) {
 	r, err := NewRunner()
 	testenv.AssertNoError(t, err)
 	defer r.Cleanup()
@@ -29,17 +50,7 @@ func TestFIORunConfig(t *testing.T) {
 			{
 				Name: "global",
 				Options: map[string]string{
-					"openfiles":         "10",
-					"create_fsync":      "0",
-					"create_serialize":  "1",
-					"file_service_type": "sequential",
-					"ioengine":          "libaio",
-					"direct":            "1",
-					"iodepth":           "32",
-					"blocksize":         "1m",
-					"refill_buffers":    "",
-					"rw":                "write",
-					"unique_filename":   "1",
+					"rw": "read",
 				},
 			},
 			{
@@ -51,9 +62,10 @@ func TestFIORunConfig(t *testing.T) {
 			},
 		},
 	}
-	stdout, stderr, err := r.RunConfigs(cfgs...)
+	stdout, _, err := r.RunConfigs(cfgs...)
 	testenv.AssertNoError(t, err)
 
-	fmt.Println(stdout)
-	fmt.Println("STDERR", stderr)
+	if !strings.Contains(stdout, "rw=read") {
+		t.Fatal("Expected the global config 'rw' flag to be overwritten by the passed config")
+	}
 }

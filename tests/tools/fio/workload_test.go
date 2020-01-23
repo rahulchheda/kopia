@@ -19,7 +19,7 @@ func TestWriteFiles(t *testing.T) {
 	numFiles := 13
 
 	// Test a call to WriteFiles
-	err = r.WriteFiles(relativeWritePath, writeSizeB, numFiles)
+	err = r.WriteFiles(relativeWritePath, writeSizeB, numFiles, Options{})
 	testenv.AssertNoError(t, err)
 
 	fullPath := filepath.Join(r.DataDir, relativeWritePath)
