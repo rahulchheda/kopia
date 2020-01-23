@@ -1,7 +1,6 @@
 package fio
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 
@@ -14,9 +13,18 @@ func TestFIORun(t *testing.T) {
 	defer r.Cleanup()
 
 	stdout, stderr, err := r.Run()
-	fmt.Println(stdout)
-	fmt.Println(stderr)
-	fmt.Println(err)
+	if err == nil {
+		t.Fatal("Expected error to be set as no params were passed")
+	}
+
+	if !strings.Contains(stderr, "No job(s) defined") {
+		t.Fatal("Expected an error indicating no jobs were defined")
+	}
+
+	if !strings.Contains(stdout, "Print this page") {
+		// Indicates the --help page has been printed
+		t.Fatal("Expected --help page when running fio with no args")
+	}
 }
 
 func TestFIORunConfig(t *testing.T) {
@@ -36,8 +44,13 @@ func TestFIORunConfig(t *testing.T) {
 	stdout, stderr, err := r.RunConfigs(cfg)
 	testenv.AssertNoError(t, err)
 
-	fmt.Println(stdout)
-	fmt.Println("STDERR", stderr)
+	if len(stderr) != 0 {
+		t.Error("Stderr was not empty")
+	}
+
+	if !strings.Contains(stdout, "rw=write") {
+		t.Error("Expected the output to indicate writes took place")
+	}
 }
 
 func TestFIOGlobalConfigOverride(t *testing.T) {
