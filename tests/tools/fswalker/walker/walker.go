@@ -1,7 +1,7 @@
 // Package walker wraps calls to the fswalker tool.
 // It assumes the tool is executable by "walker", but
 // gives the option to specify another executable
-// path by setting environment variable FSWALKER_EXE.
+// path by setting environment variable WALKER_EXE.
 package walker
 
 import (
