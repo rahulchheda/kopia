@@ -89,8 +89,11 @@ func repairSnapshots(ctx context.Context, rep *repo.DirectRepository, snaps mani
 			}
 
 			if info.Deleted {
-				// TODO: undelete content
-				log(ctx).Infof("found deleted content, undeleting: %v", cid)
+				if err := rep.Content.UndeleteContent(ctx, cid); err != nil {
+					return errors.Wrapf(err, "could not undelete content %v", cid)
+				}
+
+				log(ctx).Infof("un-deleted content: %v", cid)
 			}
 		}
 
