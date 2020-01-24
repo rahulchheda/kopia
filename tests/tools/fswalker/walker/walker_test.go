@@ -13,6 +13,8 @@ func TestWalkerRun(t *testing.T) {
 	wr, err := NewRunner()
 	testenv.AssertNoError(t, err)
 
+	defer wr.Cleanup()
+
 	_, stderr, err := wr.Run()
 	if err == nil {
 		t.Fatal("Expected error to be set as no params were passed")
@@ -37,6 +39,8 @@ func TestWalkerRunPolicy(t *testing.T) {
 
 	wr, err := NewRunner()
 	testenv.AssertNoError(t, err)
+
+	defer wr.Cleanup()
 
 	outputDir, err := ioutil.TempDir("", "test-output-")
 	testenv.AssertNoError(t, err)
