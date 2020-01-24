@@ -62,11 +62,11 @@ func (wr *Runner) RunPolicy(policy Policy, outputFilePfx string, verbose bool) (
 	policyPath := f.Name()
 
 	defer func() {
-		f.Close()
+		f.Close()                //enolint:errcheck
 		os.RemoveAll(policyPath) //enolint:errcheck
 	}()
 
-	err = policy.Write(f)
+	_, err = policy.Write(f)
 	if err != nil {
 		return "", err
 	}

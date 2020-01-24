@@ -20,18 +20,35 @@ const (
 )
 
 // Write writes a policy to the provided writer as a well-formatted policy file
-func (policy *Policy) Write(w io.Writer) error {
+func (policy *Policy) Write(w io.Writer) (tot int, err error) {
 	for _, includePath := range policy.Include {
-		fmt.Fprintf(w, "%v: %q", includeKey, includePath)
+		n, err := fmt.Fprintf(w, "%v: %q", includeKey, includePath)
+		tot += n
+
+		if err != nil {
+			return tot, err
+		}
 	}
+
 	for _, excludePfx := range policy.ExcludePrefixes {
-		fmt.Fprintf(w, "%s: %q", excludePfxKey, excludePfx)
+		n, err := fmt.Fprintf(w, "%s: %q", excludePfxKey, excludePfx)
+		tot += n
+
+		if err != nil {
+			return tot, err
+		}
 	}
-	return nil
+
+	return tot, nil
 }
 
 func (policy *Policy) String() string {
 	w := &strings.Builder{}
-	policy.Write(w)
+
+	_, err := policy.Write(w)
+	if err != nil {
+		return err.Error()
+	}
+
 	return w.String()
 }
