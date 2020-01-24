@@ -59,11 +59,12 @@ func (wr *Runner) RunPolicy(policy Policy, outputFilePfx string, verbose bool) (
 	if err != nil {
 		return "", err
 	}
+
 	policyPath := f.Name()
 
 	defer func() {
-		f.Close()                //enolint:errcheck
-		os.RemoveAll(policyPath) //enolint:errcheck
+		f.Close()                //nolint:errcheck
+		os.RemoveAll(policyPath) //nolint:errcheck
 	}()
 
 	_, err = policy.Write(f)
@@ -78,7 +79,7 @@ func (wr *Runner) RunPolicy(policy Policy, outputFilePfx string, verbose bool) (
 
 // RunPolicyFile takes the path to an existing policy file and runs the walker on it,
 // outputting the result to the provided output file prefix
-func (wr *Runner) RunPolicyFile(policyPath string, outputFilePfx string, verbose bool) (stdout string, err error) {
+func (wr *Runner) RunPolicyFile(policyPath, outputFilePfx string, verbose bool) (stdout string, err error) {
 	args := []string{
 		PolicyFileFlag, policyPath,
 		OutputFilePrefixFlag, outputFilePfx,
