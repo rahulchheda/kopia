@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	fspb "github.com/google/fswalker/proto/fswalker"
+
 	"github.com/kopia/kopia/tests/testenv"
 )
 

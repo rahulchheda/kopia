@@ -16,14 +16,16 @@ import (
 
 // Walk performs a walk governed by the contents of the provided
 // Policy, and writes the output to the provided io.Writer.
-func Walk(ctx context.Context, policy *fspb.Policy, w io.Writer) error {
+func Walk(ctx context.Context, policy *fspb.Policy, w io.Writer) error { //nolint:interfacer
 	f, err := ioutil.TempFile("", "fswalker-policy-")
 	if err != nil {
 		return err
 	}
+
+	f.Close() //nolint:errcheck
+
 	policyFileName := f.Name()
-	f.Close()
-	defer os.RemoveAll(policyFileName)
+	defer os.RemoveAll(policyFileName) //nolint:errcheck
 
 	err = writeTextProto(policyFileName, policy)
 	if err != nil {
@@ -66,5 +68,6 @@ func writeTextProto(path string, pb proto.Message) error {
 	blob := proto.MarshalTextString(pb)
 	// replace message boundary characters as curly braces look nicer (both is fine to parse)
 	blob = strings.Replace(strings.Replace(blob, "<", "{", -1), ">", "}", -1)
+
 	return ioutil.WriteFile(path, []byte(blob), 0644)
 }
