@@ -54,3 +54,24 @@ func TestWalk(t *testing.T) {
 		t.Errorf("Expected number of walk entries (%v) to equal sum of file and dir counts (%v)", got, want)
 	}
 }
+
+func TestWalkFail(t *testing.T) {
+	outW := &bytes.Buffer{}
+
+	err := Walk(
+		context.TODO(),
+		&fspb.Policy{
+			Include: []string{
+				"some/nonexistent/directory",
+			},
+		},
+		outW,
+	)
+	if err == nil {
+		t.Fatalf("Expected non-nil error when walk directory is not present")
+	}
+
+	if !strings.Contains(err.Error(), "no such file or directory") {
+		t.Errorf("Expected walk call to return an error for finding no directory but got %q", err.Error())
+	}
+}
