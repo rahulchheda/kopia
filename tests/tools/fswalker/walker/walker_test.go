@@ -1,66 +1,56 @@
 package walker
 
 import (
+	"bytes"
+	"context"
 	"io/ioutil"
 	"os"
 	"strings"
 	"testing"
 
+	fspb "github.com/google/fswalker/proto/fswalker"
 	"github.com/kopia/kopia/tests/testenv"
 )
 
-func TestWalkerRun(t *testing.T) {
-	wr, err := NewRunner()
-	testenv.AssertNoError(t, err)
-
-	defer wr.Cleanup()
-
-	_, stderr, err := wr.Run()
-	if err == nil {
-		t.Fatal("Expected error to be set as no params were passed")
-	}
-
-	if !strings.Contains(stderr, "policy-file needs to be specified") {
-		t.Fatal("Expected error for no policy provided")
-	}
-}
-
-func TestWalkerRunPolicy(t *testing.T) {
+func TestWalk(t *testing.T) {
 	dataDir, err := ioutil.TempDir("", "walk-data-")
 	testenv.AssertNoError(t, err)
 
 	defer os.RemoveAll(dataDir)
 
-	testenv.MustCreateDirectoryTree(t, dataDir, testenv.DirectoryTreeOptions{
-		Depth:                  2,
-		MaxSubdirsPerDirectory: 2,
-		MaxFilesPerDirectory:   2,
-	})
-
-	wr, err := NewRunner()
-	testenv.AssertNoError(t, err)
-
-	defer wr.Cleanup()
-
-	outputDir, err := ioutil.TempDir("", "test-output-")
-	testenv.AssertNoError(t, err)
-
-	defer os.RemoveAll(outputDir)
-
-	_, err = wr.RunPolicy(Policy{
-		Name:    "test-policy-",
-		Include: []string{dataDir},
-	},
-		outputDir,
-		true,
+	counters := new(testenv.DirectoryTreeCounters)
+	err = testenv.CreateDirectoryTree(
+		dataDir,
+		testenv.DirectoryTreeOptions{
+			Depth:                  2,
+			MaxSubdirsPerDirectory: 2,
+			MaxFilesPerDirectory:   2,
+		},
+		counters,
 	)
-
 	testenv.AssertNoError(t, err)
 
-	fl, err := ioutil.ReadDir(outputDir)
+	outW := &bytes.Buffer{}
+
+	err = Walk(context.TODO(),
+		&fspb.Policy{
+			Include: []string{
+				dataDir,
+			},
+		}, outW)
 	testenv.AssertNoError(t, err)
 
-	if want, got := 1, len(fl); want != got {
-		t.Errorf("Output directory expected to have %d output files but got %d", want, got)
+	var foundFSEntryCount int
+
+	// Output expected to contain the paths to all dirs/files
+	lines := strings.Split(outW.String(), "\n")
+	for _, line := range lines {
+		if strings.Contains(line, dataDir) {
+			foundFSEntryCount++
+		}
+	}
+
+	if got, want := foundFSEntryCount, counters.Files+counters.Directories; got != want {
+		t.Errorf("Expected number of walk entries (%v) to equal sum of file and dir counts (%v)", got, want)
 	}
 }

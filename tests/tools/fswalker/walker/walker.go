@@ -1,128 +1,70 @@
-// Package walker wraps calls to the fswalker tool.
-// It assumes the tool is executable by "walker", but
-// gives the option to specify another executable
-// path by setting environment variable WALKER_EXE.
+// Package walker wraps calls to the the fswalker Walker
 package walker
 
 import (
+	"bytes"
+	"context"
+	"io"
 	"io/ioutil"
-	"log"
 	"os"
-	"os/exec"
 	"strings"
-	"sync"
+
+	"github.com/golang/protobuf/proto"
+	"github.com/google/fswalker"
+	fspb "github.com/google/fswalker/proto/fswalker"
 )
 
-// List of walker flags
-const (
-	PolicyFileFlag       = "-policy-file"
-	VerboseFlag          = "-verbose"
-	OutputFilePrefixFlag = "-output-file-pfx"
-)
-
-// Runner is a helper for running fswalker walker commands
-type Runner struct {
-	Exe       string
-	PolicyDir string
-}
-
-// NewRunner creates a new walker runner
-func NewRunner() (*Runner, error) {
-	Exe := os.Getenv("WALKER_EXE")
-	if Exe == "" {
-		Exe = "walker"
-	}
-
-	polDir, err := ioutil.TempDir("", "fswalker-policy-data")
+// Walk performs a walk governed by the contents of the provided
+// Policy, and writes the output to the provided io.Writer.
+func Walk(ctx context.Context, policy *fspb.Policy, w io.Writer) error {
+	f, err := ioutil.TempFile("", "fswalker-policy-")
 	if err != nil {
-		return nil, err
+		return err
 	}
+	policyFileName := f.Name()
+	f.Close()
+	defer os.RemoveAll(policyFileName)
 
-	return &Runner{
-		Exe:       Exe,
-		PolicyDir: polDir,
-	}, nil
-}
-
-// Cleanup cleans up the data directory
-func (wr *Runner) Cleanup() {
-	if wr.PolicyDir != "" {
-		os.RemoveAll(wr.PolicyDir) //nolint:errcheck
-	}
-}
-
-// RunPolicy runs the provided policy, temporarily writing it to a file for
-// consumption by the walker tool. The operation output is written to a file at the
-// output file prefix provided, and the stdout result is returned.
-func (wr *Runner) RunPolicy(policy Policy, outputFilePfx string, verbose bool) (stdout string, err error) {
-	f, err := ioutil.TempFile(wr.PolicyDir, policy.Name)
+	err = writeTextProto(policyFileName, policy)
 	if err != nil {
-		return "", err
+		return err
 	}
 
-	policyPath := f.Name()
-
-	defer func() {
-		f.Close()                //nolint:errcheck
-		os.RemoveAll(policyPath) //nolint:errcheck
-	}()
-
-	_, err = policy.Write(f)
+	walker, err := fswalker.WalkerFromPolicyFile(ctx, policyFileName)
 	if err != nil {
-		return "", err
+		return err
 	}
 
-	log.Printf("Running policy:\n%s\n", policy.String())
+	walker.WalkCallback = func(ctx context.Context, walk *fspb.Walk) error {
+		return writeWalk(walk, w)
+	}
 
-	return wr.RunPolicyFile(policyPath, outputFilePfx, verbose)
+	err = walker.Run(ctx)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
-// RunPolicyFile takes the path to an existing policy file and runs the walker on it,
-// outputting the result to the provided output file prefix
-func (wr *Runner) RunPolicyFile(policyPath, outputFilePfx string, verbose bool) (stdout string, err error) {
-	args := []string{
-		PolicyFileFlag, policyPath,
-		OutputFilePrefixFlag, outputFilePfx,
+func writeWalk(walk *fspb.Walk, w io.Writer) error {
+	walkBytes, err := proto.Marshal(walk)
+	if err != nil {
+		return err
 	}
 
-	if verbose {
-		args = append(args, VerboseFlag)
+	_, err = io.Copy(w, bytes.NewBuffer(walkBytes))
+	if err != nil {
+		return err
 	}
 
-	stdout, _, err = wr.Run(args...)
-
-	return stdout, err
+	return nil
 }
 
-// Run will execute the walker command with the given args
-func (wr *Runner) Run(args ...string) (stdout, stderr string, err error) {
-	argsStr := strings.Join(args, " ")
-	log.Printf("running '%s %v'", wr.Exe, argsStr)
-	// nolint:gosec
-	c := exec.Command(wr.Exe, args...)
-
-	stderrPipe, err := c.StderrPipe()
-	if err != nil {
-		return stdout, stderr, err
-	}
-
-	var errOut []byte
-
-	var wg sync.WaitGroup
-
-	wg.Add(1)
-
-	go func() {
-		defer wg.Done()
-
-		errOut, err = ioutil.ReadAll(stderrPipe)
-	}()
-
-	o, err := c.Output()
-
-	wg.Wait()
-
-	log.Printf("finished '%s %v' with err=%v and output:\nSTDOUT:\n%v\nSTDERR:\n%v\n", wr.Exe, argsStr, err, string(o), string(errOut))
-
-	return string(o), string(errOut), err
+// writeTextProto writes a text format proto buf for the provided proto message.
+func writeTextProto(path string, pb proto.Message) error {
+	blob := proto.MarshalTextString(pb)
+	// replace message boundary characters as curly braces look nicer (both is fine to parse)
+	blob = strings.Replace(strings.Replace(blob, "<", "{", -1), ">", "}", -1)
+	return ioutil.WriteFile(path, []byte(blob), 0644)
 }
