@@ -16,7 +16,7 @@ func TestWriteFiles(t *testing.T) {
 	defer r.Cleanup()
 
 	relativeWritePath := "some/path/to/check"
-	writeSizeB := int64(3 * 1024 * 1024 * 1024) // 3 GiB
+	writeSizeB := int64(256 * 1024 * 1024) // 256 MiB
 	numFiles := 13
 
 	// Test a call to WriteFiles
@@ -32,18 +32,14 @@ func TestWriteFiles(t *testing.T) {
 	}
 
 	sizeTot := int64(0)
-	sizeExp := int64(0)
 
 	for _, fi := range dir {
 		fmt.Println(fi.Name(), fi.Size())
 		sizeTot += fi.Size()
-
-		// Calculate the expected size taking into account the rounding error
-		// introduced by dividing the requested write size across the number of files
-		sizeExp += writeSizeB / int64(numFiles)
 	}
 
-	if got, want := sizeTot, sizeExp; got != want {
+	want := (writeSizeB / int64(numFiles)) * int64(numFiles)
+	if got := sizeTot; got != want {
 		t.Errorf("Did not get the expected amount of data written %v (actual) != %v (expected)", got, want)
 	}
 }
