@@ -74,7 +74,7 @@ func (fr *Runner) RunConfigs(cfgs ...Config) (stdout, stderr string, err error) 
 	var args []string
 
 	// Apply global config before any other configs
-	for _, cfg := range append(append([]Config{}, fr.Global), cfgs...) {
+	for _, cfg := range append([]Config{fr.Global}, cfgs...) {
 		log.Printf("Applying config:\n%s", cfg)
 
 		for _, job := range cfg {
