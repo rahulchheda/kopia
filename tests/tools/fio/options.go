@@ -5,14 +5,14 @@ type Options map[string]string
 
 // Merge will merge two Options, overwriting common option keys
 // with the incoming option values. Returns the merged result
-func (opt Options) Merge(otherOpt Options) map[string]string {
-	out := make(map[string]string)
+func (o Options) Merge(other Options) map[string]string {
+	out := make(map[string]string, len(o)+len(other))
 
-	for k, v := range opt {
+	for k, v := range o {
 		out[k] = v
 	}
 
-	for k, v := range otherOpt {
+	for k, v := range other {
 		out[k] = v
 	}
 
