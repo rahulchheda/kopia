@@ -13,7 +13,7 @@ import (
 )
 
 // Walk performs a walk governed by the contents of the provided
-// Policy, and writes the output to the provided io.Writer.
+// Policy, and returns the pointer to the Walk.
 func Walk(ctx context.Context, policy *fspb.Policy) (*fspb.Walk, error) { //nolint:interfacer
 	f, err := ioutil.TempFile("", "fswalker-policy-")
 	if err != nil {
