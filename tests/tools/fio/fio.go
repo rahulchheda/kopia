@@ -32,7 +32,7 @@ func NewRunner() (*Runner, error) {
 		Exe = "fio"
 	}
 
-	dataDir, err := ioutil.TempDir("", "fio-data")
+	dataDir, err := ioutil.TempDir("", "fio-data-")
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +53,7 @@ func NewRunner() (*Runner, error) {
 					"iodepth":           "32",
 					"blocksize":         "1m",
 					"refill_buffers":    "",
-					"rw":                "write",
+					"rw":                "randwrite",
 					"unique_filename":   "1",
 					"directory":         dataDir,
 				},
