@@ -12,8 +12,10 @@ import (
 	"github.com/google/fswalker"
 	fspb "github.com/google/fswalker/proto/fswalker"
 
+	"github.com/kopia/kopia/tests/robustness/snapif"
 	"github.com/kopia/kopia/tests/testenv"
 	"github.com/kopia/kopia/tests/tools/fio"
+	fswwrap "github.com/kopia/kopia/tests/tools/fswalker"
 	"github.com/kopia/kopia/tests/tools/fswalker/reporter"
 	"github.com/kopia/kopia/tests/tools/fswalker/walker"
 )
@@ -32,6 +34,8 @@ func TestBasicRestore(t *testing.T) {
 	err = fioRunner.WriteFiles("", fileSize, numFiles, fio.Options{})
 	testenv.AssertNoError(t, err)
 
+	// ==========================
+	// Snapshot
 	walk, err := walker.WalkPathHash(context.Background(), fioRunner.DataDir)
 	testenv.AssertNoError(t, err)
 
@@ -85,4 +89,39 @@ func parseSnapID(t *testing.T, lines []string) string {
 	t.Fatal("Snap ID could not be parsed")
 
 	return ""
+}
+
+func TestEngine(t *testing.T) {
+
+	fioRunner, err := fio.NewRunner()
+	testenv.AssertNoError(t, err)
+
+	defer fioRunner.Cleanup()
+
+	fileSize := int64(256 * 1024 * 1024)
+	numFiles := 10
+	err = fioRunner.WriteFiles("", fileSize, numFiles, fio.Options{})
+	testenv.AssertNoError(t, err)
+
+	kopiaSnapper, err := snapif.NewKopiaSnapshotter()
+	testenv.AssertNoError(t, err)
+
+	defer kopiaSnapper.Cleanup()
+
+	repoDir, err := ioutil.TempDir("", "kopia-repo-")
+	testenv.AssertNoError(t, err)
+
+	kopiaSnapper.CreateRepo("filesystem", "--path", repoDir)
+
+	chkr, err := fswwrap.NewChecker(kopiaSnapper)
+	testenv.AssertNoError(t, err)
+
+	defer chkr.Cleanup()
+
+	ctx := context.Background()
+	snapID, err := chkr.TakeSnapshot(ctx, fioRunner.DataDir)
+	testenv.AssertNoError(t, err)
+
+	err = chkr.RestoreSnapshot(ctx, snapID, os.Stdout)
+	testenv.AssertNoError(t, err)
 }
