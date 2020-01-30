@@ -2,11 +2,17 @@ package snapstore
 
 import "sync"
 
+var _ Storer = &Simple{}
+
+// Simple is a snapstore implementation that stores
+// snapshot metadata as a byte slice in a map in memory
 type Simple struct {
 	s map[string][]byte
 	l *sync.Mutex
 }
 
+// NewSimple instantiates a new Simple snapstore and
+// returns its pointer
 func NewSimple() *Simple {
 	return &Simple{
 		s: make(map[string][]byte),
@@ -14,6 +20,7 @@ func NewSimple() *Simple {
 	}
 }
 
+// Store implements the Storer interface Store method
 func (store *Simple) Store(key string, val []byte) error {
 	buf := make([]byte, len(val), len(val))
 	_ = copy(buf, val)
@@ -23,6 +30,7 @@ func (store *Simple) Store(key string, val []byte) error {
 	return nil
 }
 
+// Load implements the Storer interface Load method
 func (store *Simple) Load(key string) ([]byte, error) {
 	store.l.Lock()
 	defer store.l.Unlock()
