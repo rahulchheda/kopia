@@ -19,7 +19,6 @@ const (
 type Runner struct {
 	Exe         string
 	ConfigDir   string
-	RepoDir     string
 	fixedArgs   []string
 	environment []string
 }

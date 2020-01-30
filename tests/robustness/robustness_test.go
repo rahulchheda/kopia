@@ -111,6 +111,8 @@ func TestEngine(t *testing.T) {
 	repoDir, err := ioutil.TempDir("", "kopia-repo-")
 	testenv.AssertNoError(t, err)
 
+	defer os.RemoveAll(repoDir) //nolint:errcheck
+
 	kopiaSnapper.CreateRepo("filesystem", "--path", repoDir)
 
 	chkr, err := fswwrap.NewChecker(kopiaSnapper)
