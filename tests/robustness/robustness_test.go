@@ -13,6 +13,7 @@ import (
 	fspb "github.com/google/fswalker/proto/fswalker"
 
 	"github.com/kopia/kopia/tests/robustness/snapif"
+	"github.com/kopia/kopia/tests/robustness/snapstore"
 	"github.com/kopia/kopia/tests/testenv"
 	"github.com/kopia/kopia/tests/tools/fio"
 	fswwrap "github.com/kopia/kopia/tests/tools/fswalker"
@@ -92,7 +93,6 @@ func parseSnapID(t *testing.T, lines []string) string {
 }
 
 func TestEngine(t *testing.T) {
-
 	fioRunner, err := fio.NewRunner()
 	testenv.AssertNoError(t, err)
 
@@ -115,7 +115,9 @@ func TestEngine(t *testing.T) {
 
 	kopiaSnapper.CreateRepo("filesystem", "--path", repoDir)
 
-	chkr, err := fswwrap.NewChecker(kopiaSnapper)
+	snapStore := snapstore.NewSimple()
+
+	chkr, err := fswwrap.NewChecker(kopiaSnapper, snapStore)
 	testenv.AssertNoError(t, err)
 
 	defer chkr.Cleanup()

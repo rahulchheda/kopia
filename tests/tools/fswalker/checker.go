@@ -11,9 +11,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/golang/protobuf/proto"
 	"github.com/google/fswalker"
 	fspb "github.com/google/fswalker/proto/fswalker"
+
 	"github.com/kopia/kopia/tests/robustness/snapif"
+	"github.com/kopia/kopia/tests/robustness/snapstore"
 	"github.com/kopia/kopia/tests/tools/fswalker/reporter"
 	"github.com/kopia/kopia/tests/tools/fswalker/walker"
 )
@@ -23,10 +26,10 @@ type Checker struct {
 	snap       snapif.Snapshotter
 
 	GlobalFilterMatchers []string
-	snapStore            map[string]*fspb.Walk
+	snapStore            snapstore.Storer
 }
 
-func NewChecker(snap snapif.Snapshotter) (*Checker, error) {
+func NewChecker(snap snapif.Snapshotter, snapStore snapstore.Storer) (*Checker, error) {
 	restoreDir, err := ioutil.TempDir("", "restore-data-")
 	if err != nil {
 		return nil, err
@@ -40,7 +43,7 @@ func NewChecker(snap snapif.Snapshotter) (*Checker, error) {
 			"atime:",
 			"mtime:",
 		},
-		snapStore: make(map[string]*fspb.Walk),
+		snapStore: snapStore,
 	}, nil
 }
 
@@ -67,18 +70,33 @@ func (chk *Checker) TakeSnapshot(ctx context.Context, sourceDir string) (snapID 
 	}
 
 	// Store the walk data along with the snapshot ID
-	// TODO
-	chk.snapStore[snapID] = walkData
+	b, err := proto.Marshal(walkData)
+	if err != nil {
+		return snapID, err
+	}
+
+	err = chk.snapStore.Store(snapID, b)
+	if err != nil {
+		return snapID, err
+	}
 
 	return snapID, nil
 }
 
 func (chk *Checker) RestoreSnapshot(ctx context.Context, snapID string, reportOut io.Writer) error {
 	// Lookup walk data by snapshot ID
-	// TODO
-	beforeWalk, ok := chk.snapStore[snapID]
-	if !ok {
-		return fmt.Errorf("Could not find snapshot with ID %v", snapID)
+	b, err := chk.snapStore.Load(snapID)
+	if err != nil {
+		return err
+	}
+	if b == nil {
+		return fmt.Errorf("could not find snapID %v", snapID)
+	}
+
+	beforeWalk := &fspb.Walk{}
+	err = proto.Unmarshal(b, beforeWalk)
+	if err != nil {
+		return err
 	}
 
 	// Make an independent directory for the restore
@@ -110,15 +128,15 @@ func (chk *Checker) RestoreSnapshot(ctx context.Context, snapID string, reportOu
 	}
 
 	rptr := &fswalker.Reporter{}
-	rptr.PrintDiffSummary(os.Stdout, report)
-	rptr.PrintReportSummary(os.Stdout, report)
-	rptr.PrintRuleSummary(os.Stdout, report)
+	rptr.PrintDiffSummary(reportOut, report)
+	rptr.PrintReportSummary(reportOut, report)
+	rptr.PrintRuleSummary(reportOut, report)
 
 	chk.filterReportDiffs(report)
 
-	rptr.PrintDiffSummary(os.Stdout, report)
-	rptr.PrintReportSummary(os.Stdout, report)
-	rptr.PrintRuleSummary(os.Stdout, report)
+	rptr.PrintDiffSummary(reportOut, report)
+	rptr.PrintReportSummary(reportOut, report)
+	rptr.PrintRuleSummary(reportOut, report)
 
 	err = chk.validateReport(report)
 	if err != nil {
