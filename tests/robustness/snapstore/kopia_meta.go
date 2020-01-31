@@ -55,25 +55,21 @@ func (store *KopiaMetadata) Load(key string) ([]byte, error) {
 	return store.s.Load(key)
 }
 
+func (store *KopiaMetadata) GetKeys() []string {
+	return store.s.GetKeys()
+}
+
 func (store *KopiaMetadata) ConnectOrCreateRepoS3(bucketName, pathPrefix string) error {
 	path.Join(getHostPath(), pathPrefix)
 	args := []string{"s3", "--bucket", bucketName, "--prefix", pathPrefix}
-	err := store.snap.ConnectRepo(args...)
-	if err == nil {
-		return nil
-	}
 
-	return store.snap.CreateRepo(args...)
+	return store.snap.ConnectOrCreateRepo(args...)
 }
 
 func (store *KopiaMetadata) ConnectOrCreateRepoFilesystem(path string) error {
 	args := []string{"filesystem", "--path", path}
-	err := store.snap.ConnectRepo(args...)
-	if err == nil {
-		return nil
-	}
 
-	return store.snap.CreateRepo(args...)
+	return store.snap.ConnectOrCreateRepo(args...)
 }
 
 func (store *KopiaMetadata) LoadMetadata() error {

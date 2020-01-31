@@ -92,6 +92,11 @@ func parseSnapID(t *testing.T, lines []string) string {
 	return ""
 }
 
+var (
+	metadataRepoPath = filepath.Join("/tmp", "metadata-repo")
+	dataRepoPath     = filepath.Join("/tmp", "data-repo")
+)
+
 func TestEngine(t *testing.T) {
 	fioRunner, err := fio.NewRunner()
 	defer fioRunner.Cleanup()
@@ -106,19 +111,22 @@ func TestEngine(t *testing.T) {
 	defer kopiaSnapper.Cleanup()
 	testenv.AssertNoError(t, err)
 
-	repoDir, err := ioutil.TempDir("", "kopia-repo-")
-	defer os.RemoveAll(repoDir) //nolint:errcheck
-	testenv.AssertNoError(t, err)
+	// repoDir, err := ioutil.TempDir("", "kopia-repo-")
+	// defer os.RemoveAll(repoDir) //nolint:errcheck
+	// testenv.AssertNoError(t, err)
+	// kopiaSnapper.CreateRepo("filesystem", "--path", repoDir)
 
-	kopiaSnapper.CreateRepo("filesystem", "--path", repoDir)
 	// kopiaSnapper.CreateRepo("s3", "--bucket", "nick-kasten-io-test-1", "--prefix", "some/prefix/")
+
+	err = kopiaSnapper.ConnectOrCreateRepo("filesystem", "--path", dataRepoPath)
+	testenv.AssertNoError(t, err)
 
 	// snapStore := snapstore.NewSimple()
 	snapStore, err := snapstore.NewKopiaMetadata()
 	defer snapStore.Cleanup() //nolint:errcheck
 	testenv.AssertNoError(t, err)
 
-	err = snapStore.ConnectOrCreateRepoFilesystem(filepath.Join("/tmp", "remote-store"))
+	err = snapStore.ConnectOrCreateRepoFilesystem(metadataRepoPath)
 	testenv.AssertNoError(t, err)
 
 	defer func() {
@@ -141,4 +149,10 @@ func TestEngine(t *testing.T) {
 
 	err = chkr.RestoreSnapshot(ctx, snapID, os.Stdout)
 	testenv.AssertNoError(t, err)
+
+	keys := snapStore.GetKeys()
+	for _, key := range keys {
+		err = chkr.RestoreSnapshot(ctx, key, os.Stdout)
+		testenv.AssertNoError(t, err)
+	}
 }

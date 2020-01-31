@@ -41,3 +41,12 @@ func (store *Simple) Load(key string) ([]byte, error) {
 	}
 	return nil, nil
 }
+
+// GetKeys implements the Storer interface GetKeys method
+func (store *Simple) GetKeys() []string {
+	ret := make([]string, 0, len(store.s))
+	for k := range store.s {
+		ret = append(ret, k)
+	}
+	return ret
+}

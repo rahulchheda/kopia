@@ -40,6 +40,15 @@ func (ks *KopiaSnapshotter) ConnectRepo(args ...string) (err error) {
 	return err
 }
 
+func (ks *KopiaSnapshotter) ConnectOrCreateRepo(args ...string) error {
+	err := ks.ConnectRepo(args...)
+	if err == nil {
+		return nil
+	}
+
+	return ks.CreateRepo(args...)
+}
+
 func (ks *KopiaSnapshotter) TakeSnapshot(sourceDir string) (snapID string, err error) {
 	_, errOut, err := ks.Runner.Run("snapshot", "create", sourceDir)
 	if err != nil {
