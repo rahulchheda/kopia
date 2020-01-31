@@ -94,9 +94,8 @@ func parseSnapID(t *testing.T, lines []string) string {
 
 func TestEngine(t *testing.T) {
 	fioRunner, err := fio.NewRunner()
-	testenv.AssertNoError(t, err)
-
 	defer fioRunner.Cleanup()
+	testenv.AssertNoError(t, err)
 
 	fileSize := int64(256 * 1024 * 1024)
 	numFiles := 10
@@ -104,23 +103,37 @@ func TestEngine(t *testing.T) {
 	testenv.AssertNoError(t, err)
 
 	kopiaSnapper, err := snapif.NewKopiaSnapshotter()
-	testenv.AssertNoError(t, err)
-
 	defer kopiaSnapper.Cleanup()
+	testenv.AssertNoError(t, err)
 
 	repoDir, err := ioutil.TempDir("", "kopia-repo-")
-	testenv.AssertNoError(t, err)
-
 	defer os.RemoveAll(repoDir) //nolint:errcheck
+	testenv.AssertNoError(t, err)
 
 	kopiaSnapper.CreateRepo("filesystem", "--path", repoDir)
+	// kopiaSnapper.CreateRepo("s3", "--bucket", "nick-kasten-io-test-1", "--prefix", "some/prefix/")
 
-	snapStore := snapstore.NewSimple()
-
-	chkr, err := fswwrap.NewChecker(kopiaSnapper, snapStore)
+	// snapStore := snapstore.NewSimple()
+	snapStore, err := snapstore.NewKopiaMetadata()
+	defer snapStore.Cleanup() //nolint:errcheck
 	testenv.AssertNoError(t, err)
 
+	err = snapStore.ConnectOrCreateRepoFilesystem(filepath.Join("/tmp", "remote-store"))
+	testenv.AssertNoError(t, err)
+
+	defer func() {
+		err := snapStore.FlushMetadata()
+		testenv.AssertNoError(t, err)
+	}()
+
+	err = snapStore.LoadMetadata()
+	if err != nil {
+		fmt.Println("LOAD METADATA ERROR:", err.Error())
+	}
+
+	chkr, err := fswwrap.NewChecker(kopiaSnapper, snapStore)
 	defer chkr.Cleanup()
+	testenv.AssertNoError(t, err)
 
 	ctx := context.Background()
 	snapID, err := chkr.TakeSnapshot(ctx, fioRunner.DataDir)
