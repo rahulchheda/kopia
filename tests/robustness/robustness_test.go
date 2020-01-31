@@ -143,6 +143,8 @@ func TestEngine(t *testing.T) {
 	defer chkr.Cleanup()
 	testenv.AssertNoError(t, err)
 
+	keys := snapStore.GetKeys()
+
 	ctx := context.Background()
 	snapID, err := chkr.TakeSnapshot(ctx, fioRunner.DataDir)
 	testenv.AssertNoError(t, err)
@@ -150,7 +152,6 @@ func TestEngine(t *testing.T) {
 	err = chkr.RestoreSnapshot(ctx, snapID, os.Stdout)
 	testenv.AssertNoError(t, err)
 
-	keys := snapStore.GetKeys()
 	for _, key := range keys {
 		err = chkr.RestoreSnapshot(ctx, key, os.Stdout)
 		testenv.AssertNoError(t, err)

@@ -17,8 +17,8 @@ import (
 var _ Storer = &KopiaMetadata{}
 
 type KopiaMetadata struct {
+	*Simple
 	LocalMetadataDir string
-	s                *Simple
 	snap             *snapif.KopiaSnapshotter
 }
 
@@ -35,7 +35,7 @@ func NewKopiaMetadata() (*KopiaMetadata, error) {
 
 	return &KopiaMetadata{
 		LocalMetadataDir: localDir,
-		s:                NewSimple(),
+		Simple:           NewSimple(),
 		snap:             snap,
 	}, nil
 }
@@ -44,19 +44,6 @@ func (store *KopiaMetadata) Cleanup() {
 	if store.LocalMetadataDir != "" {
 		os.RemoveAll(store.LocalMetadataDir) //nolint:errcheck
 	}
-}
-
-func (store *KopiaMetadata) Store(key string, val []byte) error {
-	store.s.Store(key, val)
-	return nil
-}
-
-func (store *KopiaMetadata) Load(key string) ([]byte, error) {
-	return store.s.Load(key)
-}
-
-func (store *KopiaMetadata) GetKeys() []string {
-	return store.s.GetKeys()
 }
 
 func (store *KopiaMetadata) ConnectOrCreateRepoS3(bucketName, pathPrefix string) error {
@@ -96,7 +83,7 @@ func (store *KopiaMetadata) LoadMetadata() error {
 		return err
 	}
 
-	err = json.NewDecoder(f).Decode(&(store.s.s))
+	err = json.NewDecoder(f).Decode(&(store.Simple.s))
 	if err != nil {
 		return err
 	}
@@ -116,7 +103,7 @@ func (store *KopiaMetadata) FlushMetadata() error {
 		os.Remove(f.Name()) //nolint:errcheck
 	}()
 
-	err = json.NewEncoder(f).Encode(store.s.s)
+	err = json.NewEncoder(f).Encode(store.Simple.s)
 	if err != nil {
 		return err
 	}
