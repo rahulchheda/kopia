@@ -1,7 +1,11 @@
 package snapif
 
 import (
+	"crypto/sha1"
 	"errors"
+	"fmt"
+	"os"
+	"path"
 	"regexp"
 	"strings"
 
@@ -47,6 +51,31 @@ func (ks *KopiaSnapshotter) ConnectOrCreateRepo(args ...string) error {
 	}
 
 	return ks.CreateRepo(args...)
+}
+
+func (ks *KopiaSnapshotter) ConnectOrCreateS3(bucketName, pathPrefix string) error {
+	path.Join(getHostPath(), pathPrefix)
+	args := []string{"s3", "--bucket", bucketName, "--prefix", pathPrefix}
+
+	return ks.ConnectOrCreateRepo(args...)
+}
+
+func getHostPath() string {
+	hn, err := os.Hostname()
+	if err != nil {
+		return "kopia-test-1"
+	}
+
+	h := sha1.New()
+	fmt.Fprintf(h, "%v", hn)
+
+	return fmt.Sprintf("kopia-test-%x", h.Sum(nil)[0:8])
+}
+
+func (ks *KopiaSnapshotter) ConnectOrCreateFilesystem(path string) error {
+	args := []string{"filesystem", "--path", path}
+
+	return ks.ConnectOrCreateRepo(args...)
 }
 
 func (ks *KopiaSnapshotter) TakeSnapshot(sourceDir string) (snapID string, err error) {

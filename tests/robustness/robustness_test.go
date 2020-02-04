@@ -14,6 +14,7 @@ import (
 
 	"github.com/kopia/kopia/tests/robustness/snapif"
 	"github.com/kopia/kopia/tests/robustness/snapstore"
+	engine "github.com/kopia/kopia/tests/robustness/test_engine"
 	"github.com/kopia/kopia/tests/testenv"
 	"github.com/kopia/kopia/tests/tools/fio"
 	fswwrap "github.com/kopia/kopia/tests/tools/fswalker"
@@ -93,8 +94,9 @@ func parseSnapID(t *testing.T, lines []string) string {
 }
 
 var (
-	metadataRepoPath = filepath.Join("/tmp", "metadata-repo")
-	dataRepoPath     = filepath.Join("/tmp", "data-repo")
+	fsMetadataRepoPath = filepath.Join("/tmp", "metadata-repo")
+	s3MetadataRepoPath = filepath.Join("/some/path", "metadata-repo")
+	dataRepoPath       = filepath.Join("/tmp", "data-repo")
 )
 
 func TestEngine(t *testing.T) {
@@ -116,7 +118,7 @@ func TestEngine(t *testing.T) {
 	// testenv.AssertNoError(t, err)
 	// kopiaSnapper.CreateRepo("filesystem", "--path", repoDir)
 
-	// kopiaSnapper.CreateRepo("s3", "--bucket", "nick-kasten-io-test-1", "--prefix", "some/prefix/")
+	// kopiaSnapper.ConnectOrCreateRepo("s3", "--bucket", "nick-kasten-io-test-1", "--prefix", "some/prefix/")
 
 	err = kopiaSnapper.ConnectOrCreateRepo("filesystem", "--path", dataRepoPath)
 	testenv.AssertNoError(t, err)
@@ -126,7 +128,8 @@ func TestEngine(t *testing.T) {
 	defer snapStore.Cleanup() //nolint:errcheck
 	testenv.AssertNoError(t, err)
 
-	err = snapStore.ConnectOrCreateRepoFilesystem(metadataRepoPath)
+	// err = snapStore.ConnectOrCreateS3("nick-kasten-io-test-1", s3MetadataRepoPath)
+	err = snapStore.ConnectOrCreateFilesystem(fsMetadataRepoPath)
 	testenv.AssertNoError(t, err)
 
 	defer func() {
@@ -156,4 +159,22 @@ func TestEngine(t *testing.T) {
 		err = chkr.RestoreSnapshot(ctx, key, os.Stdout)
 		testenv.AssertNoError(t, err)
 	}
+}
+
+func TestBasic(t *testing.T) {
+	eng, err := engine.NewEngine()
+	testenv.AssertNoError(t, err)
+
+	err = eng.MetaStore.ConnectOrCreateFilesystem(fsMetadataRepoPath)
+	testenv.AssertNoError(t, err)
+
+	err = eng.MetaStore.LoadMetadata()
+	testenv.AssertNoError(t, err)
+
+	err = eng.Snapshotter.ConnectOrCreateFilesystem(dataRepoPath)
+	testenv.AssertNoError(t, err)
+
+	fileSize := int64(256 * 1024 * 1024)
+	numFiles := 10
+	eng.FileWriter.WriteFiles("", fileSize, numFiles, fio.Options{})
 }

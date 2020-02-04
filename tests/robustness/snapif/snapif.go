@@ -1,9 +1,12 @@
 package snapif
 
 type Snapshotter interface {
-	CreateRepo(args ...string) error
-	ConnectRepo(args ...string) error
-	ConnectOrCreateRepo(args ...string) error
+	RepoManager
 	TakeSnapshot(sourceDir string) (snapID string, err error)
 	RestoreSnapshot(snapID string, restoreDir string) error
+}
+
+type RepoManager interface {
+	ConnectOrCreateS3(bucketName, pathPrefix string) error
+	ConnectOrCreateFilesystem(path string) error
 }

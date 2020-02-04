@@ -1,13 +1,9 @@
 package snapstore
 
 import (
-	"crypto/sha1"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"io/ioutil"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 
@@ -46,17 +42,12 @@ func (store *KopiaMetadata) Cleanup() {
 	}
 }
 
-func (store *KopiaMetadata) ConnectOrCreateRepoS3(bucketName, pathPrefix string) error {
-	path.Join(getHostPath(), pathPrefix)
-	args := []string{"s3", "--bucket", bucketName, "--prefix", pathPrefix}
-
-	return store.snap.ConnectOrCreateRepo(args...)
+func (store *KopiaMetadata) ConnectOrCreateS3(bucketName, pathPrefix string) error {
+	return store.snap.ConnectOrCreateS3(bucketName, pathPrefix)
 }
 
-func (store *KopiaMetadata) ConnectOrCreateRepoFilesystem(path string) error {
-	args := []string{"filesystem", "--path", path}
-
-	return store.snap.ConnectOrCreateRepo(args...)
+func (store *KopiaMetadata) ConnectOrCreateFilesystem(path string) error {
+	return store.snap.ConnectOrCreateFilesystem(path)
 }
 
 func (store *KopiaMetadata) LoadMetadata() error {
@@ -67,7 +58,7 @@ func (store *KopiaMetadata) LoadMetadata() error {
 
 	lastSnapID := parseForLatestSnapshotID(stdout)
 	if lastSnapID == "" {
-		return errors.New("Could not parse snapshot ID")
+		return nil //errors.New("Could not parse snapshot ID")
 	}
 
 	restorePath := filepath.Join(store.LocalMetadataDir, "kopia-metadata-latest")
@@ -122,7 +113,7 @@ func parseForLatestSnapshotID(output string) string {
 	var lastSnapID string
 	for _, l := range lines {
 		fields := strings.Fields(l)
-		if len(fields) > 0 {
+		if len(fields) > 5 {
 			if fields[5] == "type:snapshot" {
 				lastSnapID = fields[0]
 			}
@@ -130,16 +121,4 @@ func parseForLatestSnapshotID(output string) string {
 	}
 
 	return lastSnapID
-}
-
-func getHostPath() string {
-	hn, err := os.Hostname()
-	if err != nil {
-		return "kopia-test-1"
-	}
-
-	h := sha1.New()
-	fmt.Fprintf(h, "%v", hn)
-
-	return fmt.Sprintf("kopia-test-%x", h.Sum(nil)[0:8])
 }
