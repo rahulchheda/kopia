@@ -19,12 +19,12 @@ type KopiaMetadata struct {
 }
 
 func NewKopiaMetadata() (*KopiaMetadata, error) {
-	snap, err := snapif.NewKopiaSnapshotter()
+	localDir, err := ioutil.TempDir("", "kopia-local-metadata-")
 	if err != nil {
 		return nil, err
 	}
 
-	localDir, err := ioutil.TempDir("", "kopia-local-metadata-")
+	snap, err := snapif.NewKopiaSnapshotter()
 	if err != nil {
 		return nil, err
 	}
@@ -39,6 +39,10 @@ func NewKopiaMetadata() (*KopiaMetadata, error) {
 func (store *KopiaMetadata) Cleanup() {
 	if store.LocalMetadataDir != "" {
 		os.RemoveAll(store.LocalMetadataDir) //nolint:errcheck
+	}
+
+	if store.snap != nil {
+		store.snap.Cleanup()
 	}
 }
 

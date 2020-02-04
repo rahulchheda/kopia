@@ -29,7 +29,9 @@ func NewKopiaSnapshotter() (*KopiaSnapshotter, error) {
 }
 
 func (ks *KopiaSnapshotter) Cleanup() {
-	ks.Runner.Cleanup()
+	if ks.Runner != nil {
+		ks.Runner.Cleanup()
+	}
 }
 
 func (ks *KopiaSnapshotter) CreateRepo(args ...string) (err error) {

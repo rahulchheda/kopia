@@ -165,16 +165,37 @@ func TestBasic(t *testing.T) {
 	eng, err := engine.NewEngine()
 	testenv.AssertNoError(t, err)
 
+	defer eng.Cleanup()
+
 	err = eng.MetaStore.ConnectOrCreateFilesystem(fsMetadataRepoPath)
 	testenv.AssertNoError(t, err)
 
 	err = eng.MetaStore.LoadMetadata()
 	testenv.AssertNoError(t, err)
 
-	err = eng.Snapshotter.ConnectOrCreateFilesystem(dataRepoPath)
+	defer func() {
+		err := eng.MetaStore.FlushMetadata()
+		testenv.AssertNoError(t, err)
+	}()
+
+	err = eng.TestRepo.ConnectOrCreateFilesystem(dataRepoPath)
 	testenv.AssertNoError(t, err)
 
 	fileSize := int64(256 * 1024 * 1024)
 	numFiles := 10
 	eng.FileWriter.WriteFiles("", fileSize, numFiles, fio.Options{})
+
+	snapIDs := eng.Checker.GetSnapIDs()
+
+	ctx := context.TODO()
+	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.DataDir)
+	testenv.AssertNoError(t, err)
+
+	err = eng.Checker.RestoreSnapshot(ctx, snapID, os.Stdout)
+	testenv.AssertNoError(t, err)
+
+	for _, sID := range snapIDs {
+		err = eng.Checker.RestoreSnapshot(ctx, sID, os.Stdout)
+		testenv.AssertNoError(t, err)
+	}
 }

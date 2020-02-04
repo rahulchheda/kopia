@@ -21,6 +21,12 @@ import (
 	"github.com/kopia/kopia/tests/tools/fswalker/walker"
 )
 
+type CheckerIF interface {
+	GetSnapIDs() []string
+	TakeSnapshot(ctx context.Context, sourceDir string) (snapID string, err error)
+	RestoreSnapshot(ctx context.Context, snapID string, reportOut io.Writer) error
+}
+
 type Checker struct {
 	RestoreDir string
 	snap       snapif.Snapshotter
@@ -51,6 +57,10 @@ func (chk *Checker) Cleanup() {
 	if chk.RestoreDir != "" {
 		os.RemoveAll(chk.RestoreDir)
 	}
+}
+
+func (chk *Checker) GetSnapIDs() []string {
+	return chk.snapStore.GetKeys()
 }
 
 func (chk *Checker) TakeSnapshot(ctx context.Context, sourceDir string) (snapID string, err error) {
@@ -127,16 +137,16 @@ func (chk *Checker) RestoreSnapshot(ctx context.Context, snapID string, reportOu
 		return err
 	}
 
-	rptr := &fswalker.Reporter{}
-	rptr.PrintDiffSummary(reportOut, report)
-	rptr.PrintReportSummary(reportOut, report)
-	rptr.PrintRuleSummary(reportOut, report)
+	// rptr := &fswalker.Reporter{}
+	// rptr.PrintDiffSummary(reportOut, report)
+	// rptr.PrintReportSummary(reportOut, report)
+	// rptr.PrintRuleSummary(reportOut, report)
 
 	chk.filterReportDiffs(report)
 
-	rptr.PrintDiffSummary(reportOut, report)
-	rptr.PrintReportSummary(reportOut, report)
-	rptr.PrintRuleSummary(reportOut, report)
+	// rptr.PrintDiffSummary(reportOut, report)
+	// rptr.PrintReportSummary(reportOut, report)
+	// rptr.PrintRuleSummary(reportOut, report)
 
 	err = chk.validateReport(report)
 	if err != nil {
