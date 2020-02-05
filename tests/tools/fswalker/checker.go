@@ -25,6 +25,7 @@ type CheckerIF interface {
 	GetSnapIDs() []string
 	TakeSnapshot(ctx context.Context, sourceDir string) (snapID string, err error)
 	RestoreSnapshot(ctx context.Context, snapID string, reportOut io.Writer) error
+	RestoreSnapshotToPath(ctx context.Context, snapID, destPath string, reportOut io.Writer) error
 }
 
 type Checker struct {
@@ -93,7 +94,7 @@ func (chk *Checker) TakeSnapshot(ctx context.Context, sourceDir string) (snapID 
 	return snapID, nil
 }
 
-func (chk *Checker) RestoreSnapshot(ctx context.Context, snapID string, reportOut io.Writer) error {
+func (chk *Checker) RestoreSnapshotToPath(ctx context.Context, snapID, destPath string, reportOut io.Writer) error {
 	// Lookup walk data by snapshot ID
 	b, err := chk.snapStore.Load(snapID)
 	if err != nil {
@@ -109,25 +110,17 @@ func (chk *Checker) RestoreSnapshot(ctx context.Context, snapID string, reportOu
 		return err
 	}
 
-	// Make an independent directory for the restore
-	restoreSubDir, err := ioutil.TempDir(chk.RestoreDir, fmt.Sprintf("restore-snap-%v", snapID))
+	err = chk.snap.RestoreSnapshot(snapID, destPath)
 	if err != nil {
 		return err
 	}
 
-	defer os.RemoveAll(restoreSubDir) //nolint:errcheck
-
-	err = chk.snap.RestoreSnapshot(snapID, restoreSubDir)
+	afterWalk, err := walker.WalkPathHash(ctx, destPath)
 	if err != nil {
 		return err
 	}
 
-	afterWalk, err := walker.WalkPathHash(ctx, restoreSubDir)
-	if err != nil {
-		return err
-	}
-
-	err = rerootWalkDataPaths(afterWalk, restoreSubDir)
+	err = rerootWalkDataPaths(afterWalk, destPath)
 	if err != nil {
 		return err
 	}
@@ -164,6 +157,19 @@ func (chk *Checker) RestoreSnapshot(ctx context.Context, snapID string, reportOu
 	}
 
 	return nil
+}
+
+func (chk *Checker) RestoreSnapshot(ctx context.Context, snapID string, reportOut io.Writer) error {
+
+	// Make an independent directory for the restore
+	restoreSubDir, err := ioutil.TempDir(chk.RestoreDir, fmt.Sprintf("restore-snap-%v", snapID))
+	if err != nil {
+		return err
+	}
+
+	defer os.RemoveAll(restoreSubDir) //nolint:errcheck
+
+	return chk.RestoreSnapshotToPath(ctx, snapID, restoreSubDir, reportOut)
 }
 
 func (chk *Checker) filterReportDiffs(report *fswalker.Report) {

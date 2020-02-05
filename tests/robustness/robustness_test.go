@@ -95,8 +95,9 @@ func parseSnapID(t *testing.T, lines []string) string {
 
 var (
 	fsMetadataRepoPath = filepath.Join("/tmp", "metadata-repo")
-	s3MetadataRepoPath = filepath.Join("/some/path", "metadata-repo")
-	dataRepoPath       = filepath.Join("/tmp", "data-repo")
+	s3MetadataRepoPath = filepath.Join("some/path", "metadata-repo")
+	fsDataRepoPath     = filepath.Join("/tmp", "data-repo")
+	s3DataRepoPath     = filepath.Join("some/path", "data-repo")
 )
 
 func TestEngine(t *testing.T) {
@@ -120,7 +121,7 @@ func TestEngine(t *testing.T) {
 
 	// kopiaSnapper.ConnectOrCreateRepo("s3", "--bucket", "nick-kasten-io-test-1", "--prefix", "some/prefix/")
 
-	err = kopiaSnapper.ConnectOrCreateRepo("filesystem", "--path", dataRepoPath)
+	err = kopiaSnapper.ConnectOrCreateRepo("filesystem", "--path", fsDataRepoPath)
 	testenv.AssertNoError(t, err)
 
 	// snapStore := snapstore.NewSimple()
@@ -161,16 +162,14 @@ func TestEngine(t *testing.T) {
 	}
 }
 
-func TestBasic(t *testing.T) {
+func TestWriteFilesBasicFS(t *testing.T) {
 	eng, err := engine.NewEngine()
 	testenv.AssertNoError(t, err)
 
 	defer eng.Cleanup()
 
-	err = eng.MetaStore.ConnectOrCreateFilesystem(fsMetadataRepoPath)
-	testenv.AssertNoError(t, err)
-
-	err = eng.MetaStore.LoadMetadata()
+	ctx := context.TODO()
+	err = eng.InitFilesystem(ctx, fsDataRepoPath, fsMetadataRepoPath)
 	testenv.AssertNoError(t, err)
 
 	defer func() {
@@ -178,16 +177,12 @@ func TestBasic(t *testing.T) {
 		testenv.AssertNoError(t, err)
 	}()
 
-	err = eng.TestRepo.ConnectOrCreateFilesystem(dataRepoPath)
-	testenv.AssertNoError(t, err)
-
 	fileSize := int64(256 * 1024 * 1024)
 	numFiles := 10
 	eng.FileWriter.WriteFiles("", fileSize, numFiles, fio.Options{})
 
 	snapIDs := eng.Checker.GetSnapIDs()
 
-	ctx := context.TODO()
 	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.DataDir)
 	testenv.AssertNoError(t, err)
 
@@ -199,3 +194,79 @@ func TestBasic(t *testing.T) {
 		testenv.AssertNoError(t, err)
 	}
 }
+
+func TestWriteFilesBasicS3(t *testing.T) {
+	eng, err := engine.NewEngine()
+	testenv.AssertNoError(t, err)
+
+	defer eng.Cleanup()
+
+	ctx := context.TODO()
+	err = eng.InitS3(ctx, s3DataRepoPath, s3MetadataRepoPath)
+	testenv.AssertNoError(t, err)
+
+	defer func() {
+		err := eng.MetaStore.FlushMetadata()
+		testenv.AssertNoError(t, err)
+	}()
+
+	fileSize := int64(256 * 1024 * 1024)
+	numFiles := 10
+	eng.FileWriter.WriteFiles("", fileSize, numFiles, fio.Options{})
+
+	snapIDs := eng.Checker.GetSnapIDs()
+
+	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.DataDir)
+	testenv.AssertNoError(t, err)
+
+	err = eng.Checker.RestoreSnapshot(ctx, snapID, os.Stdout)
+	testenv.AssertNoError(t, err)
+
+	for _, sID := range snapIDs {
+		err = eng.Checker.RestoreSnapshot(ctx, sID, os.Stdout)
+		testenv.AssertNoError(t, err)
+	}
+}
+
+// func TestWriteFilesBasicS3Old(t *testing.T) {
+// 	eng, err := engine.NewEngine()
+// 	testenv.AssertNoError(t, err)
+
+// 	defer eng.Cleanup()
+
+// 	err = eng.MetaStore.ConnectOrCreateS3("nick-kasten-io-test-1", s3MetadataRepoPath)
+// 	testenv.AssertNoError(t, err)
+
+// 	err = eng.MetaStore.LoadMetadata()
+// 	testenv.AssertNoError(t, err)
+
+// 	defer func() {
+// 		err := eng.MetaStore.FlushMetadata()
+// 		testenv.AssertNoError(t, err)
+// 	}()
+
+// 	err = eng.TestRepo.ConnectOrCreateS3("nick-kasten-io-test-1", s3DataRepoPath)
+// 	testenv.AssertNoError(t, err)
+
+// 	ctx := context.TODO()
+// 	snapIDs := eng.Checker.GetSnapIDs()
+// 	if len(snapIDs) > 0 {
+// 		// Load a previous snapshot as a starting point for the data directory
+// 		eng.Checker.RestoreSnapshotToPath(ctx, snapIDs[rand.Intn(len(snapIDs))], eng.FileWriter.DataDir, os.Stdout)
+// 	}
+
+// 	fileSize := int64(256 * 1024 * 1024)
+// 	numFiles := 10
+// 	eng.FileWriter.WriteFiles("", fileSize, numFiles, fio.Options{})
+
+// 	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.DataDir)
+// 	testenv.AssertNoError(t, err)
+
+// 	err = eng.Checker.RestoreSnapshot(ctx, snapID, os.Stdout)
+// 	testenv.AssertNoError(t, err)
+
+// 	for _, sID := range snapIDs {
+// 		err = eng.Checker.RestoreSnapshot(ctx, sID, os.Stdout)
+// 		testenv.AssertNoError(t, err)
+// 	}
+// }
