@@ -20,10 +20,13 @@ import (
 
 var _ checker.Comparer = &WalkChecker{}
 
+// WalkChecker is a checker.Comparer that utilizes the fswalker
+// libraries to perform the data consistency check.
 type WalkChecker struct {
 	GlobalFilterMatchers []string
 }
 
+// NewChecker instantiates a new WalkChecker and returns its pointer
 func NewChecker() *WalkChecker {
 	return &WalkChecker{
 		GlobalFilterMatchers: []string{
@@ -34,6 +37,8 @@ func NewChecker() *WalkChecker {
 	}
 }
 
+// Gather meets the checker.Comparer interface. It performs a fswalker Walk
+// and returns the resulting Walk as a protobuf Marshalled buffer.
 func (chk *WalkChecker) Gather(ctx context.Context, path string) ([]byte, error) {
 	walkData, err := walker.WalkPathHash(ctx, path)
 	if err != nil {
@@ -54,6 +59,11 @@ func (chk *WalkChecker) Gather(ctx context.Context, path string) ([]byte, error)
 	return b, nil
 }
 
+// Compare meets the checker.Comparer interface. It performs a fswalker Walk
+// on the provided file path, unmarshals the comparison data as a fswalker Walk,
+// and generates a fswalker report comparing the two Walks. If there are any differences
+// an error is returned, and the full report will be written to the provided writer
+// as JSON.
 func (chk *WalkChecker) Compare(ctx context.Context, path string, data []byte, reportOut io.Writer) error {
 	beforeWalk := &fspb.Walk{}
 	err := proto.Unmarshal(data, beforeWalk)
