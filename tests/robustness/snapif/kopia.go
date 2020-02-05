@@ -12,11 +12,14 @@ import (
 	kopiarun "github.com/kopia/kopia/tests/tools/kopia_runner"
 )
 
+var _ Snapshotter = &KopiaSnapshotter{}
+
+// KopiaSnapshotter implements the Snapshotter interface using Kopia commands
 type KopiaSnapshotter struct {
-	RepoDir string
-	Runner  *kopiarun.Runner
+	Runner *kopiarun.Runner
 }
 
+// NewKopiaSnapshotter instantiates a new KopiaSnapshotter and returns its pointer
 func NewKopiaSnapshotter() (*KopiaSnapshotter, error) {
 	runner, err := kopiarun.NewRunner()
 	if err != nil {
@@ -28,24 +31,29 @@ func NewKopiaSnapshotter() (*KopiaSnapshotter, error) {
 	}, nil
 }
 
+// Cleanup cleans up the kopia Runner
 func (ks *KopiaSnapshotter) Cleanup() {
 	if ks.Runner != nil {
 		ks.Runner.Cleanup()
 	}
 }
 
+// CreateRepo creates a kopia repository with the provided arguments
 func (ks *KopiaSnapshotter) CreateRepo(args ...string) (err error) {
 	args = append([]string{"repo", "create"}, args...)
 	_, _, err = ks.Runner.Run(args...)
 	return err
 }
 
+// ConnectRepo connects to the repository described by the provided arguments
 func (ks *KopiaSnapshotter) ConnectRepo(args ...string) (err error) {
 	args = append([]string{"repo", "connect"}, args...)
 	_, _, err = ks.Runner.Run(args...)
 	return err
 }
 
+// ConnectOrCreateRepo attempts to connect to a repo described by the provided
+// arguments, and attempts to create it if connection was unsuccessful.
 func (ks *KopiaSnapshotter) ConnectOrCreateRepo(args ...string) error {
 	err := ks.ConnectRepo(args...)
 	if err == nil {
@@ -55,11 +63,47 @@ func (ks *KopiaSnapshotter) ConnectOrCreateRepo(args ...string) error {
 	return ks.CreateRepo(args...)
 }
 
+// ConnectOrCreateS3 attempts to connect to a kopia repo in the s3 bucket identified
+// by the provided bucketName, at the provided path prefix. It will attempt to
+// create one there if connection was unsuccessful.
 func (ks *KopiaSnapshotter) ConnectOrCreateS3(bucketName, pathPrefix string) error {
 	path.Join(getHostPath(), pathPrefix)
 	args := []string{"s3", "--bucket", bucketName, "--prefix", pathPrefix}
 
 	return ks.ConnectOrCreateRepo(args...)
+}
+
+// ConnectOrCreateFilesystem attempts to connect to a kopia repo in the local
+// filesystem at the path provided. It will attempt to create one there if
+// connection was unsuccessful.
+func (ks *KopiaSnapshotter) ConnectOrCreateFilesystem(path string) error {
+	args := []string{"filesystem", "--path", path}
+
+	return ks.ConnectOrCreateRepo(args...)
+}
+
+// TakeSnapshot implements the Snapshotter interface, issues a kopia snapshot
+// create command on the provided source path.
+func (ks *KopiaSnapshotter) TakeSnapshot(source string) (snapID string, err error) {
+	_, errOut, err := ks.Runner.Run("snapshot", "create", source)
+	if err != nil {
+		return "", err
+	}
+	return parseSnapID(strings.Split(errOut, "\n"))
+}
+
+// RestoreSnapshot implements the Snapshotter interface, issues a kopia snapshot
+// restore command of the provided snapshot ID to the provided restore destination
+func (ks *KopiaSnapshotter) RestoreSnapshot(snapID string, restoreDir string) (err error) {
+	_, _, err = ks.Runner.Run("snapshot", "restore", snapID, restoreDir)
+	return err
+}
+
+// DeleteSnapshot implements the Snapshotter interface, issues a kopia snapshot
+// delete of the provided snapshot ID
+func (ks *KopiaSnapshotter) DeleteSnapshot(snapID string) (err error) {
+	_, _, err = ks.Runner.Run("snapshot", "delete", snapID)
+	return err
 }
 
 func getHostPath() string {
@@ -72,30 +116,6 @@ func getHostPath() string {
 	fmt.Fprintf(h, "%v", hn)
 
 	return fmt.Sprintf("kopia-test-%x", h.Sum(nil)[0:8])
-}
-
-func (ks *KopiaSnapshotter) ConnectOrCreateFilesystem(path string) error {
-	args := []string{"filesystem", "--path", path}
-
-	return ks.ConnectOrCreateRepo(args...)
-}
-
-func (ks *KopiaSnapshotter) TakeSnapshot(sourceDir string) (snapID string, err error) {
-	_, errOut, err := ks.Runner.Run("snapshot", "create", sourceDir)
-	if err != nil {
-		return "", err
-	}
-	return parseSnapID(strings.Split(errOut, "\n"))
-}
-
-func (ks *KopiaSnapshotter) RestoreSnapshot(snapID string, restoreDir string) (err error) {
-	_, _, err = ks.Runner.Run("snapshot", "restore", snapID, restoreDir)
-	return err
-}
-
-func (ks *KopiaSnapshotter) DeleteSnapshot(snapID string) (err error) {
-	_, _, err = ks.Runner.Run("snapshot", "delete", snapID)
-	return err
 }
 
 func parseSnapID(lines []string) (string, error) {
