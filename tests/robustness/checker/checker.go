@@ -88,12 +88,7 @@ func (chk *Checker) TakeSnapshot(ctx context.Context, sourceDir string) (snapID 
 		ValidationData: b,
 	}
 
-	ssMetaRaw, err := json.Marshal(ssMeta)
-	if err != nil {
-		return snapID, err
-	}
-
-	err = chk.snapStore.Store(snapID, ssMetaRaw)
+	err = chk.saveSnapshotMetadata(ssMeta)
 	if err != nil {
 		return snapID, err
 	}
@@ -121,17 +116,7 @@ func (chk *Checker) RestoreSnapshot(ctx context.Context, snapID string, reportOu
 // using the Checker's Snapshotter, and performs a data consistency check on the
 // resulting tree using the saved snapshot data.
 func (chk *Checker) RestoreSnapshotToPath(ctx context.Context, snapID, destPath string, reportOut io.Writer) error {
-	// Lookup walk data by snapshot ID
-	b, err := chk.snapStore.Load(snapID)
-	if err != nil {
-		return err
-	}
-	if b == nil {
-		return fmt.Errorf("could not find snapID %v", snapID)
-	}
-
-	ssMeta := &SnapshotMetadata{}
-	err = json.Unmarshal(b, ssMeta)
+	ssMeta, err := chk.loadSnapshotMetadata(snapID)
 	if err != nil {
 		return err
 	}
@@ -157,5 +142,50 @@ func (chk *Checker) DeleteSnapshot(ctx context.Context, snapID string) error {
 		return err
 	}
 
+	ssMeta, err := chk.loadSnapshotMetadata(snapID)
+	if err != nil {
+		return err
+	}
+
+	ssMeta.DeletionTime = time.Now()
+
+	err = chk.saveSnapshotMetadata(ssMeta)
+	if err != nil {
+		return err
+	}
+
 	return nil
+}
+
+func (chk *Checker) saveSnapshotMetadata(ssMeta *SnapshotMetadata) error {
+	ssMetaRaw, err := json.Marshal(ssMeta)
+	if err != nil {
+		return err
+	}
+
+	err = chk.snapStore.Store(ssMeta.SnapID, ssMetaRaw)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (chk *Checker) loadSnapshotMetadata(snapID string) (*SnapshotMetadata, error) {
+	// Lookup metadata by snapshot ID
+	b, err := chk.snapStore.Load(snapID)
+	if err != nil {
+		return nil, err
+	}
+	if b == nil {
+		return nil, fmt.Errorf("could not find snapID %v", snapID)
+	}
+
+	ssMeta := &SnapshotMetadata{}
+	err = json.Unmarshal(b, ssMeta)
+	if err != nil {
+		return nil, err
+	}
+
+	return ssMeta, nil
 }
