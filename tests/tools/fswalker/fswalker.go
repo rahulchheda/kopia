@@ -18,7 +18,7 @@ import (
 	"github.com/kopia/kopia/tests/tools/fswalker/walker"
 )
 
-var _ checker.CheckerIF = &WalkChecker{}
+var _ checker.Comparer = &WalkChecker{}
 
 type WalkChecker struct {
 	GlobalFilterMatchers []string

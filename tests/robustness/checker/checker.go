@@ -13,19 +13,25 @@ import (
 	"github.com/kopia/kopia/tests/robustness/snapstore"
 )
 
-type CheckerIF interface {
+// Comparer describes an interface that gathers state data on a provided
+// path, and compares that data to the state on another path.
+type Comparer interface {
 	Gather(ctx context.Context, path string) ([]byte, error)
 	Compare(ctx context.Context, path string, data []byte, reportOut io.Writer) error
 }
 
+// Checker is an object that can take snapshots and restore them, performing
+// a validation for data consistency
 type Checker struct {
 	RestoreDir string
 	snap       snapif.Snapshotter
 	snapStore  snapstore.Storer
-	validator  CheckerIF
+	validator  Comparer
 }
 
-func NewChecker(snap snapif.Snapshotter, snapStore snapstore.Storer, validator CheckerIF) (*Checker, error) {
+// NewChecker instantiates a new Checker, returning its pointer. A temporary
+// directory is created to mount restored data
+func NewChecker(snap snapif.Snapshotter, snapStore snapstore.Storer, validator Comparer) (*Checker, error) {
 	restoreDir, err := ioutil.TempDir("", "restore-data-")
 	if err != nil {
 		return nil, err
@@ -39,16 +45,19 @@ func NewChecker(snap snapif.Snapshotter, snapStore snapstore.Storer, validator C
 	}, nil
 }
 
+// Cleanup cleans up the Checker's temporary restore data directory
 func (chk *Checker) Cleanup() {
 	if chk.RestoreDir != "" {
 		os.RemoveAll(chk.RestoreDir)
 	}
 }
 
+// GetSnapIDs gets the list of snapshot IDs being tracked by the checker's snapshot store
 func (chk *Checker) GetSnapIDs() []string {
 	return chk.snapStore.GetKeys()
 }
 
+// SnapshotMetadata holds metadata associated with a given snapshot
 type SnapshotMetadata struct {
 	SnapID         string
 	SnapStartTime  time.Time
@@ -57,6 +66,8 @@ type SnapshotMetadata struct {
 	ValidationData []byte
 }
 
+// TakeSnapshot gathers state information on the requested snapshot path, then
+// performs the snapshot action defined by the Checker's Snapshotter
 func (chk *Checker) TakeSnapshot(ctx context.Context, sourceDir string) (snapID string, err error) {
 	b, err := chk.validator.Gather(ctx, sourceDir)
 	if err != nil {
@@ -90,6 +101,9 @@ func (chk *Checker) TakeSnapshot(ctx context.Context, sourceDir string) (snapID 
 	return snapID, nil
 }
 
+// RestoreSnapshot restores a snapshot to the Checker's temporary restore directory
+// using the Checker's Snapshotter, and performs a data consistency check on the
+// resulting tree using the saved snapshot data.
 func (chk *Checker) RestoreSnapshot(ctx context.Context, snapID string, reportOut io.Writer) error {
 
 	// Make an independent directory for the restore
@@ -103,6 +117,9 @@ func (chk *Checker) RestoreSnapshot(ctx context.Context, snapID string, reportOu
 	return chk.RestoreSnapshotToPath(ctx, snapID, restoreSubDir, reportOut)
 }
 
+// RestoreSnapshotToPath restores a snapshot to the requested path
+// using the Checker's Snapshotter, and performs a data consistency check on the
+// resulting tree using the saved snapshot data.
 func (chk *Checker) RestoreSnapshotToPath(ctx context.Context, snapID, destPath string, reportOut io.Writer) error {
 	// Lookup walk data by snapshot ID
 	b, err := chk.snapStore.Load(snapID)
@@ -132,6 +149,8 @@ func (chk *Checker) RestoreSnapshotToPath(ctx context.Context, snapID, destPath 
 	return nil
 }
 
+// DeleteSnapshot performs the Snapshotter's DeleteSnapshot action, and
+// marks the snapshot with the given snapshot ID as deleted
 func (chk *Checker) DeleteSnapshot(ctx context.Context, snapID string) error {
 	err := chk.snap.DeleteSnapshot(snapID)
 	if err != nil {
