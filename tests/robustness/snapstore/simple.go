@@ -52,6 +52,8 @@ func (store *Simple) Delete(key string) {
 // GetKeys implements the Storer interface GetKeys method
 func (store *Simple) GetKeys() []string {
 	ret := make([]string, 0, len(store.s))
+	store.l.Lock()
+	defer store.l.Unlock()
 	for k := range store.s {
 		ret = append(ret, k)
 	}

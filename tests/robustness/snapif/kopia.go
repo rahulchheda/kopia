@@ -102,8 +102,18 @@ func (ks *KopiaSnapshotter) RestoreSnapshot(snapID string, restoreDir string) (e
 // DeleteSnapshot implements the Snapshotter interface, issues a kopia snapshot
 // delete of the provided snapshot ID
 func (ks *KopiaSnapshotter) DeleteSnapshot(snapID string) (err error) {
-	_, _, err = ks.Runner.Run("snapshot", "delete", snapID)
+	_, _, err = ks.Runner.Run("snapshot", "delete", snapID, "--unsafe-ignore-source")
 	return err
+}
+
+// ListSnapshots implements the Snapshotter interface, issues a kopia snapshot
+// list and parses the snapshot IDs
+func (ks *KopiaSnapshotter) ListSnapshots() ([]string, error) {
+	stdout, _, err := ks.Runner.Run("snapshot", "list")
+	if err != nil {
+		return nil, err
+	}
+	return parseListForSnapshotIDs(stdout), nil
 }
 
 func getHostPath() string {
@@ -129,4 +139,20 @@ func parseSnapID(lines []string) (string, error) {
 	}
 
 	return "", errors.New("Snap ID could not be parsed")
+}
+
+func parseListForSnapshotIDs(output string) []string {
+	lines := strings.Split(output, "\n")
+
+	var ret []string
+	for _, l := range lines {
+		fields := strings.Fields(l)
+		if len(fields) > 5 {
+			if fields[5] == "type:snapshot" {
+				ret = append(ret, fields[0])
+			}
+		}
+	}
+
+	return ret
 }

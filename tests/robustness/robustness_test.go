@@ -239,4 +239,21 @@ func TestDeleteSnapshotS3(t *testing.T) {
 	err = eng.InitS3(ctx, s3DataRepoPath, s3MetadataRepoPath)
 	testenv.AssertNoError(t, err)
 
+	fileSize := int64(256 * 1024 * 1024)
+	numFiles := 10
+	eng.FileWriter.WriteFiles("", fileSize, numFiles, fio.Options{})
+
+	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.DataDir)
+	testenv.AssertNoError(t, err)
+
+	err = eng.Checker.RestoreSnapshot(ctx, snapID, os.Stdout)
+	testenv.AssertNoError(t, err)
+
+	err = eng.Checker.DeleteSnapshot(ctx, snapID)
+	testenv.AssertNoError(t, err)
+
+	err = eng.Checker.RestoreSnapshot(ctx, snapID, os.Stdout)
+	if err == nil {
+		t.Fatalf("Expected an error when trying to restore a deleted snapshot")
+	}
 }

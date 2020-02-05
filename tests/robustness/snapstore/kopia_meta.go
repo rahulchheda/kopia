@@ -56,15 +56,16 @@ func (store *KopiaMetadata) ConnectOrCreateFilesystem(path string) error {
 }
 
 func (store *KopiaMetadata) LoadMetadata() error {
-	stdout, _, err := store.snap.Runner.Run("manifest", "ls")
+	snapIDs, err := store.snap.ListSnapshots()
 	if err != nil {
 		return err
 	}
 
-	lastSnapID := parseForLatestSnapshotID(stdout)
-	if lastSnapID == "" {
-		return nil //errors.New("Could not parse snapshot ID")
+	if len(snapIDs) == 0 {
+		return nil // No snapshot IDs fouund in repository
 	}
+
+	lastSnapID := snapIDs[len(snapIDs)-1]
 
 	restorePath := filepath.Join(store.LocalMetadataDir, "kopia-metadata-latest")
 	err = store.snap.RestoreSnapshot(lastSnapID, restorePath)

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"os"
 	"time"
 
@@ -64,6 +65,83 @@ type SnapshotMetadata struct {
 	SnapEndTime    time.Time
 	DeletionTime   time.Time
 	ValidationData []byte
+}
+
+// GetSnapshotMetadata gets the metadata associated with the given snapshot ID
+func (chk *Checker) GetSnapshotMetadata(snapID string) (*SnapshotMetadata, error) {
+	return chk.loadSnapshotMetadata(snapID)
+}
+
+// GetLiveSnapIDs gets the list of snapshot IDs being tracked by the checker's snapshot store
+// that do not have a deletion time associated with them
+func (chk *Checker) GetLiveSnapIDs() []string {
+	snapIDs := chk.GetSnapIDs()
+	var ret []string
+
+	for _, snapID := range snapIDs {
+		deleted, err := chk.IsSnapshotIDDeleted(snapID)
+		if err == nil && !deleted {
+			ret = append(ret, snapID)
+		}
+	}
+
+	return ret
+}
+
+// IsSnapshotIDDeleted reports whether the metadata associated with the provided snapshot ID
+// has it marked as deleted
+func (chk *Checker) IsSnapshotIDDeleted(snapID string) (bool, error) {
+	md, err := chk.loadSnapshotMetadata(snapID)
+	if err != nil {
+		return false, err
+	}
+
+	return !md.DeletionTime.IsZero(), nil
+}
+
+// VerifySnapshotMetadata compares the list of live snapshot IDs present in
+// the Checker's metadata against a list of live snapshot IDs in the connected
+// repository
+func (chk *Checker) VerifySnapshotMetadata() error {
+	// Get live snapshot metadata keys
+	liveSnapsInMetadata := chk.GetLiveSnapIDs()
+
+	// Get live snapshots listed in the repo itself
+	liveSnapsInRepo, err := chk.snap.ListSnapshots()
+	if err != nil {
+		return err
+	}
+
+	metadataMap := make(map[string]struct{})
+	for _, meta := range liveSnapsInMetadata {
+		metadataMap[meta] = struct{}{}
+	}
+
+	liveMap := make(map[string]struct{})
+	for _, live := range liveSnapsInRepo {
+		liveMap[live] = struct{}{}
+	}
+
+	var errCount int
+	for _, metaSnapID := range liveSnapsInMetadata {
+		if _, ok := liveMap[metaSnapID]; !ok {
+			log.Printf("Metadata present for snapID %v but not found in known metadata", metaSnapID)
+			errCount++
+		}
+	}
+
+	for _, liveSnapID := range liveSnapsInRepo {
+		if _, ok := metadataMap[liveSnapID]; !ok {
+			log.Printf("Live snapshot present for snapID %v but not found in known metadata", liveSnapID)
+			errCount++
+		}
+	}
+
+	if errCount > 0 {
+		return fmt.Errorf("Hit %v errors verifying snapshot metadata", errCount)
+	}
+
+	return nil
 }
 
 // TakeSnapshot gathers state information on the requested snapshot path, then

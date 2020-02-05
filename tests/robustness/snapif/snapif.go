@@ -8,6 +8,7 @@ type Snapshotter interface {
 	TakeSnapshot(sourceDir string) (snapID string, err error)
 	RestoreSnapshot(snapID string, restoreDir string) error
 	DeleteSnapshot(snapID string) error
+	ListSnapshots() ([]string, error)
 }
 
 // RepoManager is an interface that describes connecting to

@@ -26,8 +26,8 @@ type WalkChecker struct {
 	GlobalFilterMatchers []string
 }
 
-// NewChecker instantiates a new WalkChecker and returns its pointer
-func NewChecker() *WalkChecker {
+// NewWalkChecker instantiates a new WalkChecker and returns its pointer
+func NewWalkChecker() *WalkChecker {
 	return &WalkChecker{
 		GlobalFilterMatchers: []string{
 			"ctime:",

@@ -61,7 +61,7 @@ func NewEngine() (*Engine, error) {
 
 	e.MetaStore = snapStore
 
-	checker, err := checker.NewChecker(kopiaSnapper, snapStore, &fswalker.WalkChecker{})
+	checker, err := checker.NewChecker(kopiaSnapper, snapStore, fswalker.NewWalkChecker())
 	e.cleanup = append(e.cleanup, checker.Cleanup)
 	if err != nil {
 		e.Cleanup()
@@ -100,7 +100,12 @@ func (e *Engine) InitS3(ctx context.Context, testRepoPath, metaRepoPath string) 
 		return err
 	}
 
-	snapIDs := e.Checker.GetSnapIDs()
+	err = e.Checker.VerifySnapshotMetadata()
+	if err != nil {
+		return err
+	}
+
+	snapIDs := e.Checker.GetLiveSnapIDs()
 	if len(snapIDs) > 0 {
 		randSnapID := snapIDs[rand.Intn(len(snapIDs))]
 		err = e.Checker.RestoreSnapshotToPath(ctx, randSnapID, e.FileWriter.DataDir, os.Stdout)
@@ -124,6 +129,11 @@ func (e *Engine) InitFilesystem(ctx context.Context, testRepoPath, metaRepoPath 
 	}
 
 	err = e.TestRepo.ConnectOrCreateFilesystem(testRepoPath)
+	if err != nil {
+		return err
+	}
+
+	err = e.Checker.VerifySnapshotMetadata()
 	if err != nil {
 		return err
 	}
