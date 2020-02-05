@@ -14,11 +14,14 @@ import (
 )
 
 const (
+	// S3BucketNameEnvKey is the environment variable required to connect to a repo on S3
 	S3BucketNameEnvKey = "S3_BUCKET_NAME"
 )
 
+// ErrS3BucketNameEnvUnset is the error returned when the S3BucketNameEnvKey environment variable is not set
 var ErrS3BucketNameEnvUnset = fmt.Errorf("Environment variable required: %v", S3BucketNameEnvKey)
 
+// Engine is the outer level testing framework for robustness testing
 type Engine struct {
 	FileWriter *fio.Runner
 	TestRepo   snapif.Snapshotter
@@ -27,6 +30,12 @@ type Engine struct {
 	cleanup    []func()
 }
 
+// NewEngine instantiates a new Engine and returns its pointer. It is
+// currently created with:
+// - FIO file writer
+// - Kopia test repo snapshotter
+// - Kopia metadata storage repo
+// - FSWalker data integrity checker
 func NewEngine() (*Engine, error) {
 	e := new(Engine)
 
@@ -73,12 +82,17 @@ func NewEngine() (*Engine, error) {
 	return e, nil
 }
 
+// Cleanup cleans up after each component of the test engine
 func (e *Engine) Cleanup() {
 	for _, f := range e.cleanup {
 		f()
 	}
 }
 
+// InitS3 attempts to connect to a test repo and metadata repo on S3. If connection
+// is successful, the engine is populated with the metadata associated with the
+// snapshot in that repo. A new repo will be created if one does not already
+// exist.
 func (e *Engine) InitS3(ctx context.Context, testRepoPath, metaRepoPath string) error {
 	bucketName := os.Getenv(S3BucketNameEnvKey)
 	if bucketName == "" {
@@ -117,6 +131,10 @@ func (e *Engine) InitS3(ctx context.Context, testRepoPath, metaRepoPath string) 
 	return nil
 }
 
+// InitFilesystem attempts to connect to a test repo and metadata repo on the local
+// filesystem. If connection is successful, the engine is populated with the
+// metadata associated with the snapshot in that repo. A new repo will be created if
+// one does not already exist.
 func (e *Engine) InitFilesystem(ctx context.Context, testRepoPath, metaRepoPath string) error {
 	err := e.MetaStore.ConnectOrCreateFilesystem(metaRepoPath)
 	if err != nil {
