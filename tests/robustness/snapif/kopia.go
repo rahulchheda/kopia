@@ -93,6 +93,11 @@ func (ks *KopiaSnapshotter) RestoreSnapshot(snapID string, restoreDir string) (e
 	return err
 }
 
+func (ks *KopiaSnapshotter) DeleteSnapshot(snapID string) (err error) {
+	_, _, err = ks.Runner.Run("snapshot", "delete", snapID)
+	return err
+}
+
 func parseSnapID(lines []string) (string, error) {
 	pattern := regexp.MustCompile(`uploaded snapshot ([\S]+)`)
 

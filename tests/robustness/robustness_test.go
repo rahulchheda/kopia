@@ -12,6 +12,7 @@ import (
 	"github.com/google/fswalker"
 	fspb "github.com/google/fswalker/proto/fswalker"
 
+	"github.com/kopia/kopia/tests/robustness/checker"
 	"github.com/kopia/kopia/tests/robustness/snapif"
 	"github.com/kopia/kopia/tests/robustness/snapstore"
 	engine "github.com/kopia/kopia/tests/robustness/test_engine"
@@ -143,7 +144,7 @@ func TestEngine(t *testing.T) {
 		fmt.Println("LOAD METADATA ERROR:", err.Error())
 	}
 
-	chkr, err := fswwrap.NewChecker(kopiaSnapper, snapStore)
+	chkr, err := checker.NewChecker(kopiaSnapper, snapStore, &fswwrap.WalkChecker{})
 	defer chkr.Cleanup()
 	testenv.AssertNoError(t, err)
 
@@ -228,45 +229,14 @@ func TestWriteFilesBasicS3(t *testing.T) {
 	}
 }
 
-// func TestWriteFilesBasicS3Old(t *testing.T) {
-// 	eng, err := engine.NewEngine()
-// 	testenv.AssertNoError(t, err)
+func TestDeleteSnapshotS3(t *testing.T) {
+	eng, err := engine.NewEngine()
+	testenv.AssertNoError(t, err)
 
-// 	defer eng.Cleanup()
+	defer eng.Cleanup()
 
-// 	err = eng.MetaStore.ConnectOrCreateS3("nick-kasten-io-test-1", s3MetadataRepoPath)
-// 	testenv.AssertNoError(t, err)
+	ctx := context.TODO()
+	err = eng.InitS3(ctx, s3DataRepoPath, s3MetadataRepoPath)
+	testenv.AssertNoError(t, err)
 
-// 	err = eng.MetaStore.LoadMetadata()
-// 	testenv.AssertNoError(t, err)
-
-// 	defer func() {
-// 		err := eng.MetaStore.FlushMetadata()
-// 		testenv.AssertNoError(t, err)
-// 	}()
-
-// 	err = eng.TestRepo.ConnectOrCreateS3("nick-kasten-io-test-1", s3DataRepoPath)
-// 	testenv.AssertNoError(t, err)
-
-// 	ctx := context.TODO()
-// 	snapIDs := eng.Checker.GetSnapIDs()
-// 	if len(snapIDs) > 0 {
-// 		// Load a previous snapshot as a starting point for the data directory
-// 		eng.Checker.RestoreSnapshotToPath(ctx, snapIDs[rand.Intn(len(snapIDs))], eng.FileWriter.DataDir, os.Stdout)
-// 	}
-
-// 	fileSize := int64(256 * 1024 * 1024)
-// 	numFiles := 10
-// 	eng.FileWriter.WriteFiles("", fileSize, numFiles, fio.Options{})
-
-// 	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.DataDir)
-// 	testenv.AssertNoError(t, err)
-
-// 	err = eng.Checker.RestoreSnapshot(ctx, snapID, os.Stdout)
-// 	testenv.AssertNoError(t, err)
-
-// 	for _, sID := range snapIDs {
-// 		err = eng.Checker.RestoreSnapshot(ctx, sID, os.Stdout)
-// 		testenv.AssertNoError(t, err)
-// 	}
-// }
+}

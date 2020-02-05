@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -15,112 +13,60 @@ import (
 	"github.com/google/fswalker"
 	fspb "github.com/google/fswalker/proto/fswalker"
 
-	"github.com/kopia/kopia/tests/robustness/snapif"
-	"github.com/kopia/kopia/tests/robustness/snapstore"
+	"github.com/kopia/kopia/tests/robustness/checker"
 	"github.com/kopia/kopia/tests/tools/fswalker/reporter"
 	"github.com/kopia/kopia/tests/tools/fswalker/walker"
 )
 
-type CheckerIF interface {
-	GetSnapIDs() []string
-	TakeSnapshot(ctx context.Context, sourceDir string) (snapID string, err error)
-	RestoreSnapshot(ctx context.Context, snapID string, reportOut io.Writer) error
-	RestoreSnapshotToPath(ctx context.Context, snapID, destPath string, reportOut io.Writer) error
-}
+var _ checker.CheckerIF = &WalkChecker{}
 
-type Checker struct {
-	RestoreDir string
-	snap       snapif.Snapshotter
-
+type WalkChecker struct {
 	GlobalFilterMatchers []string
-	snapStore            snapstore.Storer
 }
 
-func NewChecker(snap snapif.Snapshotter, snapStore snapstore.Storer) (*Checker, error) {
-	restoreDir, err := ioutil.TempDir("", "restore-data-")
-	if err != nil {
-		return nil, err
-	}
-
-	return &Checker{
-		RestoreDir: restoreDir,
-		snap:       snap,
+func NewChecker() *WalkChecker {
+	return &WalkChecker{
 		GlobalFilterMatchers: []string{
 			"ctime:",
 			"atime:",
 			"mtime:",
 		},
-		snapStore: snapStore,
-	}, nil
-}
-
-func (chk *Checker) Cleanup() {
-	if chk.RestoreDir != "" {
-		os.RemoveAll(chk.RestoreDir)
 	}
 }
 
-func (chk *Checker) GetSnapIDs() []string {
-	return chk.snapStore.GetKeys()
-}
-
-func (chk *Checker) TakeSnapshot(ctx context.Context, sourceDir string) (snapID string, err error) {
-	walkData, err := walker.WalkPathHash(ctx, sourceDir)
+func (chk *WalkChecker) Gather(ctx context.Context, path string) ([]byte, error) {
+	walkData, err := walker.WalkPathHash(ctx, path)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	err = rerootWalkDataPaths(walkData, sourceDir)
+	err = rerootWalkDataPaths(walkData, path)
 	if err != nil {
-		return "", err
-	}
-
-	snapID, err = chk.snap.TakeSnapshot(sourceDir)
-	if err != nil {
-		return snapID, err
+		return nil, err
 	}
 
 	// Store the walk data along with the snapshot ID
 	b, err := proto.Marshal(walkData)
 	if err != nil {
-		return snapID, err
+		return nil, err
 	}
 
-	err = chk.snapStore.Store(snapID, b)
-	if err != nil {
-		return snapID, err
-	}
-
-	return snapID, nil
+	return b, nil
 }
 
-func (chk *Checker) RestoreSnapshotToPath(ctx context.Context, snapID, destPath string, reportOut io.Writer) error {
-	// Lookup walk data by snapshot ID
-	b, err := chk.snapStore.Load(snapID)
-	if err != nil {
-		return err
-	}
-	if b == nil {
-		return fmt.Errorf("could not find snapID %v", snapID)
-	}
-
+func (chk *WalkChecker) Compare(ctx context.Context, path string, data []byte, reportOut io.Writer) error {
 	beforeWalk := &fspb.Walk{}
-	err = proto.Unmarshal(b, beforeWalk)
+	err := proto.Unmarshal(data, beforeWalk)
 	if err != nil {
 		return err
 	}
 
-	err = chk.snap.RestoreSnapshot(snapID, destPath)
+	afterWalk, err := walker.WalkPathHash(ctx, path)
 	if err != nil {
 		return err
 	}
 
-	afterWalk, err := walker.WalkPathHash(ctx, destPath)
-	if err != nil {
-		return err
-	}
-
-	err = rerootWalkDataPaths(afterWalk, destPath)
+	err = rerootWalkDataPaths(afterWalk, path)
 	if err != nil {
 		return err
 	}
@@ -159,20 +105,7 @@ func (chk *Checker) RestoreSnapshotToPath(ctx context.Context, snapID, destPath 
 	return nil
 }
 
-func (chk *Checker) RestoreSnapshot(ctx context.Context, snapID string, reportOut io.Writer) error {
-
-	// Make an independent directory for the restore
-	restoreSubDir, err := ioutil.TempDir(chk.RestoreDir, fmt.Sprintf("restore-snap-%v", snapID))
-	if err != nil {
-		return err
-	}
-
-	defer os.RemoveAll(restoreSubDir) //nolint:errcheck
-
-	return chk.RestoreSnapshotToPath(ctx, snapID, restoreSubDir, reportOut)
-}
-
-func (chk *Checker) filterReportDiffs(report *fswalker.Report) {
+func (chk *WalkChecker) filterReportDiffs(report *fswalker.Report) {
 	var newModList []fswalker.ActionData
 
 	for _, mod := range report.Modified {
@@ -191,7 +124,7 @@ func (chk *Checker) filterReportDiffs(report *fswalker.Report) {
 
 			// Filter the rename of the root directory
 			if isRootDirectoryRename(diffItem, mod) {
-				fmt.Println("FILTERING", diffItem, "due to root directory rename")
+				fmt.Println("Filtering", diffItem, "due to root directory rename")
 				continue DiffItemLoop
 			}
 
@@ -199,7 +132,7 @@ func (chk *Checker) filterReportDiffs(report *fswalker.Report) {
 		}
 
 		if len(newDiffItemList) > 0 {
-			fmt.Println("NOT FILTERING", newDiffItemList)
+			fmt.Println("Not Filtering", newDiffItemList)
 			mod.Diff = strings.Join(newDiffItemList, "\n")
 			newModList = append(newModList, mod)
 		}
@@ -216,7 +149,7 @@ func isRootDirectoryRename(diffItem string, mod fswalker.ActionData) bool {
 	return mod.Before.Info.IsDir && filepath.Dir(mod.Before.Path) == "."
 }
 
-func (chk *Checker) validateReport(report *fswalker.Report) error {
+func (chk *WalkChecker) validateReport(report *fswalker.Report) error {
 	if len(report.Modified) > 0 {
 		return errors.New("Files were modified")
 	}

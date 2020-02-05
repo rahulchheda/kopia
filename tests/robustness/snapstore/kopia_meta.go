@@ -11,6 +11,7 @@ import (
 )
 
 var _ Storer = &KopiaMetadata{}
+var _ DataPersister = &KopiaMetadata{}
 
 type KopiaMetadata struct {
 	*Simple

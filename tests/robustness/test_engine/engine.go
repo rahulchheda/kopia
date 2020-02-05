@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"os"
 
+	"github.com/kopia/kopia/tests/robustness/checker"
 	"github.com/kopia/kopia/tests/robustness/snapif"
 	"github.com/kopia/kopia/tests/robustness/snapstore"
 	"github.com/kopia/kopia/tests/tools/fio"
@@ -21,15 +22,9 @@ var ErrS3BucketNameEnvUnset = fmt.Errorf("Environment variable required: %v", S3
 type Engine struct {
 	FileWriter *fio.Runner
 	TestRepo   snapif.Snapshotter
-	MetaStore  MetadataStorer
-	Checker    fswalker.CheckerIF
+	MetaStore  snapstore.DataPersister
+	Checker    *checker.Checker
 	cleanup    []func()
-}
-
-type MetadataStorer interface {
-	snapif.RepoManager
-	LoadMetadata() error
-	FlushMetadata() error
 }
 
 func NewEngine() (*Engine, error) {
@@ -66,7 +61,7 @@ func NewEngine() (*Engine, error) {
 
 	e.MetaStore = snapStore
 
-	checker, err := fswalker.NewChecker(kopiaSnapper, snapStore)
+	checker, err := checker.NewChecker(kopiaSnapper, snapStore, &fswalker.WalkChecker{})
 	e.cleanup = append(e.cleanup, checker.Cleanup)
 	if err != nil {
 		e.Cleanup()
