@@ -97,7 +97,7 @@ func (chk *WalkChecker) Compare(ctx context.Context, path string, data []byte, r
 	// rptr.PrintReportSummary(reportOut, report)
 	// rptr.PrintRuleSummary(reportOut, report)
 
-	err = chk.validateReport(report)
+	err = validateReport(report)
 	if err != nil {
 		b, marshalErr := json.MarshalIndent(report, "", "   ")
 		if marshalErr != nil {
@@ -159,7 +159,7 @@ func isRootDirectoryRename(diffItem string, mod fswalker.ActionData) bool {
 	return mod.Before.Info.IsDir && filepath.Dir(mod.Before.Path) == "."
 }
 
-func (chk *WalkChecker) validateReport(report *fswalker.Report) error {
+func validateReport(report *fswalker.Report) error {
 	if len(report.Modified) > 0 {
 		return errors.New("Files were modified")
 	}
