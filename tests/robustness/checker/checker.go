@@ -1,3 +1,5 @@
+// Package checker defines the framework for creating and restoring snapshots
+// with a data integrity check
 package checker
 
 import (

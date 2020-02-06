@@ -1,3 +1,5 @@
+// Package fswalker provides the checker.Comparer interface using FSWalker
+// walker and reporter.
 package fswalker
 
 import (
@@ -66,6 +68,7 @@ func (chk *WalkCompare) Gather(ctx context.Context, path string) ([]byte, error)
 // as JSON.
 func (chk *WalkCompare) Compare(ctx context.Context, path string, data []byte, reportOut io.Writer) error {
 	beforeWalk := &fspb.Walk{}
+
 	err := proto.Unmarshal(data, beforeWalk)
 	if err != nil {
 		return err
@@ -90,14 +93,18 @@ func (chk *WalkCompare) Compare(ctx context.Context, path string, data []byte, r
 
 	err = validateReport(report)
 	if err != nil {
+		printReportSummary(report, reportOut)
+
 		b, marshalErr := json.MarshalIndent(report, "", "   ")
 		if marshalErr != nil {
 			_, reportErr := reportOut.Write([]byte(marshalErr.Error()))
 			if reportErr != nil {
 				return fmt.Errorf("error while writing marshal error (%v): %v", marshalErr.Error(), reportErr.Error())
 			}
+
 			return marshalErr
 		}
+
 		reportOut.Write(b)
 
 		return err
@@ -106,7 +113,7 @@ func (chk *WalkCompare) Compare(ctx context.Context, path string, data []byte, r
 	return nil
 }
 
-func printReportSummary(report *fswalker.Report) {
+func printReportSummary(report *fswalker.Report, reportOut io.Writer) {
 	rptr := &fswalker.Reporter{}
 	rptr.PrintDiffSummary(reportOut, report)
 	rptr.PrintReportSummary(reportOut, report)
@@ -180,6 +187,7 @@ func validateReport(report *fswalker.Report) error {
 func rerootWalkDataPaths(walk *fspb.Walk, newRoot string) error {
 	for _, f := range walk.File {
 		var err error
+
 		f.Path, err = filepath.Rel(newRoot, f.Path)
 		if err != nil {
 			return err
