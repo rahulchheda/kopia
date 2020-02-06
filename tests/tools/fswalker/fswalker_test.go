@@ -16,7 +16,7 @@ func TestWalkChecker_GatherCompare(t *testing.T) {
 	type fields struct {
 		GlobalFilterMatchers []string
 	}
-	tests := []struct {
+	for _, tt := range []struct {
 		name             string
 		fields           fields
 		fileTreeMaker    func(root string) error
@@ -177,44 +177,43 @@ func TestWalkChecker_GatherCompare(t *testing.T) {
 			},
 			wantErr: false,
 		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			chk := &WalkCompare{
-				GlobalFilterMatchers: tt.fields.GlobalFilterMatchers,
-			}
+	} {
+		t.Log(tt.name)
 
-			tmpDir, err := ioutil.TempDir("", "")
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer os.RemoveAll(tmpDir) //nolint:errcheck
+		chk := &WalkCompare{
+			GlobalFilterMatchers: tt.fields.GlobalFilterMatchers,
+		}
 
-			err = tt.fileTreeMaker(tmpDir)
-			if err != nil {
-				t.Fatal(err)
-			}
+		tmpDir, err := ioutil.TempDir("", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(tmpDir) //nolint:errcheck
 
-			ctx := context.TODO()
-			walk, err := chk.Gather(ctx, tmpDir)
-			if err != nil {
-				t.Fatal(err)
-			}
+		err = tt.fileTreeMaker(tmpDir)
+		if err != nil {
+			t.Fatal(err)
+		}
 
-			tt.fileTreeModifier(tmpDir)
+		ctx := context.TODO()
+		walk, err := chk.Gather(ctx, tmpDir)
+		if err != nil {
+			t.Fatal(err)
+		}
 
-			reportOut := &bytes.Buffer{}
-			if err := chk.Compare(ctx, tmpDir, walk, reportOut); (err != nil) != tt.wantErr {
-				t.Errorf("Compare error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
+		tt.fileTreeModifier(tmpDir)
 
-			// If an error was thrown, expect a report to be written to the provided writer
-			if (reportOut.Len() > 0) != tt.wantErr {
-				t.Errorf("report length unexpected len = %v, expReport %v", reportOut.Len(), tt.wantErr)
-			}
+		reportOut := &bytes.Buffer{}
+		if err := chk.Compare(ctx, tmpDir, walk, reportOut); (err != nil) != tt.wantErr {
+			t.Errorf("Compare error = %v, wantErr %v", err, tt.wantErr)
+			return
+		}
 
-		})
+		// If an error was thrown, expect a report to be written to the provided writer
+		if (reportOut.Len() > 0) != tt.wantErr {
+			t.Errorf("report length unexpected len = %v, expReport %v", reportOut.Len(), tt.wantErr)
+		}
+
 	}
 }
 
@@ -222,7 +221,7 @@ func TestWalkChecker_filterReportDiffs(t *testing.T) {
 	type fields struct {
 		GlobalFilterMatchers []string
 	}
-	tests := []struct {
+	for _, tt := range []struct {
 		name        string
 		fields      fields
 		inputReport *fswalker.Report
@@ -315,18 +314,17 @@ func TestWalkChecker_filterReportDiffs(t *testing.T) {
 			},
 			expModCount: 1,
 		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			chk := &WalkCompare{
-				GlobalFilterMatchers: tt.fields.GlobalFilterMatchers,
-			}
-			chk.filterReportDiffs(tt.inputReport)
+	} {
+		t.Log(tt.name)
 
-			if want, got := tt.expModCount, len(tt.inputReport.Modified); want != got {
-				t.Errorf("Expected %v modifications after filter but got %v (%v)", want, got, tt.inputReport.Modified)
-			}
-		})
+		chk := &WalkCompare{
+			GlobalFilterMatchers: tt.fields.GlobalFilterMatchers,
+		}
+		chk.filterReportDiffs(tt.inputReport)
+
+		if want, got := tt.expModCount, len(tt.inputReport.Modified); want != got {
+			t.Errorf("Expected %v modifications after filter but got %v (%v)", want, got, tt.inputReport.Modified)
+		}
 	}
 }
 
@@ -335,7 +333,7 @@ func Test_isRootDirectoryRename(t *testing.T) {
 		diffItem string
 		mod      fswalker.ActionData
 	}
-	tests := []struct {
+	for _, tt := range []struct {
 		name string
 		args args
 		want bool
@@ -430,17 +428,11 @@ func Test_isRootDirectoryRename(t *testing.T) {
 			},
 			want: false,
 		},
-	}
-	for _, tt := range tests {
-		diffItem := tt.args.diffItem
-		mod := tt.args.mod
-		want := tt.want
-
-		t.Run(tt.name, func(t *testing.T) {
-			if got := isRootDirectoryRename(diffItem, mod); got != want {
-				t.Errorf("isRootDirectoryRename() = %v, want %v", got, want)
-			}
-		})
+	} {
+		t.Log(tt.name)
+		if got := isRootDirectoryRename(tt.args.diffItem, tt.args.mod); got != tt.want {
+			t.Errorf("isRootDirectoryRename() = %v, want %v", got, tt.want)
+		}
 	}
 }
 
@@ -526,10 +518,9 @@ func Test_validateReport(t *testing.T) {
 			wantErr: true,
 		},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if err := validateReport(tc.args.report); (err != nil) != tc.wantErr {
-				t.Errorf("validateReport() error = %v, wantErr %v", err, tc.wantErr)
-			}
-		})
+		t.Log(tc.name)
+		if err := validateReport(tc.args.report); (err != nil) != tc.wantErr {
+			t.Errorf("validateReport() error = %v, wantErr %v", err, tc.wantErr)
+		}
 	}
 }
