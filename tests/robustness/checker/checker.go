@@ -131,7 +131,7 @@ func (chk *Checker) VerifySnapshotMetadata() error {
 	}
 
 	if errCount > 0 {
-		return fmt.Errorf("Hit %v errors verifying snapshot metadata", errCount)
+		return fmt.Errorf("hit %v errors verifying snapshot metadata", errCount)
 	}
 
 	return nil

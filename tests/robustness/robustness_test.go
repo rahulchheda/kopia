@@ -23,8 +23,8 @@ func TestWriteFilesBasicFS(t *testing.T) {
 	testenv.AssertNoError(t, err)
 
 	defer func() {
-		err := eng.Cleanup()
-		testenv.AssertNoError(t, err)
+		cleanupErr := eng.Cleanup()
+		testenv.AssertNoError(t, cleanupErr)
 	}()
 
 	ctx := context.TODO()
@@ -54,8 +54,8 @@ func TestWriteFilesBasicS3(t *testing.T) {
 	testenv.AssertNoError(t, err)
 
 	defer func() {
-		err := eng.Cleanup()
-		testenv.AssertNoError(t, err)
+		cleanupErr := eng.Cleanup()
+		testenv.AssertNoError(t, cleanupErr)
 	}()
 
 	ctx := context.TODO()
@@ -85,8 +85,8 @@ func TestDeleteSnapshotS3(t *testing.T) {
 	testenv.AssertNoError(t, err)
 
 	defer func() {
-		err := eng.Cleanup()
-		testenv.AssertNoError(t, err)
+		cleanupErr := eng.Cleanup()
+		testenv.AssertNoError(t, cleanupErr)
 	}()
 
 	ctx := context.TODO()

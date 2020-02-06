@@ -19,7 +19,7 @@ const (
 )
 
 // ErrS3BucketNameEnvUnset is the error returned when the S3BucketNameEnvKey environment variable is not set
-var ErrS3BucketNameEnvUnset = fmt.Errorf("Environment variable required: %v", S3BucketNameEnvKey)
+var ErrS3BucketNameEnvUnset = fmt.Errorf("environment variable required: %v", S3BucketNameEnvKey)
 
 // Engine is the outer level testing framework for robustness testing
 type Engine struct {

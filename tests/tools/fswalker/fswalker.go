@@ -38,7 +38,7 @@ func NewWalkCompare() *WalkCompare {
 }
 
 // Gather meets the checker.Comparer interface. It performs a fswalker Walk
-// and returns the resulting Walk as a protobuf Marshalled buffer.
+// and returns the resulting Walk as a protobuf Marshaled buffer.
 func (chk *WalkCompare) Gather(ctx context.Context, path string) ([]byte, error) {
 	walkData, err := walker.WalkPathHash(ctx, path)
 	if err != nil {
@@ -101,9 +101,9 @@ func (chk *WalkCompare) Compare(ctx context.Context, path string, data []byte, r
 	if err != nil {
 		b, marshalErr := json.MarshalIndent(report, "", "   ")
 		if marshalErr != nil {
-			_, err := reportOut.Write([]byte(marshalErr.Error()))
-			if err != nil {
-				return fmt.Errorf("Error while writing marshal error %v", err.Error())
+			_, reportErr := reportOut.Write([]byte(marshalErr.Error()))
+			if reportErr != nil {
+				return fmt.Errorf("error while writing marshal error (%v): %v", marshalErr.Error(), reportErr.Error())
 			}
 			return marshalErr
 		}

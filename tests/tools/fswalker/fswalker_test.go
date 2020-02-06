@@ -16,10 +16,6 @@ func TestWalkChecker_GatherCompare(t *testing.T) {
 	type fields struct {
 		GlobalFilterMatchers []string
 	}
-	type args struct {
-		path string
-		data []byte
-	}
 	tests := []struct {
 		name             string
 		fields           fields
@@ -225,9 +221,6 @@ func TestWalkChecker_GatherCompare(t *testing.T) {
 func TestWalkChecker_filterReportDiffs(t *testing.T) {
 	type fields struct {
 		GlobalFilterMatchers []string
-	}
-	type args struct {
-		report *fswalker.Report
 	}
 	tests := []struct {
 		name        string
