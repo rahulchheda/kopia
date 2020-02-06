@@ -187,5 +187,6 @@ func rerootWalkDataPaths(walk *fspb.Walk, newRoot string) error {
 			return err
 		}
 	}
+
 	return nil
 }

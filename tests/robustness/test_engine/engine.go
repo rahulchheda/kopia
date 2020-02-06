@@ -44,7 +44,7 @@ func NewEngine() (*Engine, error) {
 	// Fill the file writer
 	e.FileWriter, err = fio.NewRunner()
 	if err != nil {
-		e.Cleanup()
+		e.Cleanup() //nolint:errcheck
 		return nil, err
 	}
 
@@ -66,6 +66,7 @@ func NewEngine() (*Engine, error) {
 		e.Cleanup() //nolint:errcheck
 		return nil, err
 	}
+
 	e.cleanupRoutines = append(e.cleanupRoutines, snapStore.Cleanup)
 
 	e.MetaStore = snapStore

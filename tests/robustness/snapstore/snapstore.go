@@ -1,3 +1,5 @@
+// Package snapstore describes entities that can accept
+// arbitrary metadata and flush it to a persistent repository.
 package snapstore
 
 import "github.com/kopia/kopia/tests/robustness/snapif"
