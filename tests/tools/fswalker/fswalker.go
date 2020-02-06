@@ -86,16 +86,7 @@ func (chk *WalkCompare) Compare(ctx context.Context, path string, data []byte, r
 		return err
 	}
 
-	// rptr := &fswalker.Reporter{}
-	// rptr.PrintDiffSummary(reportOut, report)
-	// rptr.PrintReportSummary(reportOut, report)
-	// rptr.PrintRuleSummary(reportOut, report)
-
 	chk.filterReportDiffs(report)
-
-	// rptr.PrintDiffSummary(reportOut, report)
-	// rptr.PrintReportSummary(reportOut, report)
-	// rptr.PrintRuleSummary(reportOut, report)
 
 	err = validateReport(report)
 	if err != nil {
@@ -113,6 +104,13 @@ func (chk *WalkCompare) Compare(ctx context.Context, path string, data []byte, r
 	}
 
 	return nil
+}
+
+func printReportSummary(report *fswalker.Report) {
+	rptr := &fswalker.Reporter{}
+	rptr.PrintDiffSummary(reportOut, report)
+	rptr.PrintReportSummary(reportOut, report)
+	rptr.PrintRuleSummary(reportOut, report)
 }
 
 func (chk *WalkCompare) filterReportDiffs(report *fswalker.Report) {
