@@ -14,13 +14,6 @@ import (
 	"github.com/kopia/kopia/tests/robustness/snapstore"
 )
 
-// Comparer describes an interface that gathers state data on a provided
-// path, and compares that data to the state on another path.
-type Comparer interface {
-	Gather(ctx context.Context, path string) ([]byte, error)
-	Compare(ctx context.Context, path string, data []byte, reportOut io.Writer) error
-}
-
 // Checker is an object that can take snapshots and restore them, performing
 // a validation for data consistency
 type Checker struct {
