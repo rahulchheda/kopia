@@ -167,16 +167,14 @@ func TestWriteFilesBasicFS(t *testing.T) {
 	eng, err := engine.NewEngine()
 	testenv.AssertNoError(t, err)
 
-	defer eng.Cleanup()
+	defer func() {
+		err := eng.Cleanup()
+		testenv.AssertNoError(t, err)
+	}()
 
 	ctx := context.TODO()
 	err = eng.InitFilesystem(ctx, fsDataRepoPath, fsMetadataRepoPath)
 	testenv.AssertNoError(t, err)
-
-	defer func() {
-		err := eng.MetaStore.FlushMetadata()
-		testenv.AssertNoError(t, err)
-	}()
 
 	fileSize := int64(256 * 1024 * 1024)
 	numFiles := 10
@@ -200,16 +198,14 @@ func TestWriteFilesBasicS3(t *testing.T) {
 	eng, err := engine.NewEngine()
 	testenv.AssertNoError(t, err)
 
-	defer eng.Cleanup()
+	defer func() {
+		err := eng.Cleanup()
+		testenv.AssertNoError(t, err)
+	}()
 
 	ctx := context.TODO()
 	err = eng.InitS3(ctx, s3DataRepoPath, s3MetadataRepoPath)
 	testenv.AssertNoError(t, err)
-
-	defer func() {
-		err := eng.MetaStore.FlushMetadata()
-		testenv.AssertNoError(t, err)
-	}()
 
 	fileSize := int64(256 * 1024 * 1024)
 	numFiles := 10
@@ -233,7 +229,10 @@ func TestDeleteSnapshotS3(t *testing.T) {
 	eng, err := engine.NewEngine()
 	testenv.AssertNoError(t, err)
 
-	defer eng.Cleanup()
+	defer func() {
+		err := eng.Cleanup()
+		testenv.AssertNoError(t, err)
+	}()
 
 	ctx := context.TODO()
 	err = eng.InitS3(ctx, s3DataRepoPath, s3MetadataRepoPath)

@@ -109,7 +109,7 @@ func (ks *KopiaSnapshotter) DeleteSnapshot(snapID string) (err error) {
 // ListSnapshots implements the Snapshotter interface, issues a kopia snapshot
 // list and parses the snapshot IDs
 func (ks *KopiaSnapshotter) ListSnapshots() ([]string, error) {
-	stdout, _, err := ks.Runner.Run("snapshot", "list")
+	stdout, _, err := ks.Runner.Run("manifest", "list")
 	if err != nil {
 		return nil, err
 	}

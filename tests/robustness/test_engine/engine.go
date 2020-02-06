@@ -23,11 +23,11 @@ var ErrS3BucketNameEnvUnset = fmt.Errorf("Environment variable required: %v", S3
 
 // Engine is the outer level testing framework for robustness testing
 type Engine struct {
-	FileWriter *fio.Runner
-	TestRepo   snapif.Snapshotter
-	MetaStore  snapstore.DataPersister
-	Checker    *checker.Checker
-	cleanup    []func()
+	FileWriter      *fio.Runner
+	TestRepo        snapif.Snapshotter
+	MetaStore       snapstore.DataPersister
+	Checker         *checker.Checker
+	cleanupRoutines []func()
 }
 
 // NewEngine instantiates a new Engine and returns its pointer. It is
@@ -48,7 +48,7 @@ func NewEngine() (*Engine, error) {
 		return nil, err
 	}
 
-	e.cleanup = append(e.cleanup, e.FileWriter.Cleanup)
+	e.cleanupRoutines = append(e.cleanupRoutines, e.FileWriter.Cleanup)
 
 	// Fill Snapshotter interface
 	kopiaSnapper, err := snapif.NewKopiaSnapshotter()
@@ -57,7 +57,7 @@ func NewEngine() (*Engine, error) {
 		return nil, err
 	}
 
-	e.cleanup = append(e.cleanup, kopiaSnapper.Cleanup)
+	e.cleanupRoutines = append(e.cleanupRoutines, kopiaSnapper.Cleanup)
 	e.TestRepo = kopiaSnapper
 
 	// Fill the snapshot store interface
@@ -66,13 +66,13 @@ func NewEngine() (*Engine, error) {
 		e.Cleanup()
 		return nil, err
 	}
-	e.cleanup = append(e.cleanup, snapStore.Cleanup)
+	e.cleanupRoutines = append(e.cleanupRoutines, snapStore.Cleanup)
 
 	e.MetaStore = snapStore
 
 	// Create the data integrity checker
 	checker, err := checker.NewChecker(kopiaSnapper, snapStore, fswalker.NewWalkChecker())
-	e.cleanup = append(e.cleanup, checker.Cleanup)
+	e.cleanupRoutines = append(e.cleanupRoutines, checker.Cleanup)
 	if err != nil {
 		e.Cleanup()
 		return nil, err
@@ -84,8 +84,14 @@ func NewEngine() (*Engine, error) {
 }
 
 // Cleanup cleans up after each component of the test engine
-func (e *Engine) Cleanup() {
-	for _, f := range e.cleanup {
+func (e *Engine) Cleanup() error {
+	defer e.cleanup()
+
+	return e.MetaStore.FlushMetadata()
+}
+
+func (e *Engine) cleanup() {
+	for _, f := range e.cleanupRoutines {
 		f()
 	}
 }
