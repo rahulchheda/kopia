@@ -24,9 +24,12 @@ func NewSimple() *Simple {
 func (store *Simple) Store(key string, val []byte) error {
 	buf := make([]byte, len(val))
 	_ = copy(buf, val)
+
 	store.l.Lock()
+	defer store.l.Unlock()
+
 	store.s[key] = buf
-	store.l.Unlock()
+
 	return nil
 }
 

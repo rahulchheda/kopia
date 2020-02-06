@@ -53,7 +53,7 @@ func NewEngine() (*Engine, error) {
 	// Fill Snapshotter interface
 	kopiaSnapper, err := snapif.NewKopiaSnapshotter()
 	if err != nil {
-		e.Cleanup()
+		e.Cleanup() //nolint:errcheck
 		return nil, err
 	}
 
@@ -63,7 +63,7 @@ func NewEngine() (*Engine, error) {
 	// Fill the snapshot store interface
 	snapStore, err := snapstore.NewKopiaMetadata()
 	if err != nil {
-		e.Cleanup()
+		e.Cleanup() //nolint:errcheck
 		return nil, err
 	}
 	e.cleanupRoutines = append(e.cleanupRoutines, snapStore.Cleanup)
@@ -74,7 +74,7 @@ func NewEngine() (*Engine, error) {
 	checker, err := checker.NewChecker(kopiaSnapper, snapStore, fswalker.NewWalkCompare())
 	e.cleanupRoutines = append(e.cleanupRoutines, checker.Cleanup)
 	if err != nil {
-		e.Cleanup()
+		e.Cleanup() //nolint:errcheck
 		return nil, err
 	}
 

@@ -1,3 +1,4 @@
+// Package kopiarun wraps the execution of the kopia binary.
 package kopiarun
 
 import (

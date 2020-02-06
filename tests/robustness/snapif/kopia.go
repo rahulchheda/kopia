@@ -42,6 +42,7 @@ func (ks *KopiaSnapshotter) Cleanup() {
 func (ks *KopiaSnapshotter) CreateRepo(args ...string) (err error) {
 	args = append([]string{"repo", "create"}, args...)
 	_, _, err = ks.Runner.Run(args...)
+
 	return err
 }
 
@@ -49,6 +50,7 @@ func (ks *KopiaSnapshotter) CreateRepo(args ...string) (err error) {
 func (ks *KopiaSnapshotter) ConnectRepo(args ...string) (err error) {
 	args = append([]string{"repo", "connect"}, args...)
 	_, _, err = ks.Runner.Run(args...)
+
 	return err
 }
 
@@ -76,8 +78,8 @@ func (ks *KopiaSnapshotter) ConnectOrCreateS3(bucketName, pathPrefix string) err
 // ConnectOrCreateFilesystem attempts to connect to a kopia repo in the local
 // filesystem at the path provided. It will attempt to create one there if
 // connection was unsuccessful.
-func (ks *KopiaSnapshotter) ConnectOrCreateFilesystem(path string) error {
-	args := []string{"filesystem", "--path", path}
+func (ks *KopiaSnapshotter) ConnectOrCreateFilesystem(repoPath string) error {
+	args := []string{"filesystem", "--path", repoPath}
 
 	return ks.ConnectOrCreateRepo(args...)
 }
@@ -89,12 +91,13 @@ func (ks *KopiaSnapshotter) TakeSnapshot(source string) (snapID string, err erro
 	if err != nil {
 		return "", err
 	}
+
 	return parseSnapID(strings.Split(errOut, "\n"))
 }
 
 // RestoreSnapshot implements the Snapshotter interface, issues a kopia snapshot
 // restore command of the provided snapshot ID to the provided restore destination
-func (ks *KopiaSnapshotter) RestoreSnapshot(snapID string, restoreDir string) (err error) {
+func (ks *KopiaSnapshotter) RestoreSnapshot(snapID, restoreDir string) (err error) {
 	_, _, err = ks.Runner.Run("snapshot", "restore", snapID, restoreDir)
 	return err
 }
@@ -138,7 +141,7 @@ func parseSnapID(lines []string) (string, error) {
 		}
 	}
 
-	return "", errors.New("Snap ID could not be parsed")
+	return "", errors.New("snap ID could not be parsed")
 }
 
 func parseListForSnapshotIDs(output string) []string {

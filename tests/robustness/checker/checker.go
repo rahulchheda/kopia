@@ -42,7 +42,7 @@ func NewChecker(snap snapif.Snapshotter, snapStore snapstore.Storer, validator C
 // Cleanup cleans up the Checker's temporary restore data directory
 func (chk *Checker) Cleanup() {
 	if chk.RestoreDir != "" {
-		os.RemoveAll(chk.RestoreDir)
+		os.RemoveAll(chk.RestoreDir) //nolint:errcheck
 	}
 }
 

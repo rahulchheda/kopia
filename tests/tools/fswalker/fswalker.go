@@ -161,19 +161,19 @@ func isRootDirectoryRename(diffItem string, mod fswalker.ActionData) bool {
 
 func validateReport(report *fswalker.Report) error {
 	if len(report.Modified) > 0 {
-		return errors.New("Files were modified")
+		return errors.New("files were modified")
 	}
 
 	if len(report.Added) > 0 {
-		return errors.New("Files were added")
+		return errors.New("files were added")
 	}
 
 	if len(report.Deleted) > 0 {
-		return errors.New("Files were deleted")
+		return errors.New("files were deleted")
 	}
 
 	if len(report.Errors) > 0 {
-		return errors.New("Errors were thrown in the walk")
+		return errors.New("errors were thrown in the walk")
 	}
 
 	return nil
