@@ -13,6 +13,7 @@ import (
 )
 
 const (
+	// MaxFileSizeToHash gives an upper bound to the size of file that can be hashed by the walker
 	MaxFileSizeToHash = 1 << 32
 )
 

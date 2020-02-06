@@ -22,7 +22,7 @@ func NewSimple() *Simple {
 
 // Store implements the Storer interface Store method
 func (store *Simple) Store(key string, val []byte) error {
-	buf := make([]byte, len(val), len(val))
+	buf := make([]byte, len(val))
 	_ = copy(buf, val)
 	store.l.Lock()
 	store.s[key] = buf
@@ -34,11 +34,14 @@ func (store *Simple) Store(key string, val []byte) error {
 func (store *Simple) Load(key string) ([]byte, error) {
 	store.l.Lock()
 	defer store.l.Unlock()
+
 	if buf, found := store.s[key]; found {
-		retBuf := make([]byte, len(buf), len(buf))
+		retBuf := make([]byte, len(buf))
 		_ = copy(retBuf, buf)
+
 		return retBuf, nil
 	}
+
 	return nil, nil
 }
 
@@ -46,16 +49,20 @@ func (store *Simple) Load(key string) ([]byte, error) {
 func (store *Simple) Delete(key string) {
 	store.l.Lock()
 	defer store.l.Unlock()
+
 	delete(store.s, key)
 }
 
 // GetKeys implements the Storer interface GetKeys method
 func (store *Simple) GetKeys() []string {
 	ret := make([]string, 0, len(store.s))
+
 	store.l.Lock()
 	defer store.l.Unlock()
+
 	for k := range store.s {
 		ret = append(ret, k)
 	}
+
 	return ret
 }

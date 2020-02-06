@@ -5,7 +5,6 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/kopia/kopia/tests/robustness/snapif"
 )
@@ -13,12 +12,15 @@ import (
 var _ Storer = &KopiaMetadata{}
 var _ DataPersister = &KopiaMetadata{}
 
+// KopiaMetadata handles metadata persistency of a snapshot store, using a Kopia
+// repository as the persistency mechanism
 type KopiaMetadata struct {
 	*Simple
 	LocalMetadataDir string
 	snap             *snapif.KopiaSnapshotter
 }
 
+// NewKopiaMetadata instantiates a new KopiaMetadata and returns its pointer.
 func NewKopiaMetadata() (*KopiaMetadata, error) {
 	localDir, err := ioutil.TempDir("", "kopia-local-metadata-")
 	if err != nil {
@@ -37,6 +39,7 @@ func NewKopiaMetadata() (*KopiaMetadata, error) {
 	}, nil
 }
 
+// Cleanup cleans up the local temporary files used by a KopiaMetadata
 func (store *KopiaMetadata) Cleanup() {
 	if store.LocalMetadataDir != "" {
 		os.RemoveAll(store.LocalMetadataDir) //nolint:errcheck
@@ -47,14 +50,21 @@ func (store *KopiaMetadata) Cleanup() {
 	}
 }
 
+// ConnectOrCreateS3 implements the RepoManager interface, connects to a repo in an S3
+// bucket or attempts to create one if connection is unsuccessful
 func (store *KopiaMetadata) ConnectOrCreateS3(bucketName, pathPrefix string) error {
 	return store.snap.ConnectOrCreateS3(bucketName, pathPrefix)
 }
 
+// ConnectOrCreateFilesystem implements the RepoManager interface, connects to a repo in the filesystem
+// or attempts to create one if connection is unsuccessful
 func (store *KopiaMetadata) ConnectOrCreateFilesystem(path string) error {
 	return store.snap.ConnectOrCreateFilesystem(path)
 }
 
+// LoadMetadata implements the DataPersister interface, restores the latest
+// snapshot from the kopia repository and decodes its contents, populating
+// its metadata on the snapshots residing in the target test repository.
 func (store *KopiaMetadata) LoadMetadata() error {
 	snapIDs, err := store.snap.ListSnapshots()
 	if err != nil {
@@ -73,9 +83,9 @@ func (store *KopiaMetadata) LoadMetadata() error {
 		return err
 	}
 
-	defer os.Remove(restorePath)
+	defer os.Remove(restorePath) //nolint:errcheck
 
-	f, err := os.Open(restorePath)
+	f, err := os.Open(restorePath) //nolint:gosec
 	if err != nil {
 		return err
 	}
@@ -88,6 +98,9 @@ func (store *KopiaMetadata) LoadMetadata() error {
 	return nil
 }
 
+// FlushMetadata implements the DataPersister interface, flushing the local
+// metadata on the target test repo's snapshots to the metadata Kopia repository
+// as a snapshot create.
 func (store *KopiaMetadata) FlushMetadata() error {
 
 	f, err := ioutil.TempFile(store.LocalMetadataDir, "kopia-metadata-")
@@ -111,20 +124,4 @@ func (store *KopiaMetadata) FlushMetadata() error {
 	}
 
 	return nil
-}
-
-func parseForLatestSnapshotID(output string) string {
-	lines := strings.Split(output, "\n")
-
-	var lastSnapID string
-	for _, l := range lines {
-		fields := strings.Fields(l)
-		if len(fields) > 5 {
-			if fields[5] == "type:snapshot" {
-				lastSnapID = fields[0]
-			}
-		}
-	}
-
-	return lastSnapID
 }
