@@ -211,7 +211,7 @@ func TestWriteFilesBasicS3(t *testing.T) {
 	numFiles := 10
 	eng.FileWriter.WriteFiles("", fileSize, numFiles, fio.Options{})
 
-	snapIDs := eng.Checker.GetSnapIDs()
+	snapIDs := eng.Checker.GetLiveSnapIDs()
 
 	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.DataDir)
 	testenv.AssertNoError(t, err)
