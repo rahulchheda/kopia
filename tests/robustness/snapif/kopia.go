@@ -116,6 +116,7 @@ func (ks *KopiaSnapshotter) ListSnapshots() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return parseListForSnapshotIDs(stdout), nil
 }
 
@@ -145,13 +146,15 @@ func parseSnapID(lines []string) (string, error) {
 }
 
 func parseListForSnapshotIDs(output string) []string {
-	lines := strings.Split(output, "\n")
-
 	var ret []string
+
+	lines := strings.Split(output, "\n")
 	for _, l := range lines {
 		fields := strings.Fields(l)
-		if len(fields) > 5 {
-			if fields[5] == "type:snapshot" {
+
+		typeFieldIdx := 5
+		if len(fields) > typeFieldIdx {
+			if fields[typeFieldIdx] == "type:snapshot" {
 				ret = append(ret, fields[0])
 			}
 		}

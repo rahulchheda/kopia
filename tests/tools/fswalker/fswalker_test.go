@@ -432,9 +432,13 @@ func Test_isRootDirectoryRename(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
+		diffItem := tt.args.diffItem
+		mod := tt.args.mod
+		want := tt.want
+
 		t.Run(tt.name, func(t *testing.T) {
-			if got := isRootDirectoryRename(tt.args.diffItem, tt.args.mod); got != tt.want {
-				t.Errorf("isRootDirectoryRename() = %v, want %v", got, tt.want)
+			if got := isRootDirectoryRename(diffItem, mod); got != want {
+				t.Errorf("isRootDirectoryRename() = %v, want %v", got, want)
 			}
 		})
 	}
@@ -444,7 +448,7 @@ func Test_validateReport(t *testing.T) {
 	type args struct {
 		report *fswalker.Report
 	}
-	tests := []struct {
+	for _, tc := range []struct {
 		name    string
 		args    args
 		wantErr bool
@@ -521,11 +525,10 @@ func Test_validateReport(t *testing.T) {
 			},
 			wantErr: true,
 		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if err := validateReport(tt.args.report); (err != nil) != tt.wantErr {
-				t.Errorf("validateReport() error = %v, wantErr %v", err, tt.wantErr)
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := validateReport(tc.args.report); (err != nil) != tc.wantErr {
+				t.Errorf("validateReport() error = %v, wantErr %v", err, tc.wantErr)
 			}
 		})
 	}

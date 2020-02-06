@@ -1,3 +1,5 @@
+// Package snapif describes entities that are capable of performing
+// common snapshot operations
 package snapif
 
 // Snapshotter is an interface that describes methods
