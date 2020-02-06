@@ -78,6 +78,7 @@ func (store *KopiaMetadata) LoadMetadata() error {
 	lastSnapID := snapIDs[len(snapIDs)-1]
 
 	restorePath := filepath.Join(store.LocalMetadataDir, "kopia-metadata-latest")
+
 	err = store.snap.RestoreSnapshot(lastSnapID, restorePath)
 	if err != nil {
 		return err
@@ -102,7 +103,6 @@ func (store *KopiaMetadata) LoadMetadata() error {
 // metadata on the target test repo's snapshots to the metadata Kopia repository
 // as a snapshot create.
 func (store *KopiaMetadata) FlushMetadata() error {
-
 	f, err := ioutil.TempFile(store.LocalMetadataDir, "kopia-metadata-")
 	if err != nil {
 		return err

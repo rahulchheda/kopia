@@ -105,7 +105,9 @@ func (chk *WalkCompare) Compare(ctx context.Context, path string, data []byte, r
 			return marshalErr
 		}
 
-		reportOut.Write(b)
+		if _, wrErr := reportOut.Write(b); wrErr != nil {
+			return err
+		}
 
 		return err
 	}

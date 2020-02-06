@@ -71,6 +71,7 @@ func (chk *Checker) GetSnapshotMetadata(snapID string) (*SnapshotMetadata, error
 // that do not have a deletion time associated with them
 func (chk *Checker) GetLiveSnapIDs() []string {
 	snapIDs := chk.GetSnapIDs()
+
 	var ret []string
 
 	for _, snapID := range snapIDs {
@@ -118,6 +119,7 @@ func (chk *Checker) VerifySnapshotMetadata() error {
 	}
 
 	var errCount int
+
 	for _, metaSnapID := range liveSnapsInMetadata {
 		if _, ok := liveMap[metaSnapID]; !ok {
 			log.Printf("Metadata present for snapID %v but not found in known metadata", metaSnapID)
@@ -148,10 +150,12 @@ func (chk *Checker) TakeSnapshot(ctx context.Context, sourceDir string) (snapID 
 	}
 
 	ssStart := time.Now()
+
 	snapID, err = chk.snap.TakeSnapshot(sourceDir)
 	if err != nil {
 		return snapID, err
 	}
+
 	ssEnd := time.Now()
 
 	ssMeta := &SnapshotMetadata{
@@ -173,7 +177,6 @@ func (chk *Checker) TakeSnapshot(ctx context.Context, sourceDir string) (snapID 
 // using the Checker's Snapshotter, and performs a data consistency check on the
 // resulting tree using the saved snapshot data.
 func (chk *Checker) RestoreSnapshot(ctx context.Context, snapID string, reportOut io.Writer) error {
-
 	// Make an independent directory for the restore
 	restoreSubDir, err := ioutil.TempDir(chk.RestoreDir, fmt.Sprintf("restore-snap-%v", snapID))
 	if err != nil {
@@ -250,11 +253,13 @@ func (chk *Checker) loadSnapshotMetadata(snapID string) (*SnapshotMetadata, erro
 	if err != nil {
 		return nil, err
 	}
+
 	if b == nil {
 		return nil, fmt.Errorf("could not find snapID %v", snapID)
 	}
 
 	ssMeta := &SnapshotMetadata{}
+
 	err = json.Unmarshal(b, ssMeta)
 	if err != nil {
 		return nil, err
