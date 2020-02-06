@@ -197,7 +197,13 @@ func (chk *Checker) RestoreSnapshotToPath(ctx context.Context, snapID, destPath 
 		return err
 	}
 
-	err = chk.snap.RestoreSnapshot(snapID, destPath)
+	return chk.RestoreVerifySnapshot(ctx, snapID, destPath, ssMeta, reportOut)
+}
+
+// RestoreVerifySnapshot restores a snapshot and verifies its integrity against
+// the metadata provided
+func (chk *Checker) RestoreVerifySnapshot(ctx context.Context, snapID, destPath string, ssMeta *SnapshotMetadata, reportOut io.Writer) error {
+	err := chk.snap.RestoreSnapshot(snapID, destPath)
 	if err != nil {
 		return err
 	}
