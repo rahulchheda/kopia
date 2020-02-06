@@ -1,3 +1,4 @@
+// Package engine provides the framework for a snapshot repository testing engine
 package engine
 
 import (
@@ -74,6 +75,7 @@ func NewEngine() (*Engine, error) {
 	// Create the data integrity checker
 	chk, err := checker.NewChecker(kopiaSnapper, snapStore, fswalker.NewWalkCompare())
 	e.cleanupRoutines = append(e.cleanupRoutines, chk.Cleanup)
+
 	if err != nil {
 		e.Cleanup() //nolint:errcheck
 		return nil, err
@@ -130,6 +132,7 @@ func (e *Engine) InitS3(ctx context.Context, testRepoPath, metaRepoPath string) 
 	snapIDs := e.Checker.GetLiveSnapIDs()
 	if len(snapIDs) > 0 {
 		randSnapID := snapIDs[rand.Intn(len(snapIDs))]
+
 		err = e.Checker.RestoreSnapshotToPath(ctx, randSnapID, e.FileWriter.DataDir, os.Stdout)
 		if err != nil {
 			return err
@@ -167,6 +170,7 @@ func (e *Engine) InitFilesystem(ctx context.Context, testRepoPath, metaRepoPath 
 	snapIDs := e.Checker.GetSnapIDs()
 	if len(snapIDs) > 0 {
 		randSnapID := snapIDs[rand.Intn(len(snapIDs))]
+
 		err = e.Checker.RestoreSnapshotToPath(ctx, randSnapID, e.FileWriter.DataDir, os.Stdout)
 		if err != nil {
 			return err

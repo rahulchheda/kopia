@@ -445,6 +445,7 @@ func Test_validateReport(t *testing.T) {
 	type args struct {
 		report *fswalker.Report
 	}
+
 	for _, tc := range []struct {
 		name    string
 		args    args
@@ -466,7 +467,7 @@ func Test_validateReport(t *testing.T) {
 			name: "something was added",
 			args: args{
 				report: &fswalker.Report{
-					Added:    []fswalker.ActionData{fswalker.ActionData{}},
+					Added:    []fswalker.ActionData{{}},
 					Deleted:  nil,
 					Modified: nil,
 					Errors:   nil,
@@ -479,7 +480,7 @@ func Test_validateReport(t *testing.T) {
 			args: args{
 				report: &fswalker.Report{
 					Added:    nil,
-					Deleted:  []fswalker.ActionData{fswalker.ActionData{}},
+					Deleted:  []fswalker.ActionData{{}},
 					Modified: nil,
 					Errors:   nil,
 				},
@@ -492,7 +493,7 @@ func Test_validateReport(t *testing.T) {
 				report: &fswalker.Report{
 					Added:    nil,
 					Deleted:  nil,
-					Modified: []fswalker.ActionData{fswalker.ActionData{}},
+					Modified: []fswalker.ActionData{{}},
 					Errors:   nil,
 				},
 			},
@@ -505,7 +506,7 @@ func Test_validateReport(t *testing.T) {
 					Added:    nil,
 					Deleted:  nil,
 					Modified: nil,
-					Errors:   []fswalker.ActionData{fswalker.ActionData{}},
+					Errors:   []fswalker.ActionData{{}},
 				},
 			},
 			wantErr: true,
@@ -514,10 +515,10 @@ func Test_validateReport(t *testing.T) {
 			name: "multiple issues in report",
 			args: args{
 				report: &fswalker.Report{
-					Added:    []fswalker.ActionData{fswalker.ActionData{}},
-					Deleted:  []fswalker.ActionData{fswalker.ActionData{}},
-					Modified: []fswalker.ActionData{fswalker.ActionData{}},
-					Errors:   []fswalker.ActionData{fswalker.ActionData{}},
+					Added:    []fswalker.ActionData{{}},
+					Deleted:  []fswalker.ActionData{{}},
+					Modified: []fswalker.ActionData{{}},
+					Errors:   []fswalker.ActionData{{}},
 				},
 			},
 			wantErr: true,
