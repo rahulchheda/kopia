@@ -184,7 +184,7 @@ func TestWalkChecker_GatherCompare(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			chk := &WalkChecker{
+			chk := &WalkCompare{
 				GlobalFilterMatchers: tt.fields.GlobalFilterMatchers,
 			}
 
@@ -325,7 +325,7 @@ func TestWalkChecker_filterReportDiffs(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			chk := &WalkChecker{
+			chk := &WalkCompare{
 				GlobalFilterMatchers: tt.fields.GlobalFilterMatchers,
 			}
 			chk.filterReportDiffs(tt.inputReport)

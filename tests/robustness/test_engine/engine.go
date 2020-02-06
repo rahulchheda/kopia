@@ -71,7 +71,7 @@ func NewEngine() (*Engine, error) {
 	e.MetaStore = snapStore
 
 	// Create the data integrity checker
-	checker, err := checker.NewChecker(kopiaSnapper, snapStore, fswalker.NewWalkChecker())
+	checker, err := checker.NewChecker(kopiaSnapper, snapStore, fswalker.NewWalkCompare())
 	e.cleanupRoutines = append(e.cleanupRoutines, checker.Cleanup)
 	if err != nil {
 		e.Cleanup()

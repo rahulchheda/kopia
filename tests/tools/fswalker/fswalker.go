@@ -18,17 +18,17 @@ import (
 	"github.com/kopia/kopia/tests/tools/fswalker/walker"
 )
 
-var _ checker.Comparer = &WalkChecker{}
+var _ checker.Comparer = &WalkCompare{}
 
-// WalkChecker is a checker.Comparer that utilizes the fswalker
+// WalkCompare is a checker.Comparer that utilizes the fswalker
 // libraries to perform the data consistency check.
-type WalkChecker struct {
+type WalkCompare struct {
 	GlobalFilterMatchers []string
 }
 
-// NewWalkChecker instantiates a new WalkChecker and returns its pointer
-func NewWalkChecker() *WalkChecker {
-	return &WalkChecker{
+// NewWalkCompare instantiates a new WalkCompare and returns its pointer
+func NewWalkCompare() *WalkCompare {
+	return &WalkCompare{
 		GlobalFilterMatchers: []string{
 			"ctime:",
 			"atime:",
@@ -39,7 +39,7 @@ func NewWalkChecker() *WalkChecker {
 
 // Gather meets the checker.Comparer interface. It performs a fswalker Walk
 // and returns the resulting Walk as a protobuf Marshalled buffer.
-func (chk *WalkChecker) Gather(ctx context.Context, path string) ([]byte, error) {
+func (chk *WalkCompare) Gather(ctx context.Context, path string) ([]byte, error) {
 	walkData, err := walker.WalkPathHash(ctx, path)
 	if err != nil {
 		return nil, err
@@ -64,7 +64,7 @@ func (chk *WalkChecker) Gather(ctx context.Context, path string) ([]byte, error)
 // and generates a fswalker report comparing the two Walks. If there are any differences
 // an error is returned, and the full report will be written to the provided writer
 // as JSON.
-func (chk *WalkChecker) Compare(ctx context.Context, path string, data []byte, reportOut io.Writer) error {
+func (chk *WalkCompare) Compare(ctx context.Context, path string, data []byte, reportOut io.Writer) error {
 	beforeWalk := &fspb.Walk{}
 	err := proto.Unmarshal(data, beforeWalk)
 	if err != nil {
@@ -115,7 +115,7 @@ func (chk *WalkChecker) Compare(ctx context.Context, path string, data []byte, r
 	return nil
 }
 
-func (chk *WalkChecker) filterReportDiffs(report *fswalker.Report) {
+func (chk *WalkCompare) filterReportDiffs(report *fswalker.Report) {
 	var newModList []fswalker.ActionData
 
 	for _, mod := range report.Modified {
