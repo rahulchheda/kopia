@@ -23,19 +23,30 @@ type CompactOptions struct {
 
 // CompactIndexes performs compaction of index blobs ensuring that # of small index blobs is below opt.maxSmallBlobs
 func (bm *Manager) CompactIndexes(ctx context.Context, opt CompactOptions) error {
-	log(ctx).Debugf("CompactIndexes(%+v)", opt)
+	return bm.DiscardIndexEntries(ctx, nil, opt)
+}
+
+// DiscardIndexEntries compacts the content indices and does not include contentsToDiscard in the resulting
+// indices if the content entry is marked deleted.
+func (bm *Manager) DiscardIndexEntries(ctx context.Context, contentsToDiscard IDSet, opt CompactOptions) error {
+	log(ctx).Debugf("compact indexes: %+v", opt)
 
 	bm.lock()
 	defer bm.unlock()
 
-	indexBlobs, _, err := bm.loadPackIndexesUnlocked(ctx)
+	indexesToCompact, _, err := bm.loadPackIndexesUnlocked(ctx)
 	if err != nil {
 		return errors.Wrap(err, "error loading indexes")
 	}
 
-	contentsToCompact := bm.getContentsToCompact(ctx, indexBlobs, opt)
+	// when a set of content entries to discard is non-empty, then all indices
+	// need to be compacted, or at least the indexes that have entries to be
+	// discarded. In that case, do not modify indexesToCompact
+	if len(contentsToDiscard) == 0 {
+		indexesToCompact = bm.getContentsToCompact(ctx, indexesToCompact, opt)
+	}
 
-	if err := bm.compactAndDeleteIndexBlobs(ctx, contentsToCompact); err != nil {
+	if err := bm.compactAndDeleteIndexBlobs(ctx, indexesToCompact, contentsToDiscard); err != nil {
 		log(ctx).Warningf("error performing quick compaction: %v", err)
 	}
 
@@ -82,7 +93,7 @@ func (bm *Manager) getContentsToCompact(ctx context.Context, indexBlobs []IndexB
 	return nonCompactedBlobs
 }
 
-func (bm *Manager) compactAndDeleteIndexBlobs(ctx context.Context, indexBlobs []IndexBlobInfo) error {
+func (bm *Manager) compactAndDeleteIndexBlobs(ctx context.Context, indexBlobs []IndexBlobInfo, contentsToDiscard IDSet) error {
 	if len(indexBlobs) <= 1 {
 		return nil
 	}
@@ -95,6 +106,13 @@ func (bm *Manager) compactAndDeleteIndexBlobs(ctx context.Context, indexBlobs []
 	for _, indexBlob := range indexBlobs {
 		if err := bm.addIndexBlobsToBuilder(ctx, bld, indexBlob); err != nil {
 			return err
+		}
+	}
+
+	// Do not include index entries that are deleted and in contentsToDiscard
+	for cid := range contentsToDiscard {
+		if i := bld[cid]; i != nil && i.Deleted && contentsToDiscard.Contains(cid) {
+			delete(bld, cid)
 		}
 	}
 
