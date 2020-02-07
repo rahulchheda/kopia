@@ -10,7 +10,13 @@ func TestKopiaRunner(t *testing.T) {
 	if origEnv == "" {
 		t.Skip("Skipping kopia runner test: 'KOPIA_EXE' is unset")
 	}
-	defer os.Setenv("KOPIA_EXE", origEnv)
+
+	defer func() {
+		envErr = os.Setenv("KOPIA_EXE", origEnv)
+		if envErr != nil {
+			t.Fatal("Unable to reset env KOPIA_EXE to original value")
+		}
+	}()
 
 	for _, tt := range []struct {
 		name            string
@@ -50,12 +56,16 @@ func TestKopiaRunner(t *testing.T) {
 	} {
 		t.Log(tt.name)
 
-		os.Setenv("KOPIA_EXE", tt.exe)
+		err = os.Setenv("KOPIA_EXE", tt.exe)
+		if err != nil {
+			t.Fatal("Unable to set environment variable KOPIA_EXE")
+		}
 
 		runner, err := NewRunner()
 		if (err != nil) != tt.expNewRunnerErr {
 			t.Fatalf("Expected NewRunner error: %v, got %v", tt.expNewRunnerErr, err)
 		}
+
 		if err != nil {
 			continue
 		}
