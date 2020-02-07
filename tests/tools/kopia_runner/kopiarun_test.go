@@ -12,7 +12,7 @@ func TestKopiaRunner(t *testing.T) {
 	}
 
 	defer func() {
-		envErr = os.Setenv("KOPIA_EXE", origEnv)
+		envErr := os.Setenv("KOPIA_EXE", origEnv)
 		if envErr != nil {
 			t.Fatal("Unable to reset env KOPIA_EXE to original value")
 		}
@@ -56,7 +56,7 @@ func TestKopiaRunner(t *testing.T) {
 	} {
 		t.Log(tt.name)
 
-		err = os.Setenv("KOPIA_EXE", tt.exe)
+		err := os.Setenv("KOPIA_EXE", tt.exe)
 		if err != nil {
 			t.Fatal("Unable to set environment variable KOPIA_EXE")
 		}
