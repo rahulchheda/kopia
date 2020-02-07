@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"strconv"
 
 	"github.com/kopia/kopia/tests/robustness/checker"
 	"github.com/kopia/kopia/tests/robustness/snapif"
@@ -120,6 +121,11 @@ func (e *Engine) InitS3(ctx context.Context, testRepoPath, metaRepoPath string) 
 	}
 
 	err = e.TestRepo.ConnectOrCreateS3(bucketName, testRepoPath)
+	if err != nil {
+		return err
+	}
+
+	_, _, err = e.TestRepo.Run("policy", "set", "--global", "--keep-latest", strconv.Itoa(1<<31-1))
 	if err != nil {
 		return err
 	}

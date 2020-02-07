@@ -120,6 +120,12 @@ func (ks *KopiaSnapshotter) ListSnapshots() ([]string, error) {
 	return parseListForSnapshotIDs(stdout), nil
 }
 
+// Run implements the Snapshotter interface, issues an arbitrary kopia command and returns
+// the output
+func (ks *KopiaSnapshotter) Run(args ...string) (stdout, stderr string, err error) {
+	return ks.Runner.Run(args...)
+}
+
 func getHostPath() string {
 	hn, err := os.Hostname()
 	if err != nil {
