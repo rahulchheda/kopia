@@ -12,6 +12,7 @@ import (
 
 	"github.com/kopia/kopia/tests/testenv"
 	"github.com/kopia/kopia/tests/tools/fio"
+	"github.com/kopia/kopia/tests/tools/fswalker"
 )
 
 var (
@@ -167,4 +168,61 @@ func TestSnapshotVerificationFail(t *testing.T) {
 	if err == nil {
 		t.Fatalf("Expected an integrity error when trying to restore a snapshot with incorrect metadata")
 	}
+}
+
+func TestDataPersistency(t *testing.T) {
+	tempDir, err := ioutil.TempDir("", "")
+	testenv.AssertNoError(t, err)
+
+	defer os.RemoveAll(tempDir) //nolint:errcheck
+
+	eng, err := NewEngine()
+	testenv.AssertNoError(t, err)
+
+	defer func() {
+		cleanupErr := eng.Cleanup()
+		testenv.AssertNoError(t, cleanupErr)
+	}()
+
+	dataRepoPath := filepath.Join(tempDir, "data-repo-")
+	metadataRepoPath := filepath.Join(tempDir, "metadata-repo-")
+
+	ctx := context.TODO()
+	err = eng.InitFilesystem(ctx, dataRepoPath, metadataRepoPath)
+	testenv.AssertNoError(t, err)
+
+	// Perform writes
+	fileSize := int64(256 * 1024 * 1024)
+	numFiles := 10
+	eng.FileWriter.WriteFiles("", fileSize, numFiles, fio.Options{})
+
+	// Take a snapshot
+	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.DataDir)
+	testenv.AssertNoError(t, err)
+
+	// Get the walk data associated with the snapshot that was taken
+	dataDirWalk, err := eng.Checker.GetSnapshotMetadata(snapID)
+	testenv.AssertNoError(t, err)
+
+	// Flush the snapshot metadata to persistent storage
+	err = eng.MetaStore.FlushMetadata()
+	testenv.AssertNoError(t, err)
+
+	// Create a new engine
+	eng2, err := NewEngine()
+	testenv.AssertNoError(t, err)
+
+	defer eng2.cleanup()
+
+	// Connect this engine to the same data and metadata repositories -
+	// expect that the snapshot taken above will be found in metadata,
+	// and the data will be chosen to be restored to this engine's DataDir
+	// as a starting point.
+	err = eng2.InitFilesystem(ctx, dataRepoPath, metadataRepoPath)
+	testenv.AssertNoError(t, err)
+
+	// Compare the data directory of the second engine with the fingerprint
+	// of the snapshot taken earlier. They should match.
+	err = fswalker.NewWalkCompare().Compare(ctx, eng2.FileWriter.DataDir, dataDirWalk.ValidationData, os.Stdout)
+	testenv.AssertNoError(t, err)
 }
