@@ -91,7 +91,11 @@ func NewEngine() (*Engine, error) {
 func (e *Engine) Cleanup() error {
 	defer e.cleanup()
 
-	return e.MetaStore.FlushMetadata()
+	if e.MetaStore != nil {
+		return e.MetaStore.FlushMetadata()
+	}
+
+	return nil
 }
 
 func (e *Engine) cleanup() {
