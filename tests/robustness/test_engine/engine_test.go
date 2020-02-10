@@ -13,6 +13,7 @@ import (
 	"github.com/kopia/kopia/tests/testenv"
 	"github.com/kopia/kopia/tests/tools/fio"
 	"github.com/kopia/kopia/tests/tools/fswalker"
+	kopiarun "github.com/kopia/kopia/tests/tools/kopia_runner"
 )
 
 var (
@@ -24,6 +25,9 @@ var (
 
 func TestEngineWritefilesBasicFS(t *testing.T) {
 	eng, err := NewEngine()
+	if err == kopiarun.ErrExeVariableNotSet {
+		t.Skip(err)
+	}
 	testenv.AssertNoError(t, err)
 
 	defer func() {
@@ -55,6 +59,9 @@ func TestEngineWritefilesBasicFS(t *testing.T) {
 
 func TestWriteFilesBasicS3(t *testing.T) {
 	eng, err := NewEngine()
+	if err == kopiarun.ErrExeVariableNotSet {
+		t.Skip(err)
+	}
 	testenv.AssertNoError(t, err)
 
 	defer func() {
@@ -86,6 +93,9 @@ func TestWriteFilesBasicS3(t *testing.T) {
 
 func TestDeleteSnapshotS3(t *testing.T) {
 	eng, err := NewEngine()
+	if err == kopiarun.ErrExeVariableNotSet {
+		t.Skip(err)
+	}
 	testenv.AssertNoError(t, err)
 
 	defer func() {
@@ -118,6 +128,9 @@ func TestDeleteSnapshotS3(t *testing.T) {
 
 func TestSnapshotVerificationFail(t *testing.T) {
 	eng, err := NewEngine()
+	if err == kopiarun.ErrExeVariableNotSet {
+		t.Skip(err)
+	}
 	testenv.AssertNoError(t, err)
 
 	defer func() {
@@ -177,6 +190,9 @@ func TestDataPersistency(t *testing.T) {
 	defer os.RemoveAll(tempDir) //nolint:errcheck
 
 	eng, err := NewEngine()
+	if err == kopiarun.ErrExeVariableNotSet {
+		t.Skip(err)
+	}
 	testenv.AssertNoError(t, err)
 
 	defer func() {
