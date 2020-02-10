@@ -28,6 +28,7 @@ func TestEngineWritefilesBasicFS(t *testing.T) {
 	if err == kopiarun.ErrExeVariableNotSet {
 		t.Skip(err)
 	}
+
 	testenv.AssertNoError(t, err)
 
 	defer func() {
@@ -62,6 +63,7 @@ func TestWriteFilesBasicS3(t *testing.T) {
 	if err == kopiarun.ErrExeVariableNotSet {
 		t.Skip(err)
 	}
+
 	testenv.AssertNoError(t, err)
 
 	defer func() {
@@ -96,6 +98,7 @@ func TestDeleteSnapshotS3(t *testing.T) {
 	if err == kopiarun.ErrExeVariableNotSet {
 		t.Skip(err)
 	}
+
 	testenv.AssertNoError(t, err)
 
 	defer func() {
@@ -131,6 +134,7 @@ func TestSnapshotVerificationFail(t *testing.T) {
 	if err == kopiarun.ErrExeVariableNotSet {
 		t.Skip(err)
 	}
+
 	testenv.AssertNoError(t, err)
 
 	defer func() {
@@ -193,6 +197,7 @@ func TestDataPersistency(t *testing.T) {
 	if err == kopiarun.ErrExeVariableNotSet {
 		t.Skip(err)
 	}
+
 	testenv.AssertNoError(t, err)
 
 	defer func() {
