@@ -25,16 +25,16 @@ var _ checker.Comparer = &WalkCompare{}
 // WalkCompare is a checker.Comparer that utilizes the fswalker
 // libraries to perform the data consistency check.
 type WalkCompare struct {
-	GlobalFilterMatchers []string
+	GlobalFilterFuncs []func(string, fswalker.ActionData) bool
 }
 
 // NewWalkCompare instantiates a new WalkCompare and returns its pointer
 func NewWalkCompare() *WalkCompare {
 	return &WalkCompare{
-		GlobalFilterMatchers: []string{
-			"ctime:",
-			"atime:",
-			"mtime:",
+		GlobalFilterFuncs: []func(string, fswalker.ActionData) bool{
+			filterFileTimeDiffs,
+			isRootDirectoryRename,
+			dirSizeMightBeOffByBlockSizeMultiple,
 		},
 	}
 }
@@ -132,17 +132,10 @@ func (chk *WalkCompare) filterReportDiffs(report *fswalker.Report) {
 
 	DiffItemLoop:
 		for _, diffItem := range diffItems {
-			for _, filterStr := range chk.GlobalFilterMatchers {
-				if strings.Contains(diffItem, filterStr) {
-					fmt.Printf("FILTERING %s due to filtered prefix %q\n", diffItem, filterStr)
+			for _, filterFunc := range chk.GlobalFilterFuncs {
+				if filterFunc(diffItem, mod) {
 					continue DiffItemLoop
 				}
-			}
-
-			// Filter the rename of the root directory
-			if isRootDirectoryRename(diffItem, mod) {
-				fmt.Println("Filtering", diffItem, "due to root directory rename")
-				continue DiffItemLoop
 			}
 
 			newDiffItemList = append(newDiffItemList, diffItem)
@@ -164,6 +157,24 @@ func isRootDirectoryRename(diffItem string, mod fswalker.ActionData) bool {
 	}
 
 	return mod.Before.Info.IsDir && filepath.Dir(mod.Before.Path) == "."
+}
+
+func dirSizeMightBeOffByBlockSizeMultiple(str string, mod fswalker.ActionData) bool {
+	if !mod.Before.Info.IsDir {
+		return false
+	}
+
+	if !strings.Contains(str, "size: ") {
+		return false
+	}
+
+	const blockSize = 4096
+
+	return (mod.Before.Stat.Size-mod.After.Stat.Size)%blockSize == 0
+}
+
+func filterFileTimeDiffs(str string, mod fswalker.ActionData) bool {
+	return strings.Contains(str, "ctime:") || strings.Contains(str, "atime:") || strings.Contains(str, "mtime:")
 }
 
 func validateReport(report *fswalker.Report) error {

@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/google/fswalker"
@@ -182,7 +183,16 @@ func TestWalkChecker_GatherCompare(t *testing.T) {
 		t.Log(tt.name)
 
 		chk := &WalkCompare{
-			GlobalFilterMatchers: tt.fields.GlobalFilterMatchers,
+			GlobalFilterFuncs: []func(string, fswalker.ActionData) bool{
+				func(inputStr string, _ fswalker.ActionData) bool {
+					for _, filterStr := range tt.fields.GlobalFilterMatchers {
+						if strings.Contains(inputStr, filterStr) {
+							return true
+						}
+					}
+					return false
+				},
+			},
 		}
 
 		tmpDir, err := ioutil.TempDir("", "")
@@ -321,8 +331,18 @@ func TestWalkChecker_filterReportDiffs(t *testing.T) {
 		t.Log(tt.name)
 
 		chk := &WalkCompare{
-			GlobalFilterMatchers: tt.fields.GlobalFilterMatchers,
+			GlobalFilterFuncs: []func(string, fswalker.ActionData) bool{
+				func(inputStr string, _ fswalker.ActionData) bool {
+					for _, filterStr := range tt.fields.GlobalFilterMatchers {
+						if strings.Contains(inputStr, filterStr) {
+							return true
+						}
+					}
+					return false
+				},
+			},
 		}
+
 		chk.filterReportDiffs(tt.inputReport)
 
 		if want, got := tt.expModCount, len(tt.inputReport.Modified); want != got {
