@@ -92,7 +92,7 @@ func (chk *WalkCompare) Compare(ctx context.Context, path string, data []byte, r
 	chk.filterReportDiffs(report)
 
 	err = validateReport(report)
-	if err != nil {
+	if err != nil && reportOut != nil {
 		printReportSummary(report, reportOut)
 
 		b, marshalErr := json.MarshalIndent(report, "", "   ")
