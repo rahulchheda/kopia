@@ -28,6 +28,7 @@ func TestEngineWritefilesBasicFS(t *testing.T) {
 	if err == kopiarun.ErrExeVariableNotSet {
 		t.Skip(err)
 	}
+
 	testenv.AssertNoError(t, err)
 
 	defer func() {
@@ -41,7 +42,8 @@ func TestEngineWritefilesBasicFS(t *testing.T) {
 
 	fileSize := int64(256 * 1024 * 1024)
 	numFiles := 10
-	eng.FileWriter.WriteFiles("", fileSize, numFiles, fio.Options{})
+	err = eng.FileWriter.WriteFiles("", fileSize, numFiles, fio.Options{})
+	testenv.AssertNoError(t, err)
 
 	snapIDs := eng.Checker.GetSnapIDs()
 
@@ -62,6 +64,7 @@ func TestWriteFilesBasicS3(t *testing.T) {
 	if err == kopiarun.ErrExeVariableNotSet {
 		t.Skip(err)
 	}
+
 	testenv.AssertNoError(t, err)
 
 	defer func() {
@@ -75,7 +78,8 @@ func TestWriteFilesBasicS3(t *testing.T) {
 
 	fileSize := int64(256 * 1024 * 1024)
 	numFiles := 10
-	eng.FileWriter.WriteFiles("", fileSize, numFiles, fio.Options{})
+	err = eng.FileWriter.WriteFiles("", fileSize, numFiles, fio.Options{})
+	testenv.AssertNoError(t, err)
 
 	snapIDs := eng.Checker.GetLiveSnapIDs()
 
@@ -96,6 +100,7 @@ func TestDeleteSnapshotS3(t *testing.T) {
 	if err == kopiarun.ErrExeVariableNotSet {
 		t.Skip(err)
 	}
+
 	testenv.AssertNoError(t, err)
 
 	defer func() {
@@ -109,7 +114,8 @@ func TestDeleteSnapshotS3(t *testing.T) {
 
 	fileSize := int64(256 * 1024 * 1024)
 	numFiles := 10
-	eng.FileWriter.WriteFiles("", fileSize, numFiles, fio.Options{})
+	err = eng.FileWriter.WriteFiles("", fileSize, numFiles, fio.Options{})
+	testenv.AssertNoError(t, err)
 
 	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.DataDir)
 	testenv.AssertNoError(t, err)
@@ -131,6 +137,7 @@ func TestSnapshotVerificationFail(t *testing.T) {
 	if err == kopiarun.ErrExeVariableNotSet {
 		t.Skip(err)
 	}
+
 	testenv.AssertNoError(t, err)
 
 	defer func() {
@@ -145,7 +152,8 @@ func TestSnapshotVerificationFail(t *testing.T) {
 	// Perform writes
 	fileSize := int64(256 * 1024 * 1024)
 	numFiles := 10
-	eng.FileWriter.WriteFiles("", fileSize, numFiles, fio.Options{})
+	err = eng.FileWriter.WriteFiles("", fileSize, numFiles, fio.Options{})
+	testenv.AssertNoError(t, err)
 
 	// Take a first snapshot
 	snapID1, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.DataDir)
@@ -156,9 +164,10 @@ func TestSnapshotVerificationFail(t *testing.T) {
 	testenv.AssertNoError(t, err)
 
 	// Do additional writes, writing 1 extra byte than before
-	eng.FileWriter.WriteFiles("", fileSize, numFiles, fio.Options{
+	err = eng.FileWriter.WriteFiles("", fileSize, numFiles, fio.Options{
 		"io_size": strconv.Itoa(int(fileSize + 1)),
 	})
+	testenv.AssertNoError(t, err)
 
 	// Take a second snapshot
 	snapID2, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.DataDir)
@@ -193,6 +202,7 @@ func TestDataPersistency(t *testing.T) {
 	if err == kopiarun.ErrExeVariableNotSet {
 		t.Skip(err)
 	}
+
 	testenv.AssertNoError(t, err)
 
 	defer func() {
@@ -210,7 +220,8 @@ func TestDataPersistency(t *testing.T) {
 	// Perform writes
 	fileSize := int64(256 * 1024 * 1024)
 	numFiles := 10
-	eng.FileWriter.WriteFiles("", fileSize, numFiles, fio.Options{})
+	err = eng.FileWriter.WriteFiles("", fileSize, numFiles, fio.Options{})
+	testenv.AssertNoError(t, err)
 
 	// Take a snapshot
 	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.DataDir)
