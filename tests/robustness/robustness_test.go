@@ -14,7 +14,8 @@ import (
 
 func TestManySmallFiles(t *testing.T) {
 	fileSize := int64(4096)
-	numFiles := 100000
+	numFiles := 100
+
 	err := eng.FileWriter.WriteFiles("", fileSize*int64(numFiles), numFiles, fio.Options{
 		"blocksize": "4096",
 	})
@@ -34,9 +35,11 @@ func TestManySmallFiles(t *testing.T) {
 }
 
 func TestModifyWorkload(t *testing.T) {
-	const numSnapshots = 10
-	const numDirs = 10
-	const maxOpsPerMod = 5
+	const (
+		numSnapshots = 10
+		numDirs      = 10
+		maxOpsPerMod = 5
+	)
 
 	numFiles := 10
 	writeSize := int64(65536 * numFiles)
@@ -47,6 +50,7 @@ func TestModifyWorkload(t *testing.T) {
 	}
 
 	var resultIDs []string
+
 	ctx := context.Background()
 
 	for snapNum := 0; snapNum < numSnapshots; snapNum++ {

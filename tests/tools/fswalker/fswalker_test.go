@@ -182,10 +182,12 @@ func TestWalkChecker_GatherCompare(t *testing.T) {
 	} {
 		t.Log(tt.name)
 
+		matchers := tt.fields.GlobalFilterMatchers
+
 		chk := &WalkCompare{
 			GlobalFilterFuncs: []func(string, fswalker.ActionData) bool{
 				func(inputStr string, _ fswalker.ActionData) bool {
-					for _, filterStr := range tt.fields.GlobalFilterMatchers {
+					for _, filterStr := range matchers {
 						if strings.Contains(inputStr, filterStr) {
 							return true
 						}
@@ -330,10 +332,12 @@ func TestWalkChecker_filterReportDiffs(t *testing.T) {
 	} {
 		t.Log(tt.name)
 
+		matchers := tt.fields.GlobalFilterMatchers
+
 		chk := &WalkCompare{
 			GlobalFilterFuncs: []func(string, fswalker.ActionData) bool{
 				func(inputStr string, _ fswalker.ActionData) bool {
-					for _, filterStr := range tt.fields.GlobalFilterMatchers {
+					for _, filterStr := range matchers {
 						if strings.Contains(inputStr, filterStr) {
 							return true
 						}

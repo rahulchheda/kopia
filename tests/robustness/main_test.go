@@ -21,6 +21,7 @@ const (
 
 func TestMain(m *testing.M) {
 	var err error
+
 	eng, err = engine.NewEngine()
 	if err == kopiarun.ErrExeVariableNotSet {
 		fmt.Println("Skipping robustness tests if KOPIA_EXE is not set")
