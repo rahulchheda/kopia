@@ -138,6 +138,9 @@ dist-binary:
 integration-tests: dist-binary
 	KOPIA_EXE=$(CURDIR)/dist/integration/kopia $(GO_TEST) $(TEST_FLAGS) -count=1 -parallel $(PARALLEL) -timeout 300s github.com/kopia/kopia/tests/end_to_end_test
 
+robustness-tests: dist-binary fio
+	KOPIA_EXE=$(CURDIR)/dist/integration/kopia FIO_EXE=$(shell which fio) $(GO_TEST) $(TEST_FLAGS) -timeout 900s github.com/kopia/kopia/tests/robustness
+
 stress-test:
 	KOPIA_LONG_STRESS_TEST=1 $(GO_TEST) -count=1 -timeout 200s github.com/kopia/kopia/tests/stress_test
 	$(GO_TEST) -count=1 -timeout 200s github.com/kopia/kopia/tests/repository_stress_test
