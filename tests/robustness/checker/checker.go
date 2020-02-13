@@ -55,11 +55,11 @@ func (chk *Checker) GetSnapIDs() []string {
 
 // SnapshotMetadata holds metadata associated with a given snapshot
 type SnapshotMetadata struct {
-	SnapID         string
-	SnapStartTime  time.Time
-	SnapEndTime    time.Time
-	DeletionTime   time.Time
-	ValidationData []byte
+	SnapID         string    `json:"snapID"`
+	SnapStartTime  time.Time `json:"snapStartTime"`
+	SnapEndTime    time.Time `json:"snapEndTime"`
+	DeletionTime   time.Time `json:"deletionTime"`
+	ValidationData []byte    `json:"validationData`
 }
 
 // GetSnapshotMetadata gets the metadata associated with the given snapshot ID
