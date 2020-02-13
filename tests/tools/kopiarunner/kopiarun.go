@@ -1,5 +1,5 @@
-// Package kopiarun wraps the execution of the kopia binary.
-package kopiarun
+// Package kopiarunner wraps the execution of the kopia binary.
+package kopiarunner
 
 import (
 	"errors"

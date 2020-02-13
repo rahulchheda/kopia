@@ -1,4 +1,4 @@
-package snapif
+package kopiarunner
 
 import (
 	"crypto/sha1"
@@ -9,19 +9,19 @@ import (
 	"regexp"
 	"strings"
 
-	kopiarun "github.com/kopia/kopia/tests/tools/kopia_runner"
+	"github.com/kopia/kopia/tests/robustness/snap"
 )
 
-var _ Snapshotter = &KopiaSnapshotter{}
+var _ snap.Snapshotter = &KopiaSnapshotter{}
 
 // KopiaSnapshotter implements the Snapshotter interface using Kopia commands
 type KopiaSnapshotter struct {
-	Runner *kopiarun.Runner
+	Runner *Runner
 }
 
 // NewKopiaSnapshotter instantiates a new KopiaSnapshotter and returns its pointer
 func NewKopiaSnapshotter() (*KopiaSnapshotter, error) {
-	runner, err := kopiarun.NewRunner()
+	runner, err := NewRunner()
 	if err != nil {
 		return nil, err
 	}
@@ -84,9 +84,9 @@ func (ks *KopiaSnapshotter) ConnectOrCreateFilesystem(repoPath string) error {
 	return ks.ConnectOrCreateRepo(args...)
 }
 
-// TakeSnapshot implements the Snapshotter interface, issues a kopia snapshot
+// CreateSnapshot implements the Snapshotter interface, issues a kopia snapshot
 // create command on the provided source path.
-func (ks *KopiaSnapshotter) TakeSnapshot(source string) (snapID string, err error) {
+func (ks *KopiaSnapshotter) CreateSnapshot(source string) (snapID string, err error) {
 	_, errOut, err := ks.Runner.Run("snapshot", "create", source)
 	if err != nil {
 		return "", err
