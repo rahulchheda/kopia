@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/kopia/kopia/tests/robustness/snapif"
+	"github.com/kopia/kopia/tests/tools/kopiarunner"
 )
 
 var _ Store = &KopiaMetadata{}
@@ -17,7 +17,7 @@ var _ DataPersister = &KopiaMetadata{}
 type KopiaMetadata struct {
 	*Simple
 	LocalMetadataDir string
-	snap             *snapif.KopiaSnapshotter
+	snap             *kopiarunner.KopiaSnapshotter
 }
 
 // NewKopiaMetadata instantiates a new KopiaMetadata and returns its pointer.
@@ -27,7 +27,7 @@ func NewKopiaMetadata() (*KopiaMetadata, error) {
 		return nil, err
 	}
 
-	snap, err := snapif.NewKopiaSnapshotter()
+	snap, err := kopiarunner.NewKopiaSnapshotter()
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +118,7 @@ func (store *KopiaMetadata) FlushMetadata() error {
 		return err
 	}
 
-	_, err = store.snap.TakeSnapshot(f.Name())
+	_, err = store.snap.CreateSnapshot(f.Name())
 	if err != nil {
 		return err
 	}
