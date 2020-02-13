@@ -1,8 +1,8 @@
-package snapstore
+package snapmeta
 
 import "sync"
 
-var _ Storer = &Simple{}
+var _ Store = &Simple{}
 
 // Simple is a snapstore implementation that stores
 // snapshot metadata as a byte slice in a map in memory

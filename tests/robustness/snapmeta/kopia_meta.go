@@ -1,4 +1,4 @@
-package snapstore
+package snapmeta
 
 import (
 	"encoding/json"
@@ -9,7 +9,7 @@ import (
 	"github.com/kopia/kopia/tests/robustness/snapif"
 )
 
-var _ Storer = &KopiaMetadata{}
+var _ Store = &KopiaMetadata{}
 var _ DataPersister = &KopiaMetadata{}
 
 // KopiaMetadata handles metadata persistency of a snapshot store, using a Kopia
