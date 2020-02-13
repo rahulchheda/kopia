@@ -1,13 +1,13 @@
-package snapstore
+package snapmeta
 
 import "sync"
 
-var _ Storer = &Simple{}
+var _ Store = &Simple{}
 
 // Simple is a snapstore implementation that stores
 // snapshot metadata as a byte slice in a map in memory
 type Simple struct {
-	s map[string][]byte
+	m map[string][]byte
 	l *sync.Mutex
 }
 
@@ -15,30 +15,30 @@ type Simple struct {
 // returns its pointer
 func NewSimple() *Simple {
 	return &Simple{
-		s: make(map[string][]byte),
+		m: make(map[string][]byte),
 		l: new(sync.Mutex),
 	}
 }
 
 // Store implements the Storer interface Store method
-func (store *Simple) Store(key string, val []byte) error {
+func (s *Simple) Store(key string, val []byte) error {
 	buf := make([]byte, len(val))
 	_ = copy(buf, val)
 
-	store.l.Lock()
-	defer store.l.Unlock()
+	s.l.Lock()
+	defer s.l.Unlock()
 
-	store.s[key] = buf
+	s.m[key] = buf
 
 	return nil
 }
 
 // Load implements the Storer interface Load method
-func (store *Simple) Load(key string) ([]byte, error) {
-	store.l.Lock()
-	defer store.l.Unlock()
+func (s *Simple) Load(key string) ([]byte, error) {
+	s.l.Lock()
+	defer s.l.Unlock()
 
-	if buf, found := store.s[key]; found {
+	if buf, found := s.m[key]; found {
 		retBuf := make([]byte, len(buf))
 		_ = copy(retBuf, buf)
 
@@ -49,21 +49,21 @@ func (store *Simple) Load(key string) ([]byte, error) {
 }
 
 // Delete implements the Storer interface Delete method
-func (store *Simple) Delete(key string) {
-	store.l.Lock()
-	defer store.l.Unlock()
+func (s *Simple) Delete(key string) {
+	s.l.Lock()
+	defer s.l.Unlock()
 
-	delete(store.s, key)
+	delete(s.m, key)
 }
 
 // GetKeys implements the Storer interface GetKeys method
-func (store *Simple) GetKeys() []string {
-	ret := make([]string, 0, len(store.s))
+func (s *Simple) GetKeys() []string {
+	s.l.Lock()
+	defer s.l.Unlock()
 
-	store.l.Lock()
-	defer store.l.Unlock()
+	ret := make([]string, 0, len(s.m))
 
-	for k := range store.s {
+	for k := range s.m {
 		ret = append(ret, k)
 	}
 
