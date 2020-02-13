@@ -12,22 +12,22 @@ import (
 	"os"
 	"time"
 
-	"github.com/kopia/kopia/tests/robustness/snapif"
-	"github.com/kopia/kopia/tests/robustness/snapstore"
+	"github.com/kopia/kopia/tests/robustness/snap"
+	"github.com/kopia/kopia/tests/robustness/snapmeta"
 )
 
 // Checker is an object that can take snapshots and restore them, performing
 // a validation for data consistency
 type Checker struct {
 	RestoreDir            string
-	snapshotIssuer        snapif.Snapshotter
-	snapshotMetadataStore snapstore.Storer
+	snapshotIssuer        snap.Snapshotter
+	snapshotMetadataStore snapmeta.Store
 	validator             Comparer
 }
 
 // NewChecker instantiates a new Checker, returning its pointer. A temporary
 // directory is created to mount restored data
-func NewChecker(snap snapif.Snapshotter, snapStore snapstore.Storer, validator Comparer) (*Checker, error) {
+func NewChecker(snap snap.Snapshotter, snapmeta snapmeta.Store, validator Comparer) (*Checker, error) {
 	restoreDir, err := ioutil.TempDir("", "restore-data-")
 	if err != nil {
 		return nil, err
@@ -36,7 +36,7 @@ func NewChecker(snap snapif.Snapshotter, snapStore snapstore.Storer, validator C
 	return &Checker{
 		RestoreDir:            restoreDir,
 		snapshotIssuer:        snap,
-		snapshotMetadataStore: snapStore,
+		snapshotMetadataStore: snapmeta,
 		validator:             validator,
 	}, nil
 }
@@ -59,7 +59,7 @@ type SnapshotMetadata struct {
 	SnapStartTime  time.Time `json:"snapStartTime"`
 	SnapEndTime    time.Time `json:"snapEndTime"`
 	DeletionTime   time.Time `json:"deletionTime"`
-	ValidationData []byte    `json:"validationData`
+	ValidationData []byte    `json:"validationData"`
 }
 
 // GetSnapshotMetadata gets the metadata associated with the given snapshot ID
@@ -151,7 +151,7 @@ func (chk *Checker) TakeSnapshot(ctx context.Context, sourceDir string) (snapID 
 
 	ssStart := time.Now()
 
-	snapID, err = chk.snapshotIssuer.TakeSnapshot(sourceDir)
+	snapID, err = chk.snapshotIssuer.CreateSnapshot(sourceDir)
 	if err != nil {
 		return snapID, err
 	}
