@@ -1,4 +1,4 @@
-package snapstore
+package snapmeta
 
 import (
 	"encoding/json"
@@ -6,10 +6,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/kopia/kopia/tests/robustness/snapif"
+	"github.com/kopia/kopia/tests/tools/kopiarunner"
 )
 
-var _ Storer = &KopiaMetadata{}
+var _ Store = &KopiaMetadata{}
 var _ DataPersister = &KopiaMetadata{}
 
 // KopiaMetadata handles metadata persistency of a snapshot store, using a Kopia
@@ -17,7 +17,7 @@ var _ DataPersister = &KopiaMetadata{}
 type KopiaMetadata struct {
 	*Simple
 	LocalMetadataDir string
-	snap             *snapif.KopiaSnapshotter
+	snap             *kopiarunner.KopiaSnapshotter
 }
 
 // NewKopiaMetadata instantiates a new KopiaMetadata and returns its pointer.
@@ -27,7 +27,7 @@ func NewKopiaMetadata() (*KopiaMetadata, error) {
 		return nil, err
 	}
 
-	snap, err := snapif.NewKopiaSnapshotter()
+	snap, err := kopiarunner.NewKopiaSnapshotter()
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +91,7 @@ func (store *KopiaMetadata) LoadMetadata() error {
 		return err
 	}
 
-	err = json.NewDecoder(f).Decode(&(store.Simple.s))
+	err = json.NewDecoder(f).Decode(&(store.Simple.m))
 	if err != nil {
 		return err
 	}
@@ -113,12 +113,12 @@ func (store *KopiaMetadata) FlushMetadata() error {
 		os.Remove(f.Name()) //nolint:errcheck
 	}()
 
-	err = json.NewEncoder(f).Encode(store.Simple.s)
+	err = json.NewEncoder(f).Encode(store.Simple.m)
 	if err != nil {
 		return err
 	}
 
-	_, err = store.snap.TakeSnapshot(f.Name())
+	_, err = store.snap.CreateSnapshot(f.Name())
 	if err != nil {
 		return err
 	}
