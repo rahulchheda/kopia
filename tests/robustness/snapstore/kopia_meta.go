@@ -91,7 +91,7 @@ func (store *KopiaMetadata) LoadMetadata() error {
 		return err
 	}
 
-	err = json.NewDecoder(f).Decode(&(store.Simple.s))
+	err = json.NewDecoder(f).Decode(&(store.Simple.m))
 	if err != nil {
 		return err
 	}
@@ -113,7 +113,7 @@ func (store *KopiaMetadata) FlushMetadata() error {
 		os.Remove(f.Name()) //nolint:errcheck
 	}()
 
-	err = json.NewEncoder(f).Encode(store.Simple.s)
+	err = json.NewEncoder(f).Encode(store.Simple.m)
 	if err != nil {
 		return err
 	}
