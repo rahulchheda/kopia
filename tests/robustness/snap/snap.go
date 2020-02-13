@@ -1,13 +1,13 @@
-// Package snapif describes entities that are capable of performing
+// Package snap describes entities that are capable of performing
 // common snapshot operations
-package snapif
+package snap
 
 // Snapshotter is an interface that describes methods
 // for taking, restoring, deleting snapshots, and
 // tracking them by a string snapshot ID.
 type Snapshotter interface {
 	RepoManager
-	TakeSnapshot(sourceDir string) (snapID string, err error)
+	CreateSnapshot(sourceDir string) (snapID string, err error)
 	RestoreSnapshot(snapID string, restoreDir string) error
 	DeleteSnapshot(snapID string) error
 	ListSnapshots() ([]string, error)
