@@ -1,4 +1,4 @@
-package kopiarun
+package kopiarunner
 
 import (
 	"os"
