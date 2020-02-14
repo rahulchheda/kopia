@@ -13,10 +13,10 @@ import (
 var eng *engine.Engine
 
 const (
-	fsDataPath     = "/tmp/robustness-data"
-	fsMetadataPath = "/tmp/robustness-metadata"
-	s3DataPath     = "robustness-data"
-	s3MetadataPath = "robustness-metadata"
+	fsDataPath     = "/tmp/robustness-data/"
+	fsMetadataPath = "/tmp/robustness-metadata/"
+	s3DataPath     = "robustness-data/"
+	s3MetadataPath = "robustness-metadata/"
 )
 
 func TestMain(m *testing.M) {
