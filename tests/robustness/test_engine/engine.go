@@ -9,10 +9,11 @@ import (
 	"strconv"
 
 	"github.com/kopia/kopia/tests/robustness/checker"
-	"github.com/kopia/kopia/tests/robustness/snapif"
-	"github.com/kopia/kopia/tests/robustness/snapstore"
+	"github.com/kopia/kopia/tests/robustness/snap"
+	"github.com/kopia/kopia/tests/robustness/snapmeta"
 	"github.com/kopia/kopia/tests/tools/fio"
 	"github.com/kopia/kopia/tests/tools/fswalker"
+	"github.com/kopia/kopia/tests/tools/kopiarunner"
 )
 
 const (
@@ -26,8 +27,8 @@ var ErrS3BucketNameEnvUnset = fmt.Errorf("environment variable required: %v", S3
 // Engine is the outer level testing framework for robustness testing
 type Engine struct {
 	FileWriter      *fio.Runner
-	TestRepo        snapif.Snapshotter
-	MetaStore       snapstore.DataPersister
+	TestRepo        snap.Snapshotter
+	MetaStore       snapmeta.Persister
 	Checker         *checker.Checker
 	cleanupRoutines []func()
 }
@@ -53,7 +54,7 @@ func NewEngine() (*Engine, error) {
 	e.cleanupRoutines = append(e.cleanupRoutines, e.FileWriter.Cleanup)
 
 	// Fill Snapshotter interface
-	kopiaSnapper, err := snapif.NewKopiaSnapshotter()
+	kopiaSnapper, err := kopiarunner.NewKopiaSnapshotter()
 	if err != nil {
 		e.Cleanup() //nolint:errcheck
 		return nil, err
@@ -63,7 +64,7 @@ func NewEngine() (*Engine, error) {
 	e.TestRepo = kopiaSnapper
 
 	// Fill the snapshot store interface
-	snapStore, err := snapstore.NewKopiaMetadata()
+	snapStore, err := snapmeta.New()
 	if err != nil {
 		e.Cleanup() //nolint:errcheck
 		return nil, err
