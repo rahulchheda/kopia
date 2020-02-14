@@ -13,9 +13,10 @@ type Store interface {
 	GetKeys() []string
 }
 
-// DataPersister describes the ability to flush metadata
+// Persister describes the ability to flush metadata
 // to, and load it again, from a repository.
-type DataPersister interface {
+type Persister interface {
+	Store
 	snap.RepoManager
 	LoadMetadata() error
 	FlushMetadata() error
