@@ -28,7 +28,7 @@ var ErrS3BucketNameEnvUnset = fmt.Errorf("environment variable required: %v", S3
 type Engine struct {
 	FileWriter      *fio.Runner
 	TestRepo        snap.Snapshotter
-	MetaStore       snapmeta.DataPersister
+	MetaStore       snapmeta.Persister
 	Checker         *checker.Checker
 	cleanupRoutines []func()
 }
@@ -64,7 +64,7 @@ func NewEngine() (*Engine, error) {
 	e.TestRepo = kopiaSnapper
 
 	// Fill the snapshot store interface
-	snapStore, err := snapmeta.NewKopiaMetadata()
+	snapStore, err := snapmeta.New()
 	if err != nil {
 		e.Cleanup() //nolint:errcheck
 		return nil, err
