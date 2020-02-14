@@ -14,7 +14,7 @@ import (
 
 func TestManySmallFiles(t *testing.T) {
 	fileSize := int64(4096)
-	numFiles := 100
+	numFiles := 10000
 
 	err := eng.FileWriter.WriteFiles("", fileSize*int64(numFiles), numFiles, fio.Options{
 		"blocksize": "4096",
