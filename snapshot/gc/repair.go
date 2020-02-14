@@ -8,6 +8,7 @@ import (
 
 	"github.com/kopia/kopia/fs"
 	"github.com/kopia/kopia/repo"
+	"github.com/kopia/kopia/repo/content"
 	"github.com/kopia/kopia/snapshot"
 )
 
@@ -43,6 +44,22 @@ func RepairAndDiscard(ctx context.Context, rep *repo.DirectRepository, minGCMark
 		}
 
 		checkedSnaps.add(toCheck)
+	}
+
+	// Persist any undeletion index entries
+	if err := rep.Content.Flush(ctx); err != nil {
+		return err
+	}
+
+	// Collect contents ids to be discarded after all the mark manifests have
+	// been checked, and the corresponding snapshots have been repaired
+	discardIDs := content.IDSet{}
+
+	for _, m := range ms {
+		details, err := getMarkDetails(ctx, rep.Content, m.DetailsID)
+		if err != nil {
+			return err
+		}
 
 		// check content deleted by this mark phase and delete what has not been
 		// reused
@@ -56,8 +73,9 @@ func RepairAndDiscard(ctx context.Context, rep *repo.DirectRepository, minGCMark
 				log(ctx).Infof("found re-used content, not deleting: %v", cid)
 				continue
 			}
-			// TODO: really delete content
-			log(ctx).Debugf("deleting content: %v", cid)
+
+			log(ctx).Debugf("discarding content: %v", cid)
+			discardIDs.Add(cid)
 		}
 
 		// Remove gc details and gc mark manifest
@@ -70,7 +88,7 @@ func RepairAndDiscard(ctx context.Context, rep *repo.DirectRepository, minGCMark
 		}
 	}
 
-	return nil
+	return rep.Content.DiscardIndexEntries(ctx, discardIDs, content.CompactOptions{})
 }
 
 func repairSnapshots(ctx context.Context, rep *repo.DirectRepository, snaps manifestIDSet) error {
