@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -42,7 +43,10 @@ func TestEngineWritefilesBasicFS(t *testing.T) {
 
 	fileSize := int64(256 * 1024 * 1024)
 	numFiles := 10
-	err = eng.FileWriter.WriteFiles("", fileSize, numFiles, fio.Options{})
+
+	fioOpts := fio.Options{}.WithFileSize(fileSize).WithNumFiles(numFiles)
+
+	err = eng.FileWriter.WriteFiles("", fioOpts)
 	testenv.AssertNoError(t, err)
 
 	snapIDs := eng.Checker.GetSnapIDs()
@@ -78,7 +82,10 @@ func TestWriteFilesBasicS3(t *testing.T) {
 
 	fileSize := int64(256 * 1024 * 1024)
 	numFiles := 10
-	err = eng.FileWriter.WriteFiles("", fileSize, numFiles, fio.Options{})
+
+	fioOpts := fio.Options{}.WithFileSize(fileSize).WithNumFiles(numFiles)
+
+	err = eng.FileWriter.WriteFiles("", fioOpts)
 	testenv.AssertNoError(t, err)
 
 	snapIDs := eng.Checker.GetLiveSnapIDs()
@@ -114,7 +121,10 @@ func TestDeleteSnapshotS3(t *testing.T) {
 
 	fileSize := int64(256 * 1024 * 1024)
 	numFiles := 10
-	err = eng.FileWriter.WriteFiles("", fileSize, numFiles, fio.Options{})
+
+	fioOpts := fio.Options{}.WithFileSize(fileSize).WithNumFiles(numFiles)
+
+	err = eng.FileWriter.WriteFiles("", fioOpts)
 	testenv.AssertNoError(t, err)
 
 	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.DataDir)
@@ -152,7 +162,9 @@ func TestSnapshotVerificationFail(t *testing.T) {
 	// Perform writes
 	fileSize := int64(256 * 1024 * 1024)
 	numFiles := 10
-	err = eng.FileWriter.WriteFiles("", fileSize, numFiles, fio.Options{})
+	fioOpt := fio.Options{}.WithFileSize(fileSize).WithNumFiles(numFiles)
+
+	err = eng.FileWriter.WriteFiles("", fioOpt)
 	testenv.AssertNoError(t, err)
 
 	// Take a first snapshot
@@ -164,9 +176,7 @@ func TestSnapshotVerificationFail(t *testing.T) {
 	testenv.AssertNoError(t, err)
 
 	// Do additional writes, writing 1 extra byte than before
-	err = eng.FileWriter.WriteFiles("", fileSize, numFiles, fio.Options{
-		"io_size": strconv.Itoa(int(fileSize + 1)),
-	})
+	err = eng.FileWriter.WriteFiles("", fioOpt.WithIOSize(fileSize+1))
 	testenv.AssertNoError(t, err)
 
 	// Take a second snapshot
@@ -220,7 +230,10 @@ func TestDataPersistency(t *testing.T) {
 	// Perform writes
 	fileSize := int64(256 * 1024 * 1024)
 	numFiles := 10
-	err = eng.FileWriter.WriteFiles("", fileSize, numFiles, fio.Options{})
+
+	fioOpt := fio.Options{}.WithFileSize(fileSize).WithNumFiles(numFiles)
+
+	err = eng.FileWriter.WriteFiles("", fioOpt)
 	testenv.AssertNoError(t, err)
 
 	// Take a snapshot
@@ -252,4 +265,171 @@ func TestDataPersistency(t *testing.T) {
 	// of the snapshot taken earlier. They should match.
 	err = fswalker.NewWalkCompare().Compare(ctx, eng2.FileWriter.DataDir, dataDirWalk.ValidationData, os.Stdout)
 	testenv.AssertNoError(t, err)
+}
+
+func TestPickActionWeighted(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		inputCtrlWeights map[string]float64
+		inputActionList  map[ActionKey]Action
+	}{
+		{
+			name: "basic uniform",
+			inputCtrlWeights: map[string]float64{
+				"A": 1,
+				"B": 1,
+				"C": 1,
+			},
+			inputActionList: map[ActionKey]Action{
+				"A": Action{},
+				"B": Action{},
+				"C": Action{},
+			},
+		},
+		{
+			name: "basic weighted",
+			inputCtrlWeights: map[string]float64{
+				"A": 1,
+				"B": 10,
+				"C": 100,
+			},
+			inputActionList: map[ActionKey]Action{
+				"A": Action{},
+				"B": Action{},
+				"C": Action{},
+			},
+		},
+		{
+			name: "include a zero weight",
+			inputCtrlWeights: map[string]float64{
+				"A": 1,
+				"B": 0,
+				"C": 1,
+			},
+			inputActionList: map[ActionKey]Action{
+				"A": Action{},
+				"B": Action{},
+				"C": Action{},
+			},
+		},
+		{
+			name: "include an ActionKey that is not in the action list",
+			inputCtrlWeights: map[string]float64{
+				"A": 1,
+				"B": 1,
+				"C": 1,
+				"D": 100,
+			},
+			inputActionList: map[ActionKey]Action{
+				"A": Action{},
+				"B": Action{},
+				"C": Action{},
+			},
+		},
+	} {
+		t.Log(tc.name)
+
+		inputCtrlOpts := make(map[string]string)
+		weightsSum := 0.0
+		for k, v := range tc.inputCtrlWeights {
+			// Do not weight actions that are not expected in the results
+			if _, ok := tc.inputActionList[ActionKey(k)]; !ok {
+				continue
+			}
+			inputCtrlOpts[k] = strconv.Itoa(int(v))
+			weightsSum += v
+		}
+
+		numTestLoops := 100000
+
+		results := make(map[ActionKey]int, len(tc.inputCtrlWeights))
+		for loop := 0; loop < numTestLoops; loop++ {
+			results[pickActionWeighted(inputCtrlOpts, tc.inputActionList)]++
+		}
+
+		for actionKey, count := range results {
+			p := tc.inputCtrlWeights[string(actionKey)] / weightsSum
+			exp := p * float64(numTestLoops)
+			errPcnt := math.Abs(exp-float64(count)) / exp
+			if errPcnt > 0.1 {
+				t.Errorf("Error in actual counts was above 10%% for %v (exp %v, actual %v)", actionKey, exp, count)
+			}
+		}
+	}
+}
+
+func TestActionsFilesystem(t *testing.T) {
+	eng, err := NewEngine()
+	if err == kopiarunner.ErrExeVariableNotSet {
+		t.Skip(err)
+	}
+
+	testenv.AssertNoError(t, err)
+
+	defer func() {
+		cleanupErr := eng.Cleanup()
+		testenv.AssertNoError(t, cleanupErr)
+	}()
+
+	ctx := context.TODO()
+	err = eng.InitFilesystem(ctx, fsDataRepoPath, fsMetadataRepoPath)
+	testenv.AssertNoError(t, err)
+
+	actionOpts := ActionOpts{
+		WriteRandomFilesActionKey: map[string]string{
+			MaxDirDepthField:         "20",
+			MaxFileSizeField:         strconv.Itoa(10 * 1024 * 1024),
+			MinFileSizeField:         strconv.Itoa(10 * 1024 * 1024),
+			MaxNumFilesPerWriteField: "10",
+			MinNumFilesPerWriteField: "10",
+			MaxDedupePercentField:    "100",
+			MinDedupePercentField:    "100",
+			DedupePercentStepField:   "1",
+			IOLimitPerWriteAction:    "0",
+		},
+	}
+
+	numActions := 10
+	for loop := 0; loop < numActions; loop++ {
+		err := eng.RandomAction(actionOpts)
+		testenv.AssertNoError(t, err)
+	}
+}
+
+func TestActionsS3(t *testing.T) {
+	eng, err := NewEngine()
+	if err == kopiarunner.ErrExeVariableNotSet {
+		t.Skip(err)
+	}
+
+	testenv.AssertNoError(t, err)
+
+	defer func() {
+		cleanupErr := eng.Cleanup()
+		testenv.AssertNoError(t, cleanupErr)
+	}()
+
+	ctx := context.TODO()
+	err = eng.InitS3(ctx, fsDataRepoPath, fsMetadataRepoPath)
+	testenv.AssertNoError(t, err)
+
+	actionOpts := ActionOpts{
+		WriteRandomFilesActionKey: map[string]string{
+			MaxDirDepthField:         "20",
+			MaxFileSizeField:         strconv.Itoa(10 * 1024 * 1024),
+			MinFileSizeField:         strconv.Itoa(10 * 1024 * 1024),
+			MaxNumFilesPerWriteField: "10",
+			MinNumFilesPerWriteField: "10",
+			MaxDedupePercentField:    "100",
+			MinDedupePercentField:    "100",
+			DedupePercentStepField:   "1",
+			IOLimitPerWriteAction:    "0",
+		},
+	}
+
+	numActions := 10
+	for loop := 0; loop < numActions; loop++ {
+		err := eng.RandomAction(actionOpts)
+		testenv.AssertNoError(t, err)
+	}
 }

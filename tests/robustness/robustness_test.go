@@ -6,8 +6,11 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"path/filepath"
+	"strconv"
 	"testing"
+	"time"
 
+	engine "github.com/kopia/kopia/tests/robustness/test_engine"
 	"github.com/kopia/kopia/tests/testenv"
 	"github.com/kopia/kopia/tests/tools/fio"
 )
@@ -16,9 +19,12 @@ func TestManySmallFiles(t *testing.T) {
 	fileSize := int64(4096)
 	numFiles := 10000
 
-	err := eng.FileWriter.WriteFiles("", fileSize*int64(numFiles), numFiles, fio.Options{
-		"blocksize": "4096",
-	})
+	fioOpt := fio.Options{}.
+		WithFileSize(fileSize).
+		WithNumFiles(numFiles).
+		WithBlockSize(fileSize)
+
+	err := eng.FileWriter.WriteFiles("", fioOpt)
 	testenv.AssertNoError(t, err)
 
 	ctx := context.TODO()
@@ -42,12 +48,13 @@ func TestModifyWorkload(t *testing.T) {
 	)
 
 	numFiles := 10
-	writeSize := int64(65536 * numFiles)
-	fioOpt := fio.Options{
-		"dedupe_percentage": "35",
-		"randrepeat":        "0",
-		"blocksize":         "4096",
-	}
+	fileSize := int64(65536)
+	fioOpt := fio.Options{}.
+		WithBlockSize(4096).
+		WithDedupePercentage(35).
+		WithRandRepeat(false).
+		WithNumFiles(numFiles).
+		WithFileSize(fileSize)
 
 	var resultIDs []string
 
@@ -59,7 +66,7 @@ func TestModifyWorkload(t *testing.T) {
 			dirIdxToMod := rand.Intn(numDirs)
 			writeToDir := filepath.Join(t.Name(), fmt.Sprintf("dir%d", dirIdxToMod))
 
-			err := eng.FileWriter.WriteFiles(writeToDir, writeSize, numFiles, fioOpt)
+			err := eng.FileWriter.WriteFiles(writeToDir, fioOpt)
 			testenv.AssertNoError(t, err)
 		}
 
@@ -71,6 +78,29 @@ func TestModifyWorkload(t *testing.T) {
 
 	for _, snapID := range resultIDs {
 		err := eng.Checker.RestoreSnapshot(ctx, snapID, nil)
+		testenv.AssertNoError(t, err)
+	}
+}
+
+func TestRandomized(t *testing.T) {
+	st := time.Now()
+
+	opts := engine.ActionOpts{
+		engine.ActionControlActionKey: map[string]string{
+			string(engine.SnapshotRootDirActionKey):          strconv.Itoa(1),
+			string(engine.RestoreRandomSnapshotActionKey):    strconv.Itoa(1),
+			string(engine.DeleteRandomSnapshotActionKey):     strconv.Itoa(1),
+			string(engine.WriteRandomFilesActionKey):         strconv.Itoa(10),
+			string(engine.DeleteRandomSubdirectoryActionKey): strconv.Itoa(3),
+		},
+		engine.WriteRandomFilesActionKey: map[string]string{
+			engine.MaxDirDepthField:      "20",
+			engine.IOLimitPerWriteAction: fmt.Sprintf("%d", 10*1024*1024*1024),
+		},
+	}
+
+	for time.Since(st) <= *randomizedTestDur {
+		err := eng.RandomAction(opts)
 		testenv.AssertNoError(t, err)
 	}
 }
