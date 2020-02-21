@@ -2,9 +2,11 @@ package robustness
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	engine "github.com/kopia/kopia/tests/robustness/test_engine"
 	"github.com/kopia/kopia/tests/tools/kopiarunner"
@@ -17,9 +19,16 @@ const (
 	fsMetadataPath = "/tmp/robustness-metadata"
 	s3DataPath     = "robustness-data"
 	s3MetadataPath = "robustness-metadata"
+	defaultTestDur = 15 * time.Minute
+)
+
+var (
+	randomizedTestDur = flag.Duration("rand-test-duration", defaultTestDur, "Set the duration for the randomized test")
 )
 
 func TestMain(m *testing.M) {
+	flag.Parse()
+
 	var err error
 
 	eng, err = engine.NewEngine()
