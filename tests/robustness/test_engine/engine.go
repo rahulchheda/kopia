@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/kopia/kopia/tests/robustness/checker"
@@ -36,6 +37,7 @@ type Engine struct {
 
 	actionCounter      int64
 	engineCreationTime time.Time
+	perActionStats     map[ActionKey]*ActionStats
 }
 
 // NewEngine instantiates a new Engine and returns its pointer. It is
@@ -91,12 +93,15 @@ func NewEngine() (*Engine, error) {
 	e.Checker = chk
 
 	e.engineCreationTime = time.Now()
+	e.perActionStats = make(map[ActionKey]*ActionStats)
 
 	return e, nil
 }
 
 // Cleanup cleans up after each component of the test engine
 func (e *Engine) Cleanup() error {
+	log.Printf("Cleanup summary:\n%v", e.Stats())
+
 	defer e.cleanup()
 
 	if e.MetaStore != nil {
@@ -455,8 +460,91 @@ func (e *Engine) RandomAction(actionOpts ActionOpts) error {
 
 func (e *Engine) ExecAction(actionKey ActionKey, opts map[string]string) error {
 	e.actionCounter++
-	log.Printf("Engine executing ACTION: name=%q actionCount=%v t=%vs", actionKey, e.actionCounter, time.Since(e.engineCreationTime).Round(time.Second).Seconds())
+	log.Printf("Engine executing ACTION: name=%q actionCount=%v t=%vs", actionKey, e.actionCounter, e.getRuntimeSeconds())
 
 	action := actions[actionKey]
+	st := time.Now()
+	if e.perActionStats[actionKey] == nil {
+		e.perActionStats[actionKey] = new(ActionStats)
+	}
+
+	defer e.perActionStats[actionKey].Record(st)
+
 	return action.f(e, opts)
+}
+
+func (e *Engine) Stats() string {
+	b := &strings.Builder{}
+
+	fmt.Fprintln(b, "===============================")
+	fmt.Fprintln(b, "Engine Action Summary")
+	fmt.Fprintln(b, "===============================")
+	fmt.Fprintf(b, "Engine runtime:  %10vs\n", e.getRuntimeSeconds())
+	fmt.Fprintf(b, "Actions run:      %10v\n", e.actionCounter)
+	fmt.Fprintln(b, "")
+	fmt.Fprintln(b, "=============")
+	fmt.Fprintln(b, "Action stats")
+	fmt.Fprintln(b, "=============")
+
+	for actionKey, actionStat := range e.perActionStats {
+		fmt.Fprintf(b, "%s:\n", actionKey)
+		fmt.Fprintf(b, "  Count:          %10d\n", actionStat.Count())
+		fmt.Fprintf(b, "  Avg Runtime:    %10v\n", actionStat.avgRuntimeString())
+		fmt.Fprintf(b, "  Max Runtime:   %10vs\n", durationToSec(actionStat.MaxRuntime()))
+		fmt.Fprintf(b, "  Min Runtime:   %10vs\n", durationToSec(actionStat.MinRuntime()))
+		fmt.Fprintln(b, "")
+	}
+	return b.String()
+}
+
+func (e *Engine) getRuntimeSeconds() float64 {
+	return durationToSec(time.Since(e.engineCreationTime))
+}
+
+func durationToSec(dur time.Duration) float64 {
+	return dur.Round(time.Second).Seconds()
+}
+
+type ActionStats struct {
+	count        int64
+	totalRuntime time.Duration
+	minRuntime   time.Duration
+	maxRuntime   time.Duration
+}
+
+func (s *ActionStats) Count() int64 {
+	return s.count
+}
+
+func (s *ActionStats) AverageRuntime() time.Duration {
+	return time.Duration(int64(s.totalRuntime) / s.count)
+}
+
+func (s *ActionStats) avgRuntimeString() string {
+	if s.count == 0 {
+		return "--"
+	}
+	return fmt.Sprintf("%vs", durationToSec(s.AverageRuntime()))
+}
+
+func (s *ActionStats) MaxRuntime() time.Duration {
+	return s.maxRuntime
+}
+
+func (s *ActionStats) MinRuntime() time.Duration {
+	return s.minRuntime
+}
+
+func (s *ActionStats) Record(st time.Time) {
+	s.count++
+	thisRuntime := time.Since(st)
+	s.totalRuntime += thisRuntime
+
+	if thisRuntime > s.maxRuntime {
+		s.maxRuntime = thisRuntime
+	}
+
+	if s.count == 0 || thisRuntime < s.minRuntime {
+		s.minRuntime = thisRuntime
+	}
 }

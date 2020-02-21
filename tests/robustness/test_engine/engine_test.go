@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/kopia/kopia/tests/testenv"
 	"github.com/kopia/kopia/tests/tools/fio"
@@ -431,5 +432,60 @@ func TestActionsS3(t *testing.T) {
 	for loop := 0; loop < numActions; loop++ {
 		err := eng.RandomAction(actionOpts)
 		testenv.AssertNoError(t, err)
+	}
+}
+
+func TestIOLimitPerWriteAction(t *testing.T) {
+	// Instruct a write action to write an enormous amount of data
+	// that should take longer than this timeout without "io_limit",
+	// but finish in less time with "io_limit". Command instructs fio
+	// to generate 100 files x 10 MB each = 1 GB of i/o. The limit is
+	// set to 1 MB.
+	const timeout = 10 * time.Second
+
+	eng, err := NewEngine()
+	if err == kopiarunner.ErrExeVariableNotSet {
+		t.Skip(err)
+	}
+
+	testenv.AssertNoError(t, err)
+
+	defer func() {
+		cleanupErr := eng.Cleanup()
+		testenv.AssertNoError(t, cleanupErr)
+	}()
+
+	ctx := context.TODO()
+	err = eng.InitFilesystem(ctx, fsDataRepoPath, fsMetadataRepoPath)
+	testenv.AssertNoError(t, err)
+
+	actionOpts := ActionOpts{
+		ActionControlActionKey: map[string]string{
+			string(SnapshotRootDirActionKey):          strconv.Itoa(0),
+			string(RestoreRandomSnapshotActionKey):    strconv.Itoa(0),
+			string(DeleteRandomSnapshotActionKey):     strconv.Itoa(0),
+			string(WriteRandomFilesActionKey):         strconv.Itoa(1),
+			string(DeleteRandomSubdirectoryActionKey): strconv.Itoa(0),
+		},
+		WriteRandomFilesActionKey: map[string]string{
+			MaxDirDepthField:         "2",
+			MaxFileSizeField:         strconv.Itoa(10 * 1024 * 1024),
+			MinFileSizeField:         strconv.Itoa(10 * 1024 * 1024),
+			MaxNumFilesPerWriteField: "100",
+			MinNumFilesPerWriteField: "100",
+			IOLimitPerWriteAction:    strconv.Itoa(1 * 1024 * 1024),
+		},
+	}
+
+	st := time.Now()
+
+	numActions := 1
+	for loop := 0; loop < numActions; loop++ {
+		err := eng.RandomAction(actionOpts)
+		testenv.AssertNoError(t, err)
+	}
+
+	if time.Since(st) > timeout {
+		t.Errorf("IO limit parameter did not cut down on the fio runtime")
 	}
 }

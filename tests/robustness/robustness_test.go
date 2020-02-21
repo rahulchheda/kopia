@@ -87,14 +87,13 @@ func TestRandomized(t *testing.T) {
 
 	opts := engine.ActionOpts{
 		engine.ActionControlActionKey: map[string]string{
-			string(engine.SnapshotRootDirActionKey):          strconv.Itoa(1),
-			string(engine.RestoreRandomSnapshotActionKey):    strconv.Itoa(1),
+			string(engine.SnapshotRootDirActionKey):          strconv.Itoa(2),
+			string(engine.RestoreRandomSnapshotActionKey):    strconv.Itoa(2),
 			string(engine.DeleteRandomSnapshotActionKey):     strconv.Itoa(1),
-			string(engine.WriteRandomFilesActionKey):         strconv.Itoa(10),
-			string(engine.DeleteRandomSubdirectoryActionKey): strconv.Itoa(3),
+			string(engine.WriteRandomFilesActionKey):         strconv.Itoa(8),
+			string(engine.DeleteRandomSubdirectoryActionKey): strconv.Itoa(1),
 		},
 		engine.WriteRandomFilesActionKey: map[string]string{
-			engine.MaxDirDepthField:      "20",
 			engine.IOLimitPerWriteAction: fmt.Sprintf("%d", 10*1024*1024*1024),
 		},
 	}
