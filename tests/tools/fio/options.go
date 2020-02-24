@@ -44,62 +44,73 @@ func (o Options) Merge(other Options) Options {
 	return out
 }
 
+// WithSize sets the fio write size
 func (o Options) WithSize(sizeB int64) Options {
 	return o.Merge(Options{
 		SizeFioArg: strconv.Itoa(int(sizeB)),
 	})
 }
 
+// WithSizeRange sets the fio size range
 func (o Options) WithSizeRange(sizeMinB, sizeMaxB int64) Options {
 	return o.Merge(rangeOpt(SizeFioArg, int(sizeMinB), int(sizeMaxB)))
 }
 
+// WithIOLimit sets the fio io limit
 func (o Options) WithIOLimit(ioSizeB int64) Options {
 	return o.Merge(Options{
 		IOLimitFioArg: strconv.Itoa(int(ioSizeB)),
 	})
 }
 
+// WithIOSize sets the fio io size
 func (o Options) WithIOSize(sizeB int64) Options {
 	return o.Merge(Options{
 		IOSizeFioArg: strconv.Itoa(int(sizeB)),
 	})
 }
 
+// WithNumFiles sets the fio number of files
 func (o Options) WithNumFiles(numFiles int) Options {
 	return o.Merge(Options{
 		NumFilesFioArg: strconv.Itoa(numFiles),
 	})
 }
 
+// WithFileSize sets the fio file size
 func (o Options) WithFileSize(fileSizeB int64) Options {
 	return o.Merge(Options{
 		FileSizeFioArg: strconv.Itoa(int(fileSizeB)),
 	})
 }
 
+// WithFileSizeRange sets the fio file size range
 func (o Options) WithFileSizeRange(fileSizeMinB, fileSizeMaxB int64) Options {
 	return o.Merge(rangeOpt(FileSizeFioArg, int(fileSizeMinB), int(fileSizeMaxB)))
 }
 
+// WithDedupePercentage sets the fio dedupe percentage
 func (o Options) WithDedupePercentage(dPcnt int) Options {
 	return o.Merge(Options{
 		DedupePercentageFioArg: strconv.Itoa(dPcnt),
 	})
 }
 
+// WithBlockSize sets the fio block size option
 func (o Options) WithBlockSize(blockSizeB int64) Options {
 	return o.Merge(Options{
 		BlockSizeFioArg: strconv.Itoa(int(blockSizeB)),
 	})
 }
 
+// WithNoFallocate sets the fio option fallocate to "none"
 func (o Options) WithNoFallocate() Options {
 	return o.Merge(Options{
 		FallocateFioArg: NoneFio,
 	})
 }
 
+// WithRandRepeat sets the fio option rand repeat
 func (o Options) WithRandRepeat(set bool) Options {
 	return o.Merge(boolOpt(RandRepeatFioArg, set))
 }

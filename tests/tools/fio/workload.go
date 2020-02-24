@@ -86,6 +86,7 @@ func (fr *Runner) deleteDirAtDepth(path string, depth int) error {
 	}
 
 	var dirList []string
+
 	for _, fi := range fileInfoList {
 		if fi.IsDir() {
 			dirList = append(dirList, filepath.Join(path, fi.Name()))
@@ -111,7 +112,7 @@ func (fr *Runner) deleteDirAtDepth(path string, depth int) error {
 	return ErrNoDirFound
 }
 
-func (fr *Runner) writeFilesAtDepth(fromDirPath string, depth int, branchDepth int, opt Options) error {
+func (fr *Runner) writeFilesAtDepth(fromDirPath string, depth, branchDepth int, opt Options) error {
 	if depth <= 0 {
 		return fr.writeFiles(fromDirPath, opt)
 	}
@@ -137,6 +138,7 @@ func (fr *Runner) writeFilesAtDepth(fromDirPath string, depth int, branchDepth i
 
 func pickRandSubdirPath(dirPath string) (subdirPath string) {
 	subdirCount := 0
+
 	fileInfoList, err := ioutil.ReadDir(dirPath)
 	if err != nil {
 		return ""

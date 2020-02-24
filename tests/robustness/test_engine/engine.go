@@ -296,7 +296,7 @@ var actions = map[ActionKey]Action{
 
 			dedupPcnt := dedupStep * (rand.Intn(maxDedupPcnt/dedupStep-minDedupPcnt/dedupStep+1) + minDedupPcnt/dedupStep)
 
-			blockSize := int64(4096)
+			blockSize := int64(defaultMinFileSize)
 
 			fioOpts := fio.Options{}.
 				WithFileSizeRange(int64(minFileSizeB), int64(maxFileSizeB)).
