@@ -537,7 +537,6 @@ func (s *ActionStats) MinRuntime() time.Duration {
 }
 
 func (s *ActionStats) Record(st time.Time) {
-	s.count++
 	thisRuntime := time.Since(st)
 	s.totalRuntime += thisRuntime
 
@@ -548,4 +547,6 @@ func (s *ActionStats) Record(st time.Time) {
 	if s.count == 0 || thisRuntime < s.minRuntime {
 		s.minRuntime = thisRuntime
 	}
+
+	s.count++
 }
