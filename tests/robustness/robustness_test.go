@@ -94,7 +94,7 @@ func TestRandomized(t *testing.T) {
 			string(engine.DeleteRandomSubdirectoryActionKey): strconv.Itoa(1),
 		},
 		engine.WriteRandomFilesActionKey: map[string]string{
-			engine.IOLimitPerWriteAction: fmt.Sprintf("%d", 10*1024*1024*1024),
+			engine.IOLimitPerWriteAction: fmt.Sprintf("%d", 1*1024*1024*1024),
 		},
 	}
 
