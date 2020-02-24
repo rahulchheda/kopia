@@ -76,7 +76,7 @@ func (fr *Runner) DeleteDirAtDepth(relBasePath string, depth int) error {
 
 // List of known errors
 var (
-	ErrNoDirFound = errors.New("No directory found at this depth")
+	ErrNoDirFound = errors.New("no directory found at this depth")
 )
 
 func (fr *Runner) deleteDirAtDepth(path string, depth int) error {

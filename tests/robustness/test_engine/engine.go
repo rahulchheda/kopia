@@ -325,7 +325,7 @@ var actions = map[ActionKey]Action{
 
 			err := e.FileWriter.DeleteDirAtDepth("", dirDepth)
 			if err != nil && err == fio.ErrNoDirFound {
-				log.Println("No directory found at this depth")
+				log.Print(err)
 				return nil
 			}
 

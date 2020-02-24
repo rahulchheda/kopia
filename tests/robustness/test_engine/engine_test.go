@@ -282,9 +282,9 @@ func TestPickActionWeighted(t *testing.T) {
 				"C": 1,
 			},
 			inputActionList: map[ActionKey]Action{
-				"A": Action{},
-				"B": Action{},
-				"C": Action{},
+				"A": {},
+				"B": {},
+				"C": {},
 			},
 		},
 		{
@@ -295,9 +295,9 @@ func TestPickActionWeighted(t *testing.T) {
 				"C": 100,
 			},
 			inputActionList: map[ActionKey]Action{
-				"A": Action{},
-				"B": Action{},
-				"C": Action{},
+				"A": {},
+				"B": {},
+				"C": {},
 			},
 		},
 		{
@@ -308,9 +308,9 @@ func TestPickActionWeighted(t *testing.T) {
 				"C": 1,
 			},
 			inputActionList: map[ActionKey]Action{
-				"A": Action{},
-				"B": Action{},
-				"C": Action{},
+				"A": {},
+				"B": {},
+				"C": {},
 			},
 		},
 		{
@@ -322,16 +322,17 @@ func TestPickActionWeighted(t *testing.T) {
 				"D": 100,
 			},
 			inputActionList: map[ActionKey]Action{
-				"A": Action{},
-				"B": Action{},
-				"C": Action{},
+				"A": {},
+				"B": {},
+				"C": {},
 			},
 		},
 	} {
 		t.Log(tc.name)
 
-		inputCtrlOpts := make(map[string]string)
 		weightsSum := 0.0
+
+		inputCtrlOpts := make(map[string]string)
 		for k, v := range tc.inputCtrlWeights {
 			// Do not weight actions that are not expected in the results
 			if _, ok := tc.inputActionList[ActionKey(k)]; !ok {
@@ -351,6 +352,7 @@ func TestPickActionWeighted(t *testing.T) {
 		for actionKey, count := range results {
 			p := tc.inputCtrlWeights[string(actionKey)] / weightsSum
 			exp := p * float64(numTestLoops)
+
 			errPcnt := math.Abs(exp-float64(count)) / exp
 			if errPcnt > 0.1 {
 				t.Errorf("Error in actual counts was above 10%% for %v (exp %v, actual %v)", actionKey, exp, count)
