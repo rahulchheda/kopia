@@ -302,7 +302,8 @@ var actions = map[ActionKey]Action{
 				WithFileSizeRange(int64(minFileSizeB), int64(maxFileSizeB)).
 				WithNumFiles(numFiles).
 				WithBlockSize(blockSize).
-				WithDedupePercentage(dedupPcnt)
+				WithDedupePercentage(dedupPcnt).
+				WithNoFallocate()
 
 			ioLimit := getOptAsIntOrDefault(IOLimitPerWriteAction, opts, defaultIOLimitPerWriteAction)
 			if ioLimit > 0 {

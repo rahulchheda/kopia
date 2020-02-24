@@ -12,6 +12,7 @@ type Options map[string]string
 const (
 	BlockSizeFioArg        = "blocksize"
 	DedupePercentageFioArg = "dedupe_percentage"
+	FallocateFioArg        = "fallocate"
 	FileSizeFioArg         = "filesize"
 	IOLimitFioArg          = "io_limit"
 	IOSizeFioArg           = "io_size"
@@ -22,6 +23,7 @@ const (
 
 // List of FIO specific fields and delimiters
 const (
+	NoneFio       = "none"
 	RandWriteFio  = "randwrite"
 	RangeDelimFio = "-"
 )
@@ -89,6 +91,12 @@ func (o Options) WithDedupePercentage(dPcnt int) Options {
 func (o Options) WithBlockSize(blockSizeB int64) Options {
 	return o.Merge(Options{
 		BlockSizeFioArg: strconv.Itoa(int(blockSizeB)),
+	})
+}
+
+func (o Options) WithNoFallocate() Options {
+	return o.Merge(Options{
+		FallocateFioArg: NoneFio,
 	})
 }
 
