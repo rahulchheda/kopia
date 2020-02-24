@@ -208,12 +208,17 @@ func (e *Engine) InitFilesystem(ctx context.Context, testRepoPath, metaRepoPath 
 	return nil
 }
 
+// ActionOpts is a structure that designates the options for
+// picking and running an action
 type ActionOpts map[ActionKey]map[string]string
 
+// Action is a unit of functionality that can be executed by
+// the engine
 type Action struct {
 	f func(eng *Engine, opts map[string]string) error
 }
 
+// ActionKey refers to an action that can be executed by the engine
 type ActionKey string
 
 // List of action keys
@@ -445,6 +450,9 @@ func pickActionWeighted(actionControlOpts map[string]string, actionList map[Acti
 	return keepKey
 }
 
+// RandomAction executes a random action picked by the relative weights given
+// in actionOpts[ActionControlActionKey], or uniform probability if that
+// key is not present in the input options
 func (e *Engine) RandomAction(actionOpts ActionOpts) error {
 	actionControlOpts := defaultActionControls()
 	if actionOpts != nil && actionOpts[ActionControlActionKey] != nil {
@@ -459,6 +467,7 @@ func (e *Engine) RandomAction(actionOpts ActionOpts) error {
 	return e.ExecAction(actionName, actionOpts[actionName])
 }
 
+// ExecAction executes the action denoted by the provided ActionKey
 func (e *Engine) ExecAction(actionKey ActionKey, opts map[string]string) error {
 	e.actionCounter++
 	log.Printf("Engine executing ACTION: name=%q actionCount=%v t=%vs", actionKey, e.actionCounter, e.getRuntimeSeconds())
@@ -474,6 +483,7 @@ func (e *Engine) ExecAction(actionKey ActionKey, opts map[string]string) error {
 	return action.f(e, opts)
 }
 
+// Stats returns a string report of the engine's stats
 func (e *Engine) Stats() string {
 	b := &strings.Builder{}
 
@@ -506,6 +516,7 @@ func durationToSec(dur time.Duration) float64 {
 	return dur.Round(time.Second).Seconds()
 }
 
+// ActionStats tracks runtime statistics for an action
 type ActionStats struct {
 	count        int64
 	totalRuntime time.Duration
@@ -513,10 +524,12 @@ type ActionStats struct {
 	maxRuntime   time.Duration
 }
 
+// Count returns the number of time this action was executed
 func (s *ActionStats) Count() int64 {
 	return s.count
 }
 
+// AverageRuntime returns the average run time for the action
 func (s *ActionStats) AverageRuntime() time.Duration {
 	return time.Duration(int64(s.totalRuntime) / s.count)
 }
@@ -528,14 +541,18 @@ func (s *ActionStats) avgRuntimeString() string {
 	return fmt.Sprintf("%vs", durationToSec(s.AverageRuntime()))
 }
 
+// MaxRuntime returns the maximum run time for the action
 func (s *ActionStats) MaxRuntime() time.Duration {
 	return s.maxRuntime
 }
 
+// MinRuntime returns the minimum run time for the action
 func (s *ActionStats) MinRuntime() time.Duration {
 	return s.minRuntime
 }
 
+// Record records the current time against the provided start time
+// and updates the stats accordingly
 func (s *ActionStats) Record(st time.Time) {
 	thisRuntime := time.Since(st)
 	s.totalRuntime += thisRuntime
