@@ -2,6 +2,7 @@ COVERAGE_PACKAGES=github.com/kopia/kopia/repo/...,github.com/kopia/kopia/fs/...,
 GO_TEST=go test
 PARALLEL=8
 TEST_FLAGS=
+KOPIA_INTEGRATION_EXE=$(CURDIR)/dist/integration/kopia.exe
 
 all: test lint vet integration-tests
 
@@ -30,49 +31,51 @@ clean:
 play:
 	go run cmd/playground/main.go
 
-lint: $(LINTER_TOOL)
-	# try running linter a couple of times since it is pretty flaky, especially on cold start
-	for retry in 1 2 3; do echo "Running linter, attempt #$$retry"; $(LINTER_TOOL) --deadline 180s run && s=0 && break || s=$$? && sleep 1; done; (exit $$s)
+lint: $(linter)
+	$(linter) --deadline 180s run $(linter_flags)
 
-lint-and-log: $(LINTER_TOOL)
-	$(LINTER_TOOL) --deadline 180s run | tee .linterr.txt
+lint-and-log: $(linter)
+	$(linter) --deadline 180s run $(linter_flags) | tee .linterr.txt
 
 vet:
 	go vet -all .
 
-travis-setup: travis-install-gpg-key travis-install-test-credentials
+travis-setup: travis-install-gpg-key travis-install-test-credentials all-tools
 	go mod download
+	make -C htmlui node_modules
+	make -C app node_modules
 
 website:
 	$(MAKE) -C site build
 
 html-ui:
-	$(MAKE) -C htmlui build-html
+	$(MAKE) -C htmlui build-html CI=true
 
-html-ui-bindata: html-ui $(BINDATA_TOOL)
-	(cd htmlui/build && $(BINDATA_TOOL) -fs -tags embedhtml -o "$(CURDIR)/internal/server/htmlui_bindata.go" -pkg server -ignore '.map' . static/css static/js static/media)
+html-ui-tests:
+	$(MAKE) -C htmlui test CI=true
 
-html-ui-bindata-fallback: $(BINDATA_TOOL)
-	(cd internal/server && $(BINDATA_TOOL) -fs -tags !embedhtml -o "$(CURDIR)/internal/server/htmlui_fallback.go" -pkg server index.html)
+html-ui-bindata: html-ui $(go_bindata)
+	(cd htmlui/build && $(go_bindata) -fs -tags embedhtml -o "$(CURDIR)/internal/server/htmlui_bindata.go" -pkg server -ignore '.map' . static/css static/js static/media)
 
-# by default build unpacked Kopia UI for current OS only
-KOPIA_UI_BUILD_TARGET=build-electron-dir
-
-ifeq ($(TRAVIS_OS_NAME),osx)
-# build and package Mac app
-KOPIA_UI_BUILD_TARGET=build-all-mac
-endif
-ifeq ($(TRAVIS_OS_NAME),linux)
-# build and package Windows and Linux app
-KOPIA_UI_BUILD_TARGET=build-all-win-linux-docker
-endif
+html-ui-bindata-fallback: $(go_bindata)
+	(cd internal/server && $(go_bindata) -fs -tags !embedhtml -o "$(CURDIR)/internal/server/htmlui_fallback.go" -pkg server index.html)
 
 kopia-ui: goreleaser
-	$(MAKE) -C app $(KOPIA_UI_BUILD_TARGET)
+	$(MAKE) -C app build-electron
+
+ifeq ($(TRAVIS_OS_NAME),windows)
+travis-release: install kopia-ui
+	$(MAKE) lint test html-ui-tests
+	$(MAKE) integration-tests
+endif
 
 ifeq ($(TRAVIS_OS_NAME),osx)
-travis-release: kopia-ui
-else
+travis-release: install kopia-ui
+	$(MAKE) lint test html-ui-tests
+	$(MAKE) integration-tests
+endif
+
+ifeq ($(TRAVIS_OS_NAME),linux)
 travis-release: goreleaser kopia-ui website
 	$(MAKE) test-all
 	$(MAKE) integration-tests
@@ -81,14 +84,25 @@ ifneq ($(TRAVIS_TAG),)
 	$(MAKE) travis-create-long-term-repository
 endif
 endif
-test-all: lint vet test-with-coverage
+
+test-all: lint vet test-with-coverage html-ui-tests html-ui-tests
 
 # goreleaser - builds binaries for all platforms
-GORELEASER_OPTIONS=--rm-dist --skip-publish
+GORELEASER_OPTIONS=--rm-dist --skip-publish --parallelism=6
 
+sign_gpg=1
 ifneq ($(TRAVIS_PULL_REQUEST),false)
 	# not running on travis, or travis in PR mode, skip signing
-	GORELEASER_OPTIONS+=--skip-sign
+	sign_gpg=0
+endif
+
+ifeq ($(TRAVIS_OS_NAME),windows)
+	# signing does not work on Windows on Travis
+	sign_gpg=0
+endif
+
+ifeq ($(sign_gpg),0)
+GORELEASER_OPTIONS+=--skip-sign
 endif
 
 ifeq ($(TRAVIS_TAG),)
@@ -96,8 +110,8 @@ ifeq ($(TRAVIS_TAG),)
 	GORELEASER_OPTIONS+=--snapshot
 endif
 
-goreleaser: $(GORELEASER_TOOL)
-	$(GORELEASER_TOOL) $(GORELEASER_OPTIONS)
+goreleaser: $(goreleaser)
+	$(goreleaser) release $(GORELEASER_OPTIONS)
 
 ifeq ($(TRAVIS_PULL_REQUEST),false)
 
@@ -106,7 +120,7 @@ upload-coverage: $(GOVERALLS_TOOL) test-with-coverage
 
 else
 
-upload-coverage:
+uload-coverage:
 	@echo Not uploading coverage during PR build.
 
 endif
@@ -133,10 +147,10 @@ vtest:
 	$(GO_TEST) -count=1 -short -v -timeout 90s github.com/kopia/kopia/...
 
 dist-binary:
-	go build -o dist/integration/kopia github.com/kopia/kopia
+	go build -o $(KOPIA_INTEGRATION_EXE) github.com/kopia/kopia
 
 integration-tests: dist-binary
-	KOPIA_EXE=$(CURDIR)/dist/integration/kopia $(GO_TEST) $(TEST_FLAGS) -count=1 -parallel $(PARALLEL) -timeout 300s github.com/kopia/kopia/tests/end_to_end_test
+	KOPIA_EXE=$(KOPIA_INTEGRATION_EXE) $(GO_TEST) $(TEST_FLAGS) -count=1 -parallel $(PARALLEL) -timeout 300s github.com/kopia/kopia/tests/end_to_end_test
 
 robustness-tests: dist-binary fio
 	KOPIA_EXE=$(CURDIR)/dist/integration/kopia FIO_EXE=$(shell which fio) $(GO_TEST) $(TEST_FLAGS) -timeout 900s github.com/kopia/kopia/tests/robustness
@@ -164,10 +178,15 @@ goreturns:
 ifeq ($(TRAVIS_PULL_REQUEST),false)
 
 travis-install-gpg-key:
+ifeq ($(TRAVIS_OS_NAME),windows)
+	# https://travis-ci.community/t/windows-build-timeout-after-success-ps-shows-gpg-agent/4967/4
+	@echo Not installing GPG key on Windows...
+else
 	@echo Installing GPG key...
 	openssl aes-256-cbc -K "$(encrypted_fa1db4b894bb_key)" -iv "$(encrypted_fa1db4b894bb_iv)" -in kopia.gpg.enc -out /tmp/kopia.gpg -d
 	gpg --import /tmp/kopia.gpg
-	
+endif
+
 travis-install-test-credentials:
 	@echo Installing test credentials...
 	openssl aes-256-cbc -K "$(encrypted_fa1db4b894bb_key)" -iv "$(encrypted_fa1db4b894bb_iv)" -in tests/credentials/gcs/test_service_account.json.enc -out repo/blob/gcs/test_service_account.json -d
@@ -195,7 +214,7 @@ ifneq ($(TRAVIS_TAG),)
 
 travis-create-long-term-repository: dist-binary travis-install-cloud-sdk
 	echo Creating long-term repository $(TRAVIS_TAG)...
-	KOPIA_EXE=$(CURDIR)/dist/integration/kopia ./tests/compat_test/gen-compat-repo.sh
+	KOPIA_EXE=$(KOPIA_INTEGRATION_EXE) ./tests/compat_test/gen-compat-repo.sh
 
 else
 

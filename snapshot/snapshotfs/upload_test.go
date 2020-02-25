@@ -58,7 +58,7 @@ func newUploadTestHarness() *uploadTestHarness {
 	log.Debugf("repo dir: %v", repoDir)
 
 	configFile := filepath.Join(repoDir, ".kopia.config")
-	if conerr := repo.Connect(ctx, configFile, storage, masterPassword, repo.ConnectOptions{}); conerr != nil {
+	if conerr := repo.Connect(ctx, configFile, storage, masterPassword, nil); conerr != nil {
 		panic("unable to connect to repository: " + conerr.Error())
 	}
 
@@ -205,7 +205,7 @@ func TestUpload_TopLevelDirectoryReadFailure(t *testing.T) {
 	policyTree := policy.BuildTree(nil, policy.DefaultPolicy)
 
 	s, err := u.Upload(ctx, th.sourceDir, policyTree, snapshot.SourceInfo{})
-	if err != errTest {
+	if err.Error() != errTest.Error() {
 		t.Errorf("expected error: %v", err)
 	}
 
@@ -223,7 +223,7 @@ func TestUpload_SubDirectoryReadFailure(t *testing.T) {
 	th.sourceDir.Subdir("d1").FailReaddir(errTest)
 
 	u := NewUploader(th.repo)
-	u.IgnoreFileErrors = false
+	u.IgnoreReadErrors = false
 
 	policyTree := policy.BuildTree(nil, policy.DefaultPolicy)
 
