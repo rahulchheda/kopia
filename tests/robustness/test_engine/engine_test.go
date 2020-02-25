@@ -331,13 +331,14 @@ func TestPickActionWeighted(t *testing.T) {
 		t.Log(tc.name)
 
 		weightsSum := 0.0
-
 		inputCtrlOpts := make(map[string]string)
+
 		for k, v := range tc.inputCtrlWeights {
 			// Do not weight actions that are not expected in the results
 			if _, ok := tc.inputActionList[ActionKey(k)]; !ok {
 				continue
 			}
+
 			inputCtrlOpts[k] = strconv.Itoa(int(v))
 			weightsSum += v
 		}

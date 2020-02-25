@@ -232,7 +232,7 @@ const (
 )
 
 var actions = map[ActionKey]Action{
-	SnapshotRootDirActionKey: Action{
+	SnapshotRootDirActionKey: {
 		f: func(e *Engine, opts map[string]string) error {
 
 			log.Printf("Creating snapshot of root directory %s", e.FileWriter.DataDir)
@@ -242,11 +242,11 @@ var actions = map[ActionKey]Action{
 			return err
 		},
 	},
-	RestoreRandomSnapshotActionKey: Action{
+	RestoreRandomSnapshotActionKey: {
 		f: func(e *Engine, opts map[string]string) error {
 
 			snapIDList := e.Checker.GetLiveSnapIDs()
-			if len(snapIDList) <= 0 {
+			if len(snapIDList) == 0 {
 				return nil
 			}
 
@@ -259,11 +259,11 @@ var actions = map[ActionKey]Action{
 			return err
 		},
 	},
-	DeleteRandomSnapshotActionKey: Action{
+	DeleteRandomSnapshotActionKey: {
 		f: func(e *Engine, opts map[string]string) error {
 
 			snapIDList := e.Checker.GetLiveSnapIDs()
-			if len(snapIDList) <= 0 {
+			if len(snapIDList) == 0 {
 				return nil
 			}
 
@@ -276,7 +276,7 @@ var actions = map[ActionKey]Action{
 			return err
 		},
 	},
-	WriteRandomFilesActionKey: Action{
+	WriteRandomFilesActionKey: {
 		f: func(e *Engine, opts map[string]string) error {
 
 			// Directory depth
@@ -321,7 +321,7 @@ var actions = map[ActionKey]Action{
 			return err
 		},
 	},
-	DeleteRandomSubdirectoryActionKey: Action{
+	DeleteRandomSubdirectoryActionKey: {
 		f: func(e *Engine, opts map[string]string) error {
 			maxDirDepth := getOptAsIntOrDefault(MaxDirDepthField, opts, defaultMaxDirDepth)
 			dirDepth := rand.Intn(maxDirDepth)
@@ -365,6 +365,7 @@ func getOptAsIntOrDefault(key string, opts map[string]string, def int) int {
 	if err != nil {
 		return def
 	}
+
 	return retInt
 }
 
@@ -390,51 +391,11 @@ func defaultActionControls() map[string]string {
 	return ret
 }
 
-func pickActionWeightedOld(actionControlOpts map[string]string) ActionKey {
-	sum := 0
-	intervals := []struct {
-		boundEnd   int
-		actionName ActionKey
-	}{}
-
-	for actionName, weightStr := range actionControlOpts {
-		actionKey := ActionKey(actionName)
-		if _, ok := actions[actionKey]; !ok {
-			// Skip if this doesn't correspond to an action
-			continue
-		}
-
-		weight, err := strconv.Atoi(weightStr)
-		if err != nil {
-			weight = 1
-		}
-
-		sum += weight
-
-		intervals = append(intervals,
-			struct {
-				boundEnd   int
-				actionName ActionKey
-			}{
-				boundEnd:   sum,
-				actionName: actionKey,
-			})
-	}
-
-	randVal := rand.Intn(sum)
-
-	for _, actionInfo := range intervals {
-		if randVal < actionInfo.boundEnd {
-			return actionInfo.actionName
-		}
-	}
-
-	return ActionKey("")
-}
-
 func pickActionWeighted(actionControlOpts map[string]string, actionList map[ActionKey]Action) ActionKey {
-	sum := 0
 	var keepKey ActionKey
+
+	sum := 0
+
 	for actionName := range actionList {
 		weight := getOptAsIntOrDefault(string(actionName), actionControlOpts, 0)
 		if weight == 0 {
@@ -474,6 +435,7 @@ func (e *Engine) ExecAction(actionKey ActionKey, opts map[string]string) error {
 
 	action := actions[actionKey]
 	st := time.Now()
+
 	if e.perActionStats[actionKey] == nil {
 		e.perActionStats[actionKey] = new(ActionStats)
 	}
@@ -505,6 +467,7 @@ func (e *Engine) Stats() string {
 		fmt.Fprintf(b, "  Min Runtime:   %10vs\n", durationToSec(actionStat.MinRuntime()))
 		fmt.Fprintln(b, "")
 	}
+
 	return b.String()
 }
 
@@ -538,6 +501,7 @@ func (s *ActionStats) avgRuntimeString() string {
 	if s.count == 0 {
 		return "--"
 	}
+
 	return fmt.Sprintf("%vs", durationToSec(s.AverageRuntime()))
 }
 
