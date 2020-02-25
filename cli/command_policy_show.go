@@ -80,6 +80,8 @@ func printPolicy(p *policy.Policy, parents []*policy.Policy) {
 	printStdout("\n")
 	printFilesPolicy(p, parents)
 	printStdout("\n")
+	printErrorHandlingPolicy(p, parents)
+	printStdout("\n")
 	printSchedulingPolicy(p, parents)
 	printStdout("\n")
 	printCompressionPolicy(p, parents)
@@ -155,6 +157,22 @@ func printFilesPolicy(p *policy.Policy, parents []*policy.Policy) {
 	}
 }
 
+func printErrorHandlingPolicy(p *policy.Policy, parents []*policy.Policy) {
+	printStdout("Error handling policy:\n")
+
+	printStdout("  Ignore file read errors:       %5v       %v\n",
+		p.ErrorHandlingPolicy.IgnoreFileErrorsOrDefault(false),
+		getDefinitionPoint(parents, func(pol *policy.Policy) bool {
+			return pol.ErrorHandlingPolicy.IgnoreFileErrors != nil
+		}))
+
+	printStdout("  Ignore directory read errors:  %5v       %v\n",
+		p.ErrorHandlingPolicy.IgnoreDirectoryErrorsOrDefault(false),
+		getDefinitionPoint(parents, func(pol *policy.Policy) bool {
+			return pol.ErrorHandlingPolicy.IgnoreDirectoryErrors != nil
+		}))
+}
+
 func printSchedulingPolicy(p *policy.Policy, parents []*policy.Policy) {
 	printStdout("Scheduled snapshots:\n")
 
@@ -193,7 +211,7 @@ func printSchedulingPolicy(p *policy.Policy, parents []*policy.Policy) {
 }
 
 func printCompressionPolicy(p *policy.Policy, parents []*policy.Policy) {
-	if p.CompressionPolicy.CompressorName != "" {
+	if p.CompressionPolicy.CompressorName != "" && p.CompressionPolicy.CompressorName != "none" {
 		printStdout("Compression:\n")
 		printStdout("  Compressor: %q %v\n", p.CompressionPolicy.CompressorName, getDefinitionPoint(parents, func(pol *policy.Policy) bool {
 			return pol.CompressionPolicy.CompressorName != ""

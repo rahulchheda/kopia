@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"time"
 
 	"github.com/efarrer/iothrottler"
 	"github.com/pkg/errors"
@@ -94,8 +95,6 @@ func translateError(err error) error {
 	case nil:
 		return nil
 	case gcsclient.ErrObjectNotExist:
-		return blob.ErrBlobNotFound
-	case gcsclient.ErrBucketNotExist:
 		return blob.ErrBlobNotFound
 	default:
 		return errors.Wrap(err, "unexpected GCS error")
@@ -267,14 +266,27 @@ func New(ctx context.Context, opt *Options) (blob.Storage, error) {
 		return nil, errors.New("bucket name must be specified")
 	}
 
-	return &gcsStorage{
+	gcs := &gcsStorage{
 		Options:           *opt,
 		ctx:               ctx,
 		storageClient:     cli,
 		bucket:            cli.Bucket(opt.BucketName),
 		downloadThrottler: downloadThrottler,
 		uploadThrottler:   uploadThrottler,
-	}, nil
+	}
+
+	// verify GCS connection is functional by listing blobs in a bucket, which will fail if the bucket
+	// does not exist. We list with a prefix that will not exist, to avoid iterating through any objects.
+	nonExistentPrefix := fmt.Sprintf("kopia-gcs-storage-initializing-%v", time.Now().UnixNano())
+	err = gcs.ListBlobs(ctx, blob.ID(nonExistentPrefix), func(md blob.Metadata) error {
+		return nil
+	})
+
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to list from the bucket")
+	}
+
+	return gcs, nil
 }
 
 func init() {
