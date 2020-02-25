@@ -17,13 +17,27 @@ import (
 
 // ConnectOptions specifies options when persisting configuration to connect to a repository.
 type ConnectOptions struct {
+	PersistCredentials bool `json:"persistCredentials"`
+
 	content.CachingOptions
 }
 
+// ErrRepositoryNotInitialized is returned when attempting to connect to repository that has not
+// been initialized.
+var ErrRepositoryNotInitialized = errors.Errorf("repository not initialized in the provided storage")
+
 // Connect connects to the repository in the specified storage and persists the configuration and credentials in the file provided.
-func Connect(ctx context.Context, configFile string, st blob.Storage, password string, opt ConnectOptions) error {
+func Connect(ctx context.Context, configFile string, st blob.Storage, password string, opt *ConnectOptions) error {
+	if opt == nil {
+		opt = &ConnectOptions{}
+	}
+
 	formatBytes, err := st.GetBlob(ctx, FormatBlobID, 0, -1)
 	if err != nil {
+		if err == blob.ErrBlobNotFound {
+			return ErrRepositoryNotInitialized
+		}
+
 		return errors.Wrap(err, "unable to read format blob")
 	}
 
@@ -55,7 +69,21 @@ func Connect(ctx context.Context, configFile string, st blob.Storage, password s
 	// now verify that the repository can be opened with the provided config file.
 	r, err := Open(ctx, configFile, password, nil)
 	if err != nil {
+		// we failed to open the repository after writing the config file,
+		// remove the config file we just wrote and any caches.
+		if derr := Disconnect(configFile); derr != nil {
+			log.Warningf("unable to disconnect after unsuccessful opening: %v", derr)
+		}
+
 		return err
+	}
+
+	if opt.PersistCredentials {
+		if err := persistPassword(configFile, password); err != nil {
+			return errors.Wrap(err, "unable to persist password")
+		}
+	} else {
+		deletePassword(configFile)
 	}
 
 	return r.Close(ctx)
@@ -106,9 +134,11 @@ func Disconnect(configFile string) error {
 		return err
 	}
 
+	deletePassword(configFile)
+
 	if cfg.Caching.CacheDirectory != "" {
 		if err = os.RemoveAll(cfg.Caching.CacheDirectory); err != nil {
-			log.Warningf("unable to to remove cache directory: %v", err)
+			log.Warningf("unable to remove cache directory: %v", err)
 		}
 	}
 
