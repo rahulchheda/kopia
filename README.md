@@ -19,11 +19,20 @@ Kopia
 
 Kopia is a simple, cross-platform tool for managing encrypted backups in the cloud. It provides fast, incremental backups, secure, client-side end-to-end encryption, compression and data deduplication.
 
-Unlike other cloud backup solutions, the user in full control of backup storage and is responsible for purchasing one of the cloud storage products  (such as [Google Cloud Storage](https://cloud.google.com/storage/)), which offer great durability and availability for your data.
+Unlike other cloud backup solutions, the user is in full control of the backup storage and responsible for purchasing one of the cloud storage products (such as [Google Cloud Storage](https://cloud.google.com/storage/)), which offer great durability and availability for the data.
+
+Kopia in action
+---
+
+[![asciicast](https://asciinema.org/a/ykx6uzEhKY3451fWEnX9nm9uo.svg)](https://asciinema.org/a/ykx6uzEhKY3451fWEnX9nm9uo)
 
 Getting Started
 ---
 See [Documentation](https://kopia.io/docs/) for more information.
+
+Building Kopia
+---
+See [Build Infrastructure](BUILD.md) for more information on building Kopia and working with the source code.
 
 Licensing
 ---
@@ -36,7 +45,7 @@ Kopia is open source and contributions are welcome. For more information on how 
 
 Reporting Security Issues
 ---
-If you find a security issue you'd like to disclose privately, please contact `jaak@jkowalski.net` or via direct message on [Slack](https://slack.kopia.io).
+If you find a security issue you'd like to disclose privately, please contact `kopia-pmc@googlegroups.com` or via direct message to maintainers on [Slack](https://slack.kopia.io).
 
 
 Disclaimer
