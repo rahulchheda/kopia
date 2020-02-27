@@ -3,7 +3,7 @@ GO_TEST=go test
 PARALLEL=8
 TEST_FLAGS=
 KOPIA_INTEGRATION_EXE=$(CURDIR)/dist/integration/kopia.exe
-FIO_DOCKER_TAG=test-fio
+FIO_DOCKER_TAG=kopia-tool-test-fio
 
 all: test lint vet integration-tests
 
