@@ -80,7 +80,7 @@ ifeq ($(TRAVIS_OS_NAME),linux)
 travis-release: goreleaser kopia-ui website
 	$(MAKE) test-all
 	$(MAKE) integration-tests
-	$(MAKE) robustness-tool-tests-docker
+	$(MAKE) robustness-tool-tests
 	$(MAKE) stress-test
 ifneq ($(TRAVIS_TAG),)
 	$(MAKE) travis-create-long-term-repository
