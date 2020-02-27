@@ -3,6 +3,7 @@ GO_TEST=go test
 PARALLEL=8
 TEST_FLAGS=
 KOPIA_INTEGRATION_EXE=$(CURDIR)/dist/integration/kopia.exe
+FIO_DOCKER_TAG=test-fio
 
 all: test lint vet integration-tests
 
@@ -153,8 +154,20 @@ dist-binary:
 integration-tests: dist-binary
 	KOPIA_EXE=$(KOPIA_INTEGRATION_EXE) $(GO_TEST) $(TEST_FLAGS) -count=1 -parallel $(PARALLEL) -timeout 300s github.com/kopia/kopia/tests/end_to_end_test
 
-robustness-tool-tests: fio
+fio-docker-build:
+	docker build -t $(FIO_DOCKER_TAG) $(CURDIR)/tests/tools/fio_docker
+
+ifeq ($(shell which fio),)
+
+robustness-tool-tests: fio-docker-build
+	docker run --rm -v $(CURDIR):/repo $(FIO_DOCKER_TAG) make -C /repo robustness-tool-tests
+
+else
+
+robustness-tool-tests:
 	FIO_EXE=$(shell which fio) $(GO_TEST) -v -count=1 -timeout 90s github.com/kopia/kopia/tests/tools/...
+
+endif
 
 stress-test:
 	KOPIA_LONG_STRESS_TEST=1 $(GO_TEST) -count=1 -timeout 200s github.com/kopia/kopia/tests/stress_test
