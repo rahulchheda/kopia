@@ -160,7 +160,9 @@ ifeq ($(KOPIA_EXE),)
 robustness-tests: dist-binary
 	FIO_EXE=$(shell which fio) \
 	FIO_DOCKER_IMAGE=$(FIO_DOCKER_TAG):latest \
-	KOPIA_EXE=$(KOPIA_INTEGRATION_EXE) FIO_EXE=$(shell which fio) $(GO_TEST) $(TEST_FLAGS) -timeout 900s github.com/kopia/kopia/tests/robustness/...
+	KOPIA_EXE=$(KOPIA_INTEGRATION_EXE) \
+	FIO_EXE=$(shell which fio) \
+	$(GO_TEST) $(TEST_FLAGS) -timeout 900s github.com/kopia/kopia/tests/robustness/...
 
 else 
 
