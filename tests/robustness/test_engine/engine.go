@@ -156,7 +156,7 @@ func (e *Engine) InitS3(ctx context.Context, testRepoPath, metaRepoPath string) 
 	if len(snapIDs) > 0 {
 		randSnapID := snapIDs[rand.Intn(len(snapIDs))]
 
-		err = e.Checker.RestoreSnapshotToPath(ctx, randSnapID, e.FileWriter.DataDir, os.Stdout)
+		err = e.Checker.RestoreSnapshotToPath(ctx, randSnapID, e.FileWriter.LocalDataDir, os.Stdout)
 		if err != nil {
 			return err
 		}
@@ -199,7 +199,7 @@ func (e *Engine) InitFilesystem(ctx context.Context, testRepoPath, metaRepoPath 
 	if len(snapIDs) > 0 {
 		randSnapID := snapIDs[rand.Intn(len(snapIDs))]
 
-		err = e.Checker.RestoreSnapshotToPath(ctx, randSnapID, e.FileWriter.DataDir, os.Stdout)
+		err = e.Checker.RestoreSnapshotToPath(ctx, randSnapID, e.FileWriter.LocalDataDir, os.Stdout)
 		if err != nil {
 			return err
 		}
@@ -235,10 +235,10 @@ var actions = map[ActionKey]Action{
 	SnapshotRootDirActionKey: {
 		f: func(e *Engine, opts map[string]string) error {
 
-			log.Printf("Creating snapshot of root directory %s", e.FileWriter.DataDir)
+			log.Printf("Creating snapshot of root directory %s", e.FileWriter.LocalDataDir)
 
 			ctx := context.TODO()
-			_, err := e.Checker.TakeSnapshot(ctx, e.FileWriter.DataDir)
+			_, err := e.Checker.TakeSnapshot(ctx, e.FileWriter.LocalDataDir)
 			return err
 		},
 	},

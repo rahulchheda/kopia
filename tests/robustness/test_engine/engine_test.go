@@ -52,7 +52,7 @@ func TestEngineWritefilesBasicFS(t *testing.T) {
 
 	snapIDs := eng.Checker.GetSnapIDs()
 
-	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.DataDir)
+	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.LocalDataDir)
 	testenv.AssertNoError(t, err)
 
 	err = eng.Checker.RestoreSnapshot(ctx, snapID, os.Stdout)
@@ -91,7 +91,7 @@ func TestWriteFilesBasicS3(t *testing.T) {
 
 	snapIDs := eng.Checker.GetLiveSnapIDs()
 
-	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.DataDir)
+	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.LocalDataDir)
 	testenv.AssertNoError(t, err)
 
 	err = eng.Checker.RestoreSnapshot(ctx, snapID, os.Stdout)
@@ -128,7 +128,7 @@ func TestDeleteSnapshotS3(t *testing.T) {
 	err = eng.FileWriter.WriteFiles("", fioOpts)
 	testenv.AssertNoError(t, err)
 
-	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.DataDir)
+	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.LocalDataDir)
 	testenv.AssertNoError(t, err)
 
 	err = eng.Checker.RestoreSnapshot(ctx, snapID, os.Stdout)
@@ -169,7 +169,7 @@ func TestSnapshotVerificationFail(t *testing.T) {
 	testenv.AssertNoError(t, err)
 
 	// Take a first snapshot
-	snapID1, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.DataDir)
+	snapID1, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.LocalDataDir)
 	testenv.AssertNoError(t, err)
 
 	// Get the metadata collected on that snapshot
@@ -181,7 +181,7 @@ func TestSnapshotVerificationFail(t *testing.T) {
 	testenv.AssertNoError(t, err)
 
 	// Take a second snapshot
-	snapID2, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.DataDir)
+	snapID2, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.LocalDataDir)
 	testenv.AssertNoError(t, err)
 
 	// Get the second snapshot's metadata
@@ -238,7 +238,7 @@ func TestDataPersistency(t *testing.T) {
 	testenv.AssertNoError(t, err)
 
 	// Take a snapshot
-	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.DataDir)
+	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.LocalDataDir)
 	testenv.AssertNoError(t, err)
 
 	// Get the walk data associated with the snapshot that was taken
@@ -264,7 +264,7 @@ func TestDataPersistency(t *testing.T) {
 
 	// Compare the data directory of the second engine with the fingerprint
 	// of the snapshot taken earlier. They should match.
-	err = fswalker.NewWalkCompare().Compare(ctx, eng2.FileWriter.DataDir, dataDirWalk.ValidationData, os.Stdout)
+	err = fswalker.NewWalkCompare().Compare(ctx, eng2.FileWriter.LocalDataDir, dataDirWalk.ValidationData, os.Stdout)
 	testenv.AssertNoError(t, err)
 }
 

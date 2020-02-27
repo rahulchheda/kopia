@@ -25,7 +25,7 @@ func TestWriteFiles(t *testing.T) {
 	err = r.WriteFiles(relativeWritePath, fioOpt)
 	testenv.AssertNoError(t, err)
 
-	fullPath := filepath.Join(r.DataDir, relativeWritePath)
+	fullPath := filepath.Join(r.LocalDataDir, relativeWritePath)
 	dir, err := ioutil.ReadDir(fullPath)
 	testenv.AssertNoError(t, err)
 
@@ -96,7 +96,7 @@ func TestWriteFilesAtDepth(t *testing.T) {
 
 func testWriteAtDepth(t *testing.T, r *Runner, depth, expFileCount int) {
 	testSubdir := "test"
-	testDirAbs := filepath.Join(r.DataDir, testSubdir)
+	testDirAbs := filepath.Join(r.LocalDataDir, testSubdir)
 
 	sizeB := int64(128 * 1024 * 1024)
 	fioOpt := Options{}.WithSize(sizeB).WithNumFiles(expFileCount)
@@ -186,7 +186,7 @@ func TestDeleteFilesAtDepth(t *testing.T) {
 
 func testDeleteAtDepth(t *testing.T, r *Runner, wrDepth, delDepth, expDirCount int, expErr bool) {
 	testSubdir := "test"
-	testDirAbs := filepath.Join(r.DataDir, testSubdir)
+	testDirAbs := filepath.Join(r.LocalDataDir, testSubdir)
 
 	sizeB := int64(128 * 1024 * 1024)
 	numFiles := 2

@@ -13,22 +13,32 @@ import (
 // WriteFiles writes files to the directory specified by path, up to the
 // provided size and number of files
 func (fr *Runner) WriteFiles(relPath string, opt Options) error {
-	fullPath := filepath.Join(fr.DataDir, relPath)
+	fullPath := filepath.Join(fr.LocalDataDir, relPath)
 	return fr.writeFiles(fullPath, opt)
 }
 
-func (fr *Runner) writeFiles(parentDir string, opt Options) error {
-	err := os.MkdirAll(parentDir, 0700)
+func (fr *Runner) writeFiles(fullPath string, opt Options) error {
+	// localAbsPath := filepath.Join(fr.LocalDataDir, relPath)
+	// writeAbsPath := filepath.Join(fr.FioWriteBaseDir, relPath)
+	fmt.Println("MKDIRALL", fullPath)
+	err := os.MkdirAll(fullPath, 0700)
 	if err != nil {
 		return err
 	}
+
+	relWritePath, err := filepath.Rel(fr.LocalDataDir, fullPath)
+	if err != nil {
+		return err
+	}
+
+	absWritePath := filepath.Join(fr.FioWriteBaseDir, relWritePath)
 
 	_, _, err = fr.RunConfigs(Config{
 		{
 			Name: fmt.Sprintf("writeFiles"),
 			Options: opt.Merge(Options{
 				"readwrite":       RandWriteFio,
-				"directory":       parentDir,
+				"directory":       absWritePath,
 				"filename_format": "file_$filenum",
 			}),
 		},
@@ -40,7 +50,7 @@ func (fr *Runner) writeFiles(parentDir string, opt Options) error {
 // WriteFilesAtDepth writes files to a directory "depth" layers deep below
 // the base data directory
 func (fr *Runner) WriteFilesAtDepth(relBasePath string, depth int, opt Options) error {
-	fullBasePath := filepath.Join(fr.DataDir, relBasePath)
+	fullBasePath := filepath.Join(fr.LocalDataDir, relBasePath)
 
 	err := os.MkdirAll(fullBasePath, 0700)
 	if err != nil {
@@ -53,7 +63,7 @@ func (fr *Runner) WriteFilesAtDepth(relBasePath string, depth int, opt Options) 
 // WriteFilesAtDepthRandomBranch writes files to a directory "depth" layers deep below
 // the base data directory and branches at a random depth
 func (fr *Runner) WriteFilesAtDepthRandomBranch(relBasePath string, depth int, opt Options) error {
-	fullBasePath := filepath.Join(fr.DataDir, relBasePath)
+	fullBasePath := filepath.Join(fr.LocalDataDir, relBasePath)
 
 	err := os.MkdirAll(fullBasePath, 0700)
 	if err != nil {
@@ -65,12 +75,12 @@ func (fr *Runner) WriteFilesAtDepthRandomBranch(relBasePath string, depth int, o
 
 // DeleteRelDir deletes a relative directory in the runner's data directory
 func (fr *Runner) DeleteRelDir(relDirPath string) error {
-	return os.RemoveAll(filepath.Join(fr.DataDir, relDirPath))
+	return os.RemoveAll(filepath.Join(fr.LocalDataDir, relDirPath))
 }
 
 // DeleteDirAtDepth delets a random directory at the given depth
 func (fr *Runner) DeleteDirAtDepth(relBasePath string, depth int) error {
-	fullBasePath := filepath.Join(fr.DataDir, relBasePath)
+	fullBasePath := filepath.Join(fr.LocalDataDir, relBasePath)
 	return fr.deleteDirAtDepth(fullBasePath, depth)
 }
 

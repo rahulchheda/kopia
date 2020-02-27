@@ -28,7 +28,7 @@ func TestManySmallFiles(t *testing.T) {
 	testenv.AssertNoError(t, err)
 
 	ctx := context.TODO()
-	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.DataDir)
+	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.LocalDataDir)
 	testenv.AssertNoError(t, err)
 
 	output, err := ioutil.TempFile("", t.Name())
@@ -70,7 +70,7 @@ func TestModifyWorkload(t *testing.T) {
 			testenv.AssertNoError(t, err)
 		}
 
-		snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.DataDir)
+		snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.LocalDataDir)
 		testenv.AssertNoError(t, err)
 
 		resultIDs = append(resultIDs, snapID)
