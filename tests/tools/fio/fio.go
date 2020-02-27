@@ -194,12 +194,10 @@ func (fr *Runner) verifySetupWithTestWrites() error {
 }
 
 // Cleanup cleans up the data directory
-func (fr *Runner) Cleanup() error {
+func (fr *Runner) Cleanup() {
 	if fr.LocalDataDir != "" {
-		return os.RemoveAll(fr.LocalDataDir)
+		os.RemoveAll(fr.LocalDataDir) //nolint:errcheck
 	}
-
-	return nil
 }
 
 // RunConfigs runs fio using the provided Configs
