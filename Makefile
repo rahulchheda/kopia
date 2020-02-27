@@ -3,6 +3,7 @@ GO_TEST=go test
 PARALLEL=8
 TEST_FLAGS=
 KOPIA_INTEGRATION_EXE=$(CURDIR)/dist/integration/kopia.exe
+FIO_DOCKER_TAG=kopia-tool-test-fio
 
 all: test lint vet integration-tests
 
@@ -17,7 +18,7 @@ quick-install:
 	# same as install but assumes HTMLUI has been built
 	go install -tags embedhtml
 
-install-noui: 
+install-noui:
 	go install
 
 escape-analysis:
@@ -79,6 +80,7 @@ ifeq ($(TRAVIS_OS_NAME),linux)
 travis-release: goreleaser kopia-ui website
 	$(MAKE) test-all
 	$(MAKE) integration-tests
+	$(MAKE) robustness-tool-tests-docker
 	$(MAKE) stress-test
 ifneq ($(TRAVIS_TAG),)
 	$(MAKE) travis-create-long-term-repository
@@ -133,7 +135,7 @@ dev-deps:
 	GO111MODULE=off go get -u github.com/lukehoban/go-outline
 	GO111MODULE=off go get -u github.com/newhook/go-symbols
 	GO111MODULE=off go get -u github.com/sqs/goreturns
-	
+
 test-with-coverage:
 	$(GO_TEST) -count=1 -coverprofile=tmp.cov --coverpkg $(COVERAGE_PACKAGES) -timeout 90s `go list ./...`
 
@@ -164,6 +166,15 @@ robustness-tests: fio
 	FIO_EXE=$(shell which fio) $(GO_TEST) $(TEST_FLAGS) -timeout 55m github.com/kopia/kopia/tests/robustness
 
 endif
+
+fio-docker-build:
+	docker build -t $(FIO_DOCKER_TAG) $(CURDIR)/tests/tools/fio_docker
+
+robustness-tool-tests-docker: fio-docker-build
+	docker run --rm -v $(CURDIR):/repo $(FIO_DOCKER_TAG) make -C /repo robustness-tool-tests
+
+robustness-tool-tests:
+	FIO_EXE=$(shell which fio) $(GO_TEST) -v -count=1 -timeout 90s github.com/kopia/kopia/tests/tools/...
 
 stress-test:
 	KOPIA_LONG_STRESS_TEST=1 $(GO_TEST) -count=1 -timeout 200s github.com/kopia/kopia/tests/stress_test
