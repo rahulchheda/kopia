@@ -151,11 +151,11 @@ func NewRunner() (fr *Runner, err error) {
 	err = fr.verifySetupWithTestWrites()
 	if err != nil {
 		log.Printf("Verify environment setup:\n")
-		log.Printf("   Set %s to the fio executable\n", FioExeEnvKey)
+		log.Printf("   Set %s (=%q)to the fio executable\n", FioExeEnvKey, exeStr)
 		log.Printf("   - OR -\n")
-		log.Printf("   Set %s to the fio docker image", FioDockerImageEnvKey)
-		log.Printf("   Set %s to the path where fio data will be used locally", LocalFioDataPathEnvKey)
-		log.Printf("   Set %s to the fio data path on the docker host (defaults to %v, if not running in a dev container)", HostFioDataPathEnvKey, LocalFioDataPathEnvKey)
+		log.Printf("   Set %s (=%q) to the fio docker image", FioDockerImageEnvKey, imgStr)
+		log.Printf("   Set %s (=%q) to the path where fio data will be used locally", LocalFioDataPathEnvKey, localFioDataPathStr)
+		log.Printf("   Set %s (=%q) to the fio data path on the docker host (defaults to %v, if not running in a dev container)", HostFioDataPathEnvKey, hostFioDataPathStr, LocalFioDataPathEnvKey)
 		return nil, errors.Wrap(err, "fio setup could not be validated")
 	}
 

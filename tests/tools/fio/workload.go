@@ -18,9 +18,6 @@ func (fr *Runner) WriteFiles(relPath string, opt Options) error {
 }
 
 func (fr *Runner) writeFiles(fullPath string, opt Options) error {
-	// localAbsPath := filepath.Join(fr.LocalDataDir, relPath)
-	// writeAbsPath := filepath.Join(fr.FioWriteBaseDir, relPath)
-	fmt.Println("MKDIRALL", fullPath)
 	err := os.MkdirAll(fullPath, 0700)
 	if err != nil {
 		return err
