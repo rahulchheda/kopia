@@ -157,11 +157,10 @@ integration-tests: dist-binary
 fio-docker-build:
 	docker build -t $(FIO_DOCKER_TAG) $(CURDIR)/tests/tools/fio_docker
 
-robustness-tool-tests-docker: fio-docker-build
-	docker run --rm -v $(CURDIR):/repo $(FIO_DOCKER_TAG) make -C /repo robustness-tool-tests
-
-robustness-tool-tests:
-	FIO_EXE=$(shell which fio) $(GO_TEST) -v -count=1 -timeout 90s github.com/kopia/kopia/tests/tools/...
+robustness-tool-tests: fio-docker-build
+	FIO_EXE=$(shell which fio) \
+	FIO_DOCKER_IMAGE=$(FIO_DOCKER_TAG):latest \
+	$(GO_TEST) -v -count=1 -timeout 90s github.com/kopia/kopia/tests/tools/...
 
 stress-test:
 	KOPIA_LONG_STRESS_TEST=1 $(GO_TEST) -count=1 -timeout 200s github.com/kopia/kopia/tests/stress_test
