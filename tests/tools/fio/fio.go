@@ -84,7 +84,7 @@ func NewRunner() (fr *Runner, err error) {
 
 	dataDir, err := ioutil.TempDir(localFioDataPathStr, "fio-data")
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "unable to create temp directory for fio runner")
 	}
 
 	switch {

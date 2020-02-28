@@ -1,13 +1,14 @@
 package fio
 
 import (
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"math/rand"
 	"os"
 	"path/filepath"
+
+	"github.com/pkg/errors"
 )
 
 // WriteFiles writes files to the directory specified by path, up to the
@@ -20,12 +21,12 @@ func (fr *Runner) WriteFiles(relPath string, opt Options) error {
 func (fr *Runner) writeFiles(fullPath string, opt Options) error {
 	err := os.MkdirAll(fullPath, 0700)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "unable to make directory for write")
 	}
 
 	relWritePath, err := filepath.Rel(fr.LocalDataDir, fullPath)
 	if err != nil {
-		return err
+		return errors.Wrapf(err, "error finding relative file path between %v and %v", fr.LocalDataDir, fullPath)
 	}
 
 	absWritePath := filepath.Join(fr.FioWriteBaseDir, relWritePath)
@@ -51,7 +52,7 @@ func (fr *Runner) WriteFilesAtDepth(relBasePath string, depth int, opt Options) 
 
 	err := os.MkdirAll(fullBasePath, 0700)
 	if err != nil {
-		return err
+		return errors.Wrapf(err, "unable to make base dir %v for writing at depth", fullBasePath)
 	}
 
 	return fr.writeFilesAtDepth(fullBasePath, depth, depth, opt)
@@ -64,7 +65,7 @@ func (fr *Runner) WriteFilesAtDepthRandomBranch(relBasePath string, depth int, o
 
 	err := os.MkdirAll(fullBasePath, 0700)
 	if err != nil {
-		return err
+		return errors.Wrapf(err, "unable to make base dir %v for writing at depth with a branch", fullBasePath)
 	}
 
 	return fr.writeFilesAtDepth(fullBasePath, depth, rand.Intn(depth+1), opt)
@@ -89,7 +90,7 @@ var (
 func (fr *Runner) deleteDirAtDepth(path string, depth int) error {
 	fileInfoList, err := ioutil.ReadDir(path)
 	if err != nil {
-		return err
+		return errors.Wrapf(err, "unable to read dir at path %v", path)
 	}
 
 	var dirList []string
@@ -136,7 +137,7 @@ func (fr *Runner) writeFilesAtDepth(fromDirPath string, depth, branchDepth int, 
 		// Couldn't find a subdir, create one instead
 		subdirPath, err = ioutil.TempDir(fromDirPath, "dir_")
 		if err != nil {
-			return err
+			return errors.Wrapf(err, "unable to create temp dir at %v", fromDirPath)
 		}
 	}
 
