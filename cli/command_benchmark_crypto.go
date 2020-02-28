@@ -6,6 +6,8 @@ import (
 
 	"github.com/kopia/kopia/internal/units"
 	"github.com/kopia/kopia/repo/content"
+	"github.com/kopia/kopia/repo/encryption"
+	"github.com/kopia/kopia/repo/hashing"
 
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
 )
@@ -28,9 +30,9 @@ func runBenchmarkCryptoAction(ctx *kingpin.ParseContext) error {
 
 	data := make([]byte, *benchmarkCryptoBlockSize)
 
-	for _, ha := range content.SupportedHashAlgorithms() {
-		for _, ea := range content.SupportedEncryptionAlgorithms() {
-			isEncrypted := ea != "NONE"
+	for _, ha := range hashing.SupportedAlgorithms() {
+		for _, ea := range encryption.SupportedAlgorithms() {
+			isEncrypted := ea != encryption.NoneAlgorithm
 			if *benchmarkCryptoEncryption != isEncrypted {
 				continue
 			}
@@ -45,7 +47,7 @@ func runBenchmarkCryptoAction(ctx *kingpin.ParseContext) error {
 				continue
 			}
 
-			log.Infof("Benchmarking hash '%v' and encryption '%v'... (%v x %v bytes)", ha, ea, *benchmarkCryptoRepeat, len(data))
+			printStderr("Benchmarking hash '%v' and encryption '%v'... (%v x %v bytes)\n", ha, ea, *benchmarkCryptoRepeat, len(data))
 
 			t0 := time.Now()
 
@@ -53,7 +55,7 @@ func runBenchmarkCryptoAction(ctx *kingpin.ParseContext) error {
 			for i := 0; i < hashCount; i++ {
 				contentID := h(data)
 				if _, encerr := e.Encrypt(data, contentID); encerr != nil {
-					log.Warningf("encryption failed: %v", encerr)
+					printStderr("encryption failed: %v\n", encerr)
 					break
 				}
 			}

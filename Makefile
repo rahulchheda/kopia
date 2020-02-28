@@ -45,6 +45,9 @@ travis-setup: travis-install-gpg-key travis-install-test-credentials all-tools
 	go mod download
 	make -C htmlui node_modules
 	make -C app node_modules
+ifneq ($(TRAVIS_OS_NAME),)
+	-git checkout go.mod go.sum
+endif
 
 website:
 	$(MAKE) -C site build
@@ -64,33 +67,20 @@ html-ui-bindata-fallback: $(go_bindata)
 kopia-ui: goreleaser
 	$(MAKE) -C app build-electron
 
-ifeq ($(TRAVIS_OS_NAME),windows)
-travis-release: install kopia-ui
-	$(MAKE) lint test html-ui-tests
-	$(MAKE) integration-tests
-endif
-
-ifeq ($(TRAVIS_OS_NAME),osx)
-travis-release: install kopia-ui
-	$(MAKE) lint test html-ui-tests
-	$(MAKE) integration-tests
-endif
-
-ifeq ($(TRAVIS_OS_NAME),linux)
-travis-release: goreleaser kopia-ui website
-	$(MAKE) test-all
+travis-release:
+	$(MAKE) goreleaser kopia-ui
+	$(MAKE) -j4 lint vet test-with-coverage html-ui-tests
 	$(MAKE) integration-tests
 	$(MAKE) robustness-tool-tests
+ifeq ($(TRAVIS_OS_NAME),linux)
+	$(MAKE) website
 	$(MAKE) stress-test
-ifneq ($(TRAVIS_TAG),)
 	$(MAKE) travis-create-long-term-repository
+	$(MAKE) upload-coverage
 endif
-endif
-
-test-all: lint vet test-with-coverage html-ui-tests html-ui-tests
 
 # goreleaser - builds binaries for all platforms
-GORELEASER_OPTIONS=--rm-dist --skip-publish --parallelism=6
+GORELEASER_OPTIONS=--rm-dist --parallelism=6
 
 sign_gpg=1
 ifneq ($(TRAVIS_PULL_REQUEST),false)
@@ -107,17 +97,29 @@ ifeq ($(sign_gpg),0)
 GORELEASER_OPTIONS+=--skip-sign
 endif
 
+publish_binaries=1
+
 ifeq ($(TRAVIS_TAG),)
 	# not a tagged release
 	GORELEASER_OPTIONS+=--snapshot
+	publish_binaries=0
+endif
+
+ifneq ($(TRAVIS_OS_NAME),linux)
+	publish_binaries=0
+endif
+ifeq ($(publish_binaries),0)
+GORELEASER_OPTIONS+=--skip-publish
 endif
 
 goreleaser: $(goreleaser)
+	# print current git diff, pipe through cat to avoid blocking the build on pager
+	-git diff | cat
 	$(goreleaser) release $(GORELEASER_OPTIONS)
 
 ifeq ($(TRAVIS_PULL_REQUEST),false)
 
-upload-coverage: $(GOVERALLS_TOOL) test-with-coverage
+upload-coverage: $(GOVERALLS_TOOL)
 	$(GOVERALLS_TOOL) -service=travis-ci -coverprofile=tmp.cov
 
 else
@@ -152,7 +154,7 @@ dist-binary:
 	go build -o $(KOPIA_INTEGRATION_EXE) github.com/kopia/kopia
 
 integration-tests: dist-binary
-	KOPIA_EXE=$(KOPIA_INTEGRATION_EXE) $(GO_TEST) $(TEST_FLAGS) -count=1 -parallel $(PARALLEL) -timeout 300s github.com/kopia/kopia/tests/end_to_end_test
+	KOPIA_EXE=$(KOPIA_INTEGRATION_EXE) $(GO_TEST) $(TEST_FLAGS) -count=1 -parallel $(PARALLEL) -timeout 600s github.com/kopia/kopia/tests/end_to_end_test
 
 fio-docker-build:
 	docker build -t $(FIO_DOCKER_TAG) $(CURDIR)/tests/tools/fio_docker

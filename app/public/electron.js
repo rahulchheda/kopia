@@ -9,6 +9,8 @@ const { stopServer, actuateServer, getServerAddress, getServerCertSHA256, getSer
 const log = require("electron-log")
 const firstRun = require('electron-first-run');
 
+app.name = 'KopiaUI';
+
 ipcMain.on('fetch-config', (event, arg) => {
   event.sender.send('config-updated', config.all());
 })
@@ -35,7 +37,7 @@ function advancedConfiguration() {
     height: 700,
     autoHideMenuBar: true,
     webPreferences: {
-      nodeIntegration: true
+      nodeIntegration: true,
     },
   })
 
@@ -44,12 +46,14 @@ function advancedConfiguration() {
   } else {
     configWindow.loadFile('./build/index.html');
   }
+  updateDockIcon();
 
   configWindow.on('closed', function () {
     ipcMain.removeAllListeners('status-updated-event');
     ipcMain.removeAllListeners('logs-updated-event');
     // forget the reference.
     configWindow = null;
+    updateDockIcon();
   });
 }
 
@@ -64,6 +68,11 @@ function showMainWindow() {
     height: 700,
     title: 'Kopia UI Loading...',
     autoHideMenuBar: true,
+    webPreferences: {
+      nodeIntegration: true,
+      // use a preload script to expose node features to the browser window
+      preload: path.join(app.getAppPath(), "preload.js"),
+    },
   })
 
   mainWindow.webContents.on('did-fail-load', () => {
@@ -81,10 +90,12 @@ function showMainWindow() {
   })
 
   mainWindow.loadURL(getServerAddress() + '/?ts=' + new Date().valueOf());
+  updateDockIcon();
 
   mainWindow.on('closed', function () {
     // forget the reference.
     mainWindow = null;
+    updateDockIcon();
   });
 }
 
@@ -163,35 +174,13 @@ function maybeMoveToApplicationsFolder() {
   return false;
 }
 
-function setMenuBar() {
+function updateDockIcon() {
   if (process.platform === 'darwin') {
-    let template = []
-    const name = app.getName();
-    template.unshift({
-      label: name,
-      submenu: [
-        {
-          label: 'About KopiaUI',
-          role: 'about'
-        },
-        {
-          label: 'Quit',
-          accelerator: 'Command+Q',
-          click() { app.quit(); }
-        },
-      ]
-    })
-
-    // Create the Menu
-    const menu = Menu.buildFromTemplate(template);
-    Menu.setApplicationMenu(menu);
-  }
-}
-
-
-function hideFromDock() {
-  if (process.platform === 'darwin') {
-    app.dock.hide();
+    if (configWindow || mainWindow) {
+      app.dock.show();
+    } else {
+      app.dock.hide();
+    }
   }
 }
 
@@ -199,12 +188,11 @@ app.on('ready', () => {
   log.transports.file.level = "debug"
   autoUpdater.logger = log
 
-  setMenuBar();
   if (maybeMoveToApplicationsFolder()) {
     return
   }
 
-  hideFromDock();
+  updateDockIcon();
 
   checkForUpdates();
 
