@@ -3,7 +3,7 @@ GO_TEST=go test
 PARALLEL=8
 TEST_FLAGS=
 KOPIA_INTEGRATION_EXE=$(CURDIR)/dist/integration/kopia.exe
-FIO_DOCKER_TAG=kopia-tool-test-fio
+FIO_DOCKER_TAG=kopia-test-fio
 
 all: test lint vet integration-tests
 
@@ -161,7 +161,7 @@ fio-docker-build:
 
 robustness-tool-tests: fio-docker-build
 	FIO_EXE=$(shell which fio) \
-	FIO_DOCKER_IMAGE=$(FIO_DOCKER_TAG):latest \
+	FIO_DOCKER_IMAGE=$(FIO_DOCKER_TAG) \
 	$(GO_TEST) -v -count=1 -timeout 90s github.com/kopia/kopia/tests/tools/...
 
 stress-test:
