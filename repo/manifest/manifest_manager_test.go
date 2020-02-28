@@ -9,12 +9,14 @@ import (
 	"time"
 
 	"github.com/kopia/kopia/internal/blobtesting"
+	"github.com/kopia/kopia/internal/testlogging"
 	"github.com/kopia/kopia/repo/content"
+	"github.com/kopia/kopia/repo/encryption"
 )
 
 //nolint:funlen
 func TestManifest(t *testing.T) {
-	ctx := context.Background()
+	ctx := testlogging.Context(t)
 	data := blobtesting.DataMap{}
 	mgr := newManagerForTesting(ctx, t, data)
 
@@ -109,6 +111,7 @@ func TestManifest(t *testing.T) {
 	foundContents := 0
 
 	if err := mgr.b.IterateContents(
+		ctx,
 		content.IterateOptions{Prefix: ContentPrefix},
 		func(ci content.Info) error {
 			foundContents++
@@ -131,13 +134,13 @@ func TestManifest(t *testing.T) {
 }
 
 func TestManifestInitCorruptedBlock(t *testing.T) {
-	ctx := context.Background()
+	ctx := testlogging.Context(t)
 	data := blobtesting.DataMap{}
 	st := blobtesting.NewMapStorage(data, nil, nil)
 
 	f := &content.FormattingOptions{
 		Hash:        "HMAC-SHA256-128",
-		Encryption:  "NONE",
+		Encryption:  encryption.NoneAlgorithm,
 		MaxPackSize: 100000,
 		Version:     1,
 	}
@@ -290,7 +293,7 @@ func newManagerForTesting(ctx context.Context, t *testing.T, data blobtesting.Da
 
 	bm, err := content.NewManager(ctx, st, &content.FormattingOptions{
 		Hash:        "HMAC-SHA256-128",
-		Encryption:  "NONE",
+		Encryption:  encryption.NoneAlgorithm,
 		MaxPackSize: 100000,
 		Version:     1,
 	}, content.CachingOptions{}, nil)
@@ -307,7 +310,7 @@ func newManagerForTesting(ctx context.Context, t *testing.T, data blobtesting.Da
 }
 
 func TestManifestInvalidPut(t *testing.T) {
-	ctx := context.Background()
+	ctx := testlogging.Context(t)
 	data := blobtesting.DataMap{}
 	mgr := newManagerForTesting(ctx, t, data)
 
@@ -329,7 +332,7 @@ func TestManifestInvalidPut(t *testing.T) {
 }
 
 func TestManifestAutoCompaction(t *testing.T) {
-	ctx := context.Background()
+	ctx := testlogging.Context(t)
 	data := blobtesting.DataMap{}
 
 	for i := 0; i < 100; i++ {

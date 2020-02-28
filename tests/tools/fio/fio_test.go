@@ -37,10 +37,11 @@ func TestFIORunConfig(t *testing.T) {
 
 	cfg := Config{
 		{
-			Name: "write-10g",
+			Name: "write-1m",
 			Options: map[string]string{
-				"size":    "1g",
-				"nrfiles": "10",
+				"size":      "1m",
+				"blocksize": "4k",
+				"nrfiles":   "10",
 			},
 		},
 	}
@@ -71,10 +72,11 @@ func TestFIOGlobalConfigOverride(t *testing.T) {
 				},
 			},
 			{
-				Name: "write-10g",
+				Name: "write-1m",
 				Options: map[string]string{
-					"size":    "1g",
-					"nrfiles": "10",
+					"size":      "1m",
+					"blocksize": "4k",
+					"nrfiles":   "10",
 				},
 			},
 		},
@@ -107,10 +109,11 @@ func TestFIODockerRunner(t *testing.T) {
 	cfgs := []Config{
 		{
 			{
-				Name: "write-10g",
+				Name: "write-1m",
 				Options: map[string]string{
-					"size":    "1g",
-					"nrfiles": "10",
+					"blocksize": "4k",
+					"size":      "1m",
+					"nrfiles":   "10",
 				},
 			},
 		},
