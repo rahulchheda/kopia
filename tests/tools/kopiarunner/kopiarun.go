@@ -110,7 +110,7 @@ func (kr *Runner) Run(args ...string) (stdout, stderr string, err error) {
 		for scanner.Scan() {
 			log.Println(scanner.Text())
 			o.Write(scanner.Bytes())
-			errOut.WriteByte('\n')
+			o.WriteByte('\n')
 		}
 	}()
 
