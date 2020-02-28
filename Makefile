@@ -160,7 +160,7 @@ fio-docker-build:
 	docker build -t $(FIO_DOCKER_TAG) $(CURDIR)/tests/tools/fio_docker
 
 robustness-tool-tests: fio-docker-build
-	FIO_EXE=$(shell which fio) \
+	FIO_EXE="$(shell which fio)" \
 	FIO_DOCKER_IMAGE=$(FIO_DOCKER_TAG) \
 	$(GO_TEST) -v -count=1 -timeout 90s github.com/kopia/kopia/tests/tools/...
 
