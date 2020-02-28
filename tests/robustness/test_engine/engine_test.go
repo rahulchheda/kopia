@@ -414,7 +414,7 @@ func TestActionsS3(t *testing.T) {
 	}()
 
 	ctx := context.TODO()
-	err = eng.InitS3(ctx, fsDataRepoPath, fsMetadataRepoPath)
+	err = eng.InitS3(ctx, s3DataRepoPath, s3MetadataRepoPath)
 	testenv.AssertNoError(t, err)
 
 	actionOpts := ActionOpts{
