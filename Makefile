@@ -159,17 +159,17 @@ integration-tests: dist-binary
 
 ifeq ($(KOPIA_EXE),)
 
-robustness-tests: dist-binary
-	FIO_EXE=$(shell which fio) \
+robustness-tests: dist-binary fio-docker-build
 	FIO_DOCKER_IMAGE=$(FIO_DOCKER_TAG):latest \
 	KOPIA_EXE=$(KOPIA_INTEGRATION_EXE) \
+	FIO_USE_DOCKER=1 \
 	$(GO_TEST) $(TEST_FLAGS) -timeout 900s github.com/kopia/kopia/tests/robustness/...
 
 else 
 
-robustness-tests:
-	FIO_EXE=$(shell which fio) \
+robustness-tests: fio-docker-build
 	FIO_DOCKER_IMAGE=$(FIO_DOCKER_TAG):latest \
+	FIO_USE_DOCKER=1 \
 	$(GO_TEST) $(TEST_FLAGS) -timeout 55m github.com/kopia/kopia/tests/robustness
 
 endif
@@ -177,8 +177,8 @@ endif
 fio-docker-build:
 	docker build -t $(FIO_DOCKER_TAG) $(CURDIR)/tests/tools/fio_docker
 
-robustness-tool-tests: fio-docker-build
-	FIO_EXE="$(shell which fio)" \
+robustness-tool-tests: dist-binary fio-docker-build
+	KOPIA_EXE=$(KOPIA_INTEGRATION_EXE) \
 	FIO_DOCKER_IMAGE=$(FIO_DOCKER_TAG) \
 	FIO_USE_DOCKER=1 \
 	$(GO_TEST) -v -count=1 -timeout 90s github.com/kopia/kopia/tests/tools/...
