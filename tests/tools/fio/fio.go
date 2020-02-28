@@ -25,9 +25,6 @@ const (
 
 const (
 	dockerExe            = "docker"
-	volumeCmd            = "volume"
-	rmCmd                = "rm"
-	lsCmd                = "ls"
 	fioDataContainerPath = "/fio-data"
 )
 
@@ -73,7 +70,6 @@ type Runner struct {
 
 // NewRunner creates a new fio runner
 func NewRunner() (fr *Runner, err error) {
-
 	exeStr := os.Getenv(FioExeEnvKey)
 	imgStr := os.Getenv(FioDockerImageEnvKey)
 	localFioDataPathStr := os.Getenv(LocalFioDataPathEnvKey)
@@ -81,7 +77,9 @@ func NewRunner() (fr *Runner, err error) {
 	forceDocker := os.Getenv(FioUseDockerEnvKey) != ""
 
 	var exeArgs []string
+
 	var fioWriteBaseDir string
+
 	var Exe string
 
 	dataDir, err := ioutil.TempDir(localFioDataPathStr, "fio-data")
@@ -156,6 +154,7 @@ func NewRunner() (fr *Runner, err error) {
 		log.Printf("   Set %s (=%q) to the fio docker image", FioDockerImageEnvKey, imgStr)
 		log.Printf("   Set %s (=%q) to the path where fio data will be used locally", LocalFioDataPathEnvKey, localFioDataPathStr)
 		log.Printf("   Set %s (=%q) to the fio data path on the docker host (defaults to %v, if not running in a dev container)", HostFioDataPathEnvKey, hostFioDataPathStr, LocalFioDataPathEnvKey)
+
 		return nil, errors.Wrap(err, "fio setup could not be validated")
 	}
 
@@ -163,15 +162,21 @@ func NewRunner() (fr *Runner, err error) {
 }
 
 func (fr *Runner) verifySetupWithTestWrites() error {
-
 	var subDirPath = filepath.Join("test", "subdir")
-	const maxTestFiles = 5
-	const fileSizeB = int64(1024 * 1024) // 1 MiB
+
+	const (
+		maxTestFiles = 5
+		fileSizeB    = 1 << 20 // 1 MiB
+	)
+
 	nrFiles := rand.Intn(maxTestFiles) + 1
 
 	opt := Options{}.WithNumFiles(nrFiles).WithFileSize(fileSizeB)
 
-	fr.WriteFiles(subDirPath, opt)
+	err := fr.WriteFiles(subDirPath, opt)
+	if err != nil {
+		return errors.Wrap(err, "unable to perform writes")
+	}
 
 	defer fr.DeleteRelDir("test") //nolint:errcheck
 
@@ -185,7 +190,7 @@ func (fr *Runner) verifySetupWithTestWrites() error {
 	}
 
 	for _, fi := range fl {
-		if got, want := fi.Size(), fileSizeB; got != want {
+		if got, want := fi.Size(), int64(fileSizeB); got != want {
 			return errors.Errorf("did not get expected file size from writes %v != %v (expected)", got, want)
 		}
 	}
