@@ -34,11 +34,12 @@ func (fr *Runner) writeFiles(fullPath string, opt Options) error {
 	_, _, err = fr.RunConfigs(Config{
 		{
 			Name: fmt.Sprintf("writeFiles"),
-			Options: opt.Merge(Options{
-				"readwrite":       RandWriteFio,
-				"directory":       absWritePath,
-				"filename_format": "file_$filenum",
-			}),
+			Options: opt.Merge(
+				Options{
+					"readwrite":       RandWriteFio,
+					"filename_format": "file_$filenum",
+				}.WithDirectory(absWritePath),
+			),
 		},
 	})
 

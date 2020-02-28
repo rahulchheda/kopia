@@ -11,6 +11,7 @@ import (
 	"math/rand"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -82,7 +83,7 @@ func NewRunner() (fr *Runner, err error) {
 
 	var Exe string
 
-	dataDir, err := ioutil.TempDir(localFioDataPathStr, "fio-data")
+	dataDir, err := ioutil.TempDir(localFioDataPathStr, "fio-data-")
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to create temp directory for fio runner")
 	}
@@ -98,15 +99,13 @@ func NewRunner() (fr *Runner, err error) {
 		// Provided a docker image to run inside
 		Exe = dockerExe
 
-		dataDirName := filepath.Base(dataDir)
+		dataDirParent, dataDirName := filepath.Split(dataDir)
 		fioWriteBaseDir = filepath.Join(fioDataContainerPath, dataDirName)
-
-		fmt.Println(fioWriteBaseDir)
 
 		// If the host path wasn't provided, assume it's the same as the local
 		// data directory path and we are not running from within a container already
 		if hostFioDataPathStr == "" {
-			hostFioDataPathStr = dataDir
+			hostFioDataPathStr = dataDirParent
 		}
 
 		exeArgs = []string{
@@ -125,11 +124,11 @@ func NewRunner() (fr *Runner, err error) {
 		Exe:             Exe,
 		ExecArgs:        exeArgs,
 		LocalDataDir:    dataDir,
-		FioWriteBaseDir: fioWriteBaseDir,
+		FioWriteBaseDir: filepath.ToSlash(fioWriteBaseDir),
 		Global: Config{
 			{
 				Name: "global",
-				Options: map[string]string{
+				Options: Options{
 					"openfiles":         "10",
 					"create_fsync":      "0",
 					"create_serialize":  "1",
@@ -140,8 +139,7 @@ func NewRunner() (fr *Runner, err error) {
 					"blocksize":         "1m",
 					"refill_buffers":    "",
 					"rw":                "write",
-					"directory":         fioWriteBaseDir,
-				},
+				}.WithDirectory(fioWriteBaseDir),
 			},
 		},
 	}
@@ -153,7 +151,7 @@ func NewRunner() (fr *Runner, err error) {
 		log.Printf("   - OR -\n")
 		log.Printf("   Set %s (=%q) to the fio docker image", FioDockerImageEnvKey, imgStr)
 		log.Printf("   Set %s (=%q) to the path where fio data will be used locally", LocalFioDataPathEnvKey, localFioDataPathStr)
-		log.Printf("   Set %s (=%q) to the fio data path on the docker host (defaults to %v, if not running in a dev container)", HostFioDataPathEnvKey, hostFioDataPathStr, LocalFioDataPathEnvKey)
+		log.Printf("   Set %s (=%q) to the fio data path on the docker host (defaults to %v, if not running in a dev container)", HostFioDataPathEnvKey, os.Getenv(HostFioDataPathEnvKey), LocalFioDataPathEnvKey)
 
 		return nil, errors.Wrap(err, "fio setup could not be validated")
 	}
@@ -162,7 +160,7 @@ func NewRunner() (fr *Runner, err error) {
 }
 
 func (fr *Runner) verifySetupWithTestWrites() error {
-	var subDirPath = filepath.Join("test", "subdir")
+	var subDirPath = path.Join("test", "subdir")
 
 	const (
 		maxTestFiles = 5

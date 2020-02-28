@@ -2,6 +2,7 @@ package fio
 
 import (
 	"fmt"
+	"path/filepath"
 	"strconv"
 )
 
@@ -12,6 +13,7 @@ type Options map[string]string
 const (
 	BlockSizeFioArg        = "blocksize"
 	DedupePercentageFioArg = "dedupe_percentage"
+	DirectoryFioArg        = "directory"
 	FallocateFioArg        = "fallocate"
 	FileSizeFioArg         = "filesize"
 	IOLimitFioArg          = "io_limit"
@@ -113,6 +115,13 @@ func (o Options) WithNoFallocate() Options {
 // WithRandRepeat sets the fio option rand repeat
 func (o Options) WithRandRepeat(set bool) Options {
 	return o.Merge(boolOpt(RandRepeatFioArg, set))
+}
+
+// WithDirectory sets the fio option for the directory to write in
+func (o Options) WithDirectory(dir string) Options {
+	return o.Merge(Options{
+		DirectoryFioArg: filepath.ToSlash(dir),
+	})
 }
 
 func boolOpt(key string, val bool) Options {
