@@ -71,8 +71,8 @@ travis-release:
 	$(MAKE) goreleaser kopia-ui
 	$(MAKE) -j4 lint vet test-with-coverage html-ui-tests
 	$(MAKE) integration-tests
-	$(MAKE) robustness-tool-tests
 ifeq ($(TRAVIS_OS_NAME),linux)
+	$(MAKE) robustness-tool-tests
 	$(MAKE) website
 	$(MAKE) stress-test
 	$(MAKE) travis-create-long-term-repository
