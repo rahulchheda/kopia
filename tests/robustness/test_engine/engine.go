@@ -55,7 +55,7 @@ func NewEngine() (*Engine, error) {
 	// Fill the file writer
 	e.FileWriter, err = fio.NewRunner()
 	if err != nil {
-		e.Cleanup() //nolint:errcheck
+		e.cleanup() //nolint:errcheck
 		return nil, err
 	}
 
@@ -64,7 +64,7 @@ func NewEngine() (*Engine, error) {
 	// Fill Snapshotter interface
 	kopiaSnapper, err := kopiarunner.NewKopiaSnapshotter()
 	if err != nil {
-		e.Cleanup() //nolint:errcheck
+		e.cleanup() //nolint:errcheck
 		return nil, err
 	}
 
@@ -74,7 +74,7 @@ func NewEngine() (*Engine, error) {
 	// Fill the snapshot store interface
 	snapStore, err := snapmeta.New()
 	if err != nil {
-		e.Cleanup() //nolint:errcheck
+		e.cleanup() //nolint:errcheck
 		return nil, err
 	}
 
@@ -87,7 +87,7 @@ func NewEngine() (*Engine, error) {
 	e.cleanupRoutines = append(e.cleanupRoutines, chk.Cleanup)
 
 	if err != nil {
-		e.Cleanup() //nolint:errcheck
+		e.cleanup() //nolint:errcheck
 		return nil, err
 	}
 
@@ -448,7 +448,7 @@ func (e *Engine) ExecAction(actionKey ActionKey, opts map[string]string) error {
 	action := actions[actionKey]
 	st := time.Now()
 
-	if e.perActionStats[actionKey] == nil {
+	if e.perActionStats != nil && e.perActionStats[actionKey] == nil {
 		e.perActionStats[actionKey] = new(ActionStats)
 	}
 
