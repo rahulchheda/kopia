@@ -35,9 +35,10 @@ type Engine struct {
 	Checker         *checker.Checker
 	cleanupRoutines []func()
 
-	actionCounter      int64
+	ActionCounter      int64
 	engineCreationTime time.Time
 	perActionStats     map[ActionKey]*ActionStats
+	dataRestoreCount   int64
 }
 
 // NewEngine instantiates a new Engine and returns its pointer. It is
@@ -100,6 +101,10 @@ func NewEngine() (*Engine, error) {
 
 // Cleanup cleans up after each component of the test engine
 func (e *Engine) Cleanup() error {
+	// Perform a snapshot action to capture the state of the data directory
+	// at the end of the run
+	e.ExecAction(SnapshotRootDirActionKey, make(map[string]string))
+
 	log.Printf("Cleanup summary:\n%v", e.Stats())
 
 	defer e.cleanup()
@@ -152,17 +157,8 @@ func (e *Engine) InitS3(ctx context.Context, testRepoPath, metaRepoPath string) 
 		return err
 	}
 
-	snapIDs := e.Checker.GetLiveSnapIDs()
-	if len(snapIDs) > 0 {
-		randSnapID := snapIDs[rand.Intn(len(snapIDs))]
+	return e.RestoreLiveSnapshotToDataDir(ctx)
 
-		err = e.Checker.RestoreSnapshotToPath(ctx, randSnapID, e.FileWriter.LocalDataDir, os.Stdout)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
 }
 
 // InitFilesystem attempts to connect to a test repo and metadata repo on the local
@@ -195,11 +191,17 @@ func (e *Engine) InitFilesystem(ctx context.Context, testRepoPath, metaRepoPath 
 		return err
 	}
 
+	return e.RestoreLiveSnapshotToDataDir(ctx)
+}
+
+// RestoreLiveSnapshotToDataDir restores an existing snapshot to the data directory
+// to be used as a basis for kopia commands
+func (e *Engine) RestoreLiveSnapshotToDataDir(ctx context.Context) error {
 	snapIDs := e.Checker.GetLiveSnapIDs()
 	if len(snapIDs) > 0 {
 		randSnapID := snapIDs[rand.Intn(len(snapIDs))]
 
-		err = e.Checker.RestoreSnapshotToPath(ctx, randSnapID, e.FileWriter.LocalDataDir, os.Stdout)
+		err := e.Checker.RestoreSnapshotToPath(ctx, randSnapID, e.FileWriter.LocalDataDir, os.Stdout)
 		if err != nil {
 			return err
 		}
@@ -318,7 +320,17 @@ var actions = map[ActionKey]Action{
 			log.Printf("Writing files at depth %v (fileSize: %v-%v, numFiles: %v, blockSize: %v, dedupPcnt: %v, ioLimit: %v)\n", dirDepth, minFileSizeB, maxFileSizeB, numFiles, blockSize, dedupPcnt, ioLimit)
 
 			err := e.FileWriter.WriteFilesAtDepthRandomBranch(".", dirDepth, fioOpts)
-			return err
+			if err != nil {
+				if strings.Contains(err.Error(), "no space left on device") {
+					log.Printf("Hit device full error - Resoring an old snapshot (%v)", err.Error())
+					e.dataRestoreCount++
+					e.RestoreLiveSnapshotToDataDir(context.Background())
+					return nil
+				}
+				return err
+			}
+
+			return nil
 		},
 	},
 	DeleteRandomSubdirectoryActionKey: {
@@ -430,8 +442,8 @@ func (e *Engine) RandomAction(actionOpts ActionOpts) error {
 
 // ExecAction executes the action denoted by the provided ActionKey
 func (e *Engine) ExecAction(actionKey ActionKey, opts map[string]string) error {
-	e.actionCounter++
-	log.Printf("Engine executing ACTION: name=%q actionCount=%v t=%vs", actionKey, e.actionCounter, e.getRuntimeSeconds())
+	e.ActionCounter++
+	log.Printf("Engine executing ACTION: name=%q actionCount=%v t=%vs", actionKey, e.ActionCounter, e.getRuntimeSeconds())
 
 	action := actions[actionKey]
 	st := time.Now()
@@ -453,7 +465,7 @@ func (e *Engine) Stats() string {
 	fmt.Fprintln(b, "Engine Action Summary")
 	fmt.Fprintln(b, "===============================")
 	fmt.Fprintf(b, "Engine runtime:  %10vs\n", e.getRuntimeSeconds())
-	fmt.Fprintf(b, "Actions run:      %10v\n", e.actionCounter)
+	fmt.Fprintf(b, "Actions run:      %10v\n", e.ActionCounter)
 	fmt.Fprintln(b, "")
 	fmt.Fprintln(b, "=============")
 	fmt.Fprintln(b, "Action stats")
@@ -467,6 +479,8 @@ func (e *Engine) Stats() string {
 		fmt.Fprintf(b, "  Min Runtime:   %10vs\n", durationToSec(actionStat.MinRuntime()))
 		fmt.Fprintln(b, "")
 	}
+
+	fmt.Fprintf(b, "Data directory restore count: %10d\n", e.dataRestoreCount)
 
 	return b.String()
 }

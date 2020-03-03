@@ -98,6 +98,33 @@ func TestRandomized(t *testing.T) {
 		},
 	}
 
+	// Perform actions until the timer expires, at least until one action
+	// has been performed
+	for time.Since(st) <= *randomizedTestDur || eng.ActionCounter == 0 {
+		err := eng.RandomAction(opts)
+		testenv.AssertNoError(t, err)
+	}
+}
+
+func TestRandomizedSmall(t *testing.T) {
+	st := time.Now()
+
+	opts := engine.ActionOpts{
+		engine.ActionControlActionKey: map[string]string{
+			string(engine.SnapshotRootDirActionKey):          strconv.Itoa(2),
+			string(engine.RestoreRandomSnapshotActionKey):    strconv.Itoa(2),
+			string(engine.DeleteRandomSnapshotActionKey):     strconv.Itoa(1),
+			string(engine.WriteRandomFilesActionKey):         strconv.Itoa(8),
+			string(engine.DeleteRandomSubdirectoryActionKey): strconv.Itoa(1),
+		},
+		engine.WriteRandomFilesActionKey: map[string]string{
+			engine.IOLimitPerWriteAction:    fmt.Sprintf("%d", 512*1024*1024),
+			engine.MaxNumFilesPerWriteField: strconv.Itoa(100),
+			engine.MaxFileSizeField:         strconv.Itoa(64 * 1024 * 1024),
+			engine.MaxDirDepthField:         strconv.Itoa(3),
+		},
+	}
+
 	for time.Since(st) <= *randomizedTestDur {
 		err := eng.RandomAction(opts)
 		testenv.AssertNoError(t, err)

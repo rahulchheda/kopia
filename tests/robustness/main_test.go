@@ -17,8 +17,8 @@ var eng *engine.Engine
 const (
 	fsDataPath     = "/tmp/robustness-data"
 	fsMetadataPath = "/tmp/robustness-metadata"
-	s3DataPath     = "robustness-data"
-	s3MetadataPath = "robustness-metadata"
+	s3DataPath     = "robustness-data/"
+	s3MetadataPath = "robustness-metadata/"
 	defaultTestDur = 15 * time.Minute
 )
 
