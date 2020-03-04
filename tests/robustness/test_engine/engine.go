@@ -3,7 +3,9 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"math/rand"
 	"os"
@@ -34,11 +36,15 @@ type Engine struct {
 	MetaStore       snapmeta.Persister
 	Checker         *checker.Checker
 	cleanupRoutines []func()
+	baseDirPath     string
 
-	ActionCounter      int64
-	engineCreationTime time.Time
-	perActionStats     map[ActionKey]*ActionStats
-	dataRestoreCount   int64
+	// ActionCounter      int64
+	// engineCreationTime time.Time
+	// perActionStats     map[ActionKey]*ActionStats
+	// dataRestoreCount   int64
+
+	RunStats        EngineStats
+	CumulativeStats EngineStats
 }
 
 // NewEngine instantiates a new Engine and returns its pointer. It is
@@ -47,10 +53,15 @@ type Engine struct {
 // - Kopia test repo snapshotter
 // - Kopia metadata storage repo
 // - FSWalker data integrity checker
-func NewEngine() (*Engine, error) {
-	e := new(Engine)
+func NewEngine(workingDir string) (*Engine, error) {
+	baseDirPath, err := ioutil.TempDir(workingDir, "engine-data-")
+	if err != nil {
+		return nil, err
+	}
 
-	var err error
+	e := &Engine{
+		baseDirPath: baseDirPath,
+	}
 
 	// Fill the file writer
 	e.FileWriter, err = fio.NewRunner()
@@ -62,7 +73,7 @@ func NewEngine() (*Engine, error) {
 	e.cleanupRoutines = append(e.cleanupRoutines, e.FileWriter.Cleanup)
 
 	// Fill Snapshotter interface
-	kopiaSnapper, err := kopiarunner.NewKopiaSnapshotter()
+	kopiaSnapper, err := kopiarunner.NewKopiaSnapshotter(baseDirPath)
 	if err != nil {
 		e.cleanup() //nolint:errcheck
 		return nil, err
@@ -72,7 +83,7 @@ func NewEngine() (*Engine, error) {
 	e.TestRepo = kopiaSnapper
 
 	// Fill the snapshot store interface
-	snapStore, err := snapmeta.New()
+	snapStore, err := snapmeta.New(baseDirPath)
 	if err != nil {
 		e.cleanup() //nolint:errcheck
 		return nil, err
@@ -83,7 +94,7 @@ func NewEngine() (*Engine, error) {
 	e.MetaStore = snapStore
 
 	// Create the data integrity checker
-	chk, err := checker.NewChecker(kopiaSnapper, snapStore, fswalker.NewWalkCompare())
+	chk, err := checker.NewChecker(kopiaSnapper, snapStore, fswalker.NewWalkCompare(), baseDirPath)
 	e.cleanupRoutines = append(e.cleanupRoutines, chk.Cleanup)
 
 	if err != nil {
@@ -93,8 +104,15 @@ func NewEngine() (*Engine, error) {
 
 	e.Checker = chk
 
-	e.engineCreationTime = time.Now()
-	e.perActionStats = make(map[ActionKey]*ActionStats)
+	e.RunStats = EngineStats{
+		CreationTime:   time.Now(),
+		PerActionStats: make(map[ActionKey]*ActionStats),
+	}
+
+	err = e.LoadStats()
+	if err != nil {
+		return nil, err
+	}
 
 	return e, nil
 }
@@ -120,6 +138,8 @@ func (e *Engine) cleanup() {
 	for _, f := range e.cleanupRoutines {
 		f()
 	}
+
+	os.RemoveAll(e.baseDirPath) //nolint:errcheck
 }
 
 // InitS3 attempts to connect to a test repo and metadata repo on S3. If connection
@@ -323,7 +343,8 @@ var actions = map[ActionKey]Action{
 			if err != nil {
 				if strings.Contains(err.Error(), "no space left on device") {
 					log.Printf("Hit device full error - Resoring an old snapshot (%v)", err.Error())
-					e.dataRestoreCount++
+					e.RunStats.DataRestoreCount++
+					e.CumulativeStats.DataRestoreCount++
 					e.RestoreLiveSnapshotToDataDir(context.Background())
 					return nil
 				}
@@ -442,51 +463,101 @@ func (e *Engine) RandomAction(actionOpts ActionOpts) error {
 
 // ExecAction executes the action denoted by the provided ActionKey
 func (e *Engine) ExecAction(actionKey ActionKey, opts map[string]string) error {
-	e.ActionCounter++
-	log.Printf("Engine executing ACTION: name=%q actionCount=%v t=%vs", actionKey, e.ActionCounter, e.getRuntimeSeconds())
+	e.RunStats.ActionCounter++
+	e.CumulativeStats.ActionCounter++
+	log.Printf("Engine executing ACTION: name=%q actionCount=%v totActCount=%v t=%vs", actionKey, e.RunStats.ActionCounter, e.CumulativeStats.ActionCounter, e.RunStats.getRuntimeSeconds())
 
 	action := actions[actionKey]
 	st := time.Now()
 
-	if e.perActionStats != nil && e.perActionStats[actionKey] == nil {
-		e.perActionStats[actionKey] = new(ActionStats)
+	if e.RunStats.PerActionStats != nil && e.RunStats.PerActionStats[actionKey] == nil {
+		e.RunStats.PerActionStats[actionKey] = new(ActionStats)
+	}
+	if e.CumulativeStats.PerActionStats != nil && e.CumulativeStats.PerActionStats[actionKey] == nil {
+		e.CumulativeStats.PerActionStats[actionKey] = new(ActionStats)
 	}
 
-	defer e.perActionStats[actionKey].Record(st)
+	defer e.RunStats.PerActionStats[actionKey].Record(st)
+	defer e.CumulativeStats.PerActionStats[actionKey].Record(st)
 
 	return action.f(e, opts)
 }
 
-// Stats returns a string report of the engine's stats
+type EngineStats struct {
+	ActionCounter  int64
+	CreationTime   time.Time
+	PerActionStats map[ActionKey]*ActionStats
+
+	DataRestoreCount int64
+}
+
+const engineStatsStoreKey = "cumulative-engine-stats"
+
+func (e *Engine) SaveStats() error {
+	cumulStatRaw, err := json.Marshal(e.CumulativeStats)
+	if err != nil {
+		return err
+	}
+
+	return e.MetaStore.Store(engineStatsStoreKey, cumulStatRaw)
+}
+
+func (e *Engine) LoadStats() error {
+	b, err := e.MetaStore.Load(engineStatsStoreKey)
+	if err != nil {
+		return err
+	}
+
+	return json.Unmarshal(b, &e.CumulativeStats)
+}
+
 func (e *Engine) Stats() string {
 	b := &strings.Builder{}
 
-	fmt.Fprintln(b, "===============================")
-	fmt.Fprintln(b, "Engine Action Summary")
-	fmt.Fprintln(b, "===============================")
-	fmt.Fprintf(b, "Engine runtime:  %10vs\n", e.getRuntimeSeconds())
-	fmt.Fprintf(b, "Actions run:      %10v\n", e.ActionCounter)
+	fmt.Fprintln(b, "==================================")
+	fmt.Fprintln(b, "Engine Action Summary (Cumulative)")
+	fmt.Fprintln(b, "==================================")
+	fmt.Fprint(b, e.CumulativeStats.Stats())
+	fmt.Fprintln(b, "")
+
+	fmt.Fprintln(b, "==================================")
+	fmt.Fprintln(b, "Engine Action Summary (This Run)")
+	fmt.Fprintln(b, "==================================")
+	fmt.Fprint(b, e.RunStats.Stats())
+	fmt.Fprintln(b, "")
+
+	return b.String()
+}
+
+// Stats returns a string report of the engine's stats
+func (stats *EngineStats) Stats() string {
+	b := &strings.Builder{}
+
+	fmt.Fprintln(b, "=============")
+	fmt.Fprintln(b, "Stat summary")
+	fmt.Fprintln(b, "=============")
+	fmt.Fprintf(b, "  Engine runtime:    %10vs\n", stats.getRuntimeSeconds())
+	fmt.Fprintf(b, "  Actions run:        %10v\n", stats.ActionCounter)
+	fmt.Fprintf(b, "  Data Dir Restores:  %10v\n", stats.ActionCounter)
 	fmt.Fprintln(b, "")
 	fmt.Fprintln(b, "=============")
 	fmt.Fprintln(b, "Action stats")
 	fmt.Fprintln(b, "=============")
 
-	for actionKey, actionStat := range e.perActionStats {
+	for actionKey, actionStat := range stats.PerActionStats {
 		fmt.Fprintf(b, "%s:\n", actionKey)
-		fmt.Fprintf(b, "  Count:          %10d\n", actionStat.Count())
-		fmt.Fprintf(b, "  Avg Runtime:    %10v\n", actionStat.avgRuntimeString())
-		fmt.Fprintf(b, "  Max Runtime:   %10vs\n", durationToSec(actionStat.MaxRuntime()))
-		fmt.Fprintf(b, "  Min Runtime:   %10vs\n", durationToSec(actionStat.MinRuntime()))
+		fmt.Fprintf(b, "  Count:            %10d\n", actionStat.Count)
+		fmt.Fprintf(b, "  Avg Runtime:      %10v\n", actionStat.avgRuntimeString())
+		fmt.Fprintf(b, "  Max Runtime:     %10vs\n", durationToSec(actionStat.MaxRuntime))
+		fmt.Fprintf(b, "  Min Runtime:     %10vs\n", durationToSec(actionStat.MinRuntime))
 		fmt.Fprintln(b, "")
 	}
-
-	fmt.Fprintf(b, "Data directory restore count: %10d\n", e.dataRestoreCount)
 
 	return b.String()
 }
 
-func (e *Engine) getRuntimeSeconds() float64 {
-	return durationToSec(time.Since(e.engineCreationTime))
+func (e *EngineStats) getRuntimeSeconds() float64 {
+	return durationToSec(time.Since(e.CreationTime))
 }
 
 func durationToSec(dur time.Duration) float64 {
@@ -495,53 +566,38 @@ func durationToSec(dur time.Duration) float64 {
 
 // ActionStats tracks runtime statistics for an action
 type ActionStats struct {
-	count        int64
-	totalRuntime time.Duration
-	minRuntime   time.Duration
-	maxRuntime   time.Duration
-}
-
-// Count returns the number of time this action was executed
-func (s *ActionStats) Count() int64 {
-	return s.count
+	Count        int64
+	TotalRuntime time.Duration
+	MinRuntime   time.Duration
+	MaxRuntime   time.Duration
 }
 
 // AverageRuntime returns the average run time for the action
 func (s *ActionStats) AverageRuntime() time.Duration {
-	return time.Duration(int64(s.totalRuntime) / s.count)
+	return time.Duration(int64(s.TotalRuntime) / s.Count)
 }
 
 func (s *ActionStats) avgRuntimeString() string {
-	if s.count == 0 {
+	if s.Count == 0 {
 		return "--"
 	}
 
 	return fmt.Sprintf("%vs", durationToSec(s.AverageRuntime()))
 }
 
-// MaxRuntime returns the maximum run time for the action
-func (s *ActionStats) MaxRuntime() time.Duration {
-	return s.maxRuntime
-}
-
-// MinRuntime returns the minimum run time for the action
-func (s *ActionStats) MinRuntime() time.Duration {
-	return s.minRuntime
-}
-
 // Record records the current time against the provided start time
 // and updates the stats accordingly
 func (s *ActionStats) Record(st time.Time) {
 	thisRuntime := time.Since(st)
-	s.totalRuntime += thisRuntime
+	s.TotalRuntime += thisRuntime
 
-	if thisRuntime > s.maxRuntime {
-		s.maxRuntime = thisRuntime
+	if thisRuntime > s.MaxRuntime {
+		s.MaxRuntime = thisRuntime
 	}
 
-	if s.count == 0 || thisRuntime < s.minRuntime {
-		s.minRuntime = thisRuntime
+	if s.Count == 0 || thisRuntime < s.MinRuntime {
+		s.MinRuntime = thisRuntime
 	}
 
-	s.count++
+	s.Count++
 }

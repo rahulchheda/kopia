@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kopia/kopia/tests/robustness/snapmeta"
 	"github.com/kopia/kopia/tests/testenv"
 	"github.com/kopia/kopia/tests/tools/fio"
 	"github.com/kopia/kopia/tests/tools/fswalker"
@@ -26,7 +27,7 @@ var (
 )
 
 func TestEngineWritefilesBasicFS(t *testing.T) {
-	eng, err := NewEngine()
+	eng, err := NewEngine("")
 	if err == kopiarunner.ErrExeVariableNotSet {
 		t.Skip(err)
 	}
@@ -65,7 +66,7 @@ func TestEngineWritefilesBasicFS(t *testing.T) {
 }
 
 func TestWriteFilesBasicS3(t *testing.T) {
-	eng, err := NewEngine()
+	eng, err := NewEngine("")
 	if err == kopiarunner.ErrExeVariableNotSet {
 		t.Skip(err)
 	}
@@ -104,7 +105,7 @@ func TestWriteFilesBasicS3(t *testing.T) {
 }
 
 func TestDeleteSnapshotS3(t *testing.T) {
-	eng, err := NewEngine()
+	eng, err := NewEngine("")
 	if err == kopiarunner.ErrExeVariableNotSet {
 		t.Skip(err)
 	}
@@ -144,7 +145,7 @@ func TestDeleteSnapshotS3(t *testing.T) {
 }
 
 func TestSnapshotVerificationFail(t *testing.T) {
-	eng, err := NewEngine()
+	eng, err := NewEngine("")
 	if err == kopiarunner.ErrExeVariableNotSet {
 		t.Skip(err)
 	}
@@ -209,7 +210,7 @@ func TestDataPersistency(t *testing.T) {
 
 	defer os.RemoveAll(tempDir) //nolint:errcheck
 
-	eng, err := NewEngine()
+	eng, err := NewEngine("")
 	if err == kopiarunner.ErrExeVariableNotSet {
 		t.Skip(err)
 	}
@@ -250,7 +251,7 @@ func TestDataPersistency(t *testing.T) {
 	testenv.AssertNoError(t, err)
 
 	// Create a new engine
-	eng2, err := NewEngine()
+	eng2, err := NewEngine("")
 	testenv.AssertNoError(t, err)
 
 	defer eng2.cleanup()
@@ -363,7 +364,7 @@ func TestPickActionWeighted(t *testing.T) {
 }
 
 func TestActionsFilesystem(t *testing.T) {
-	eng, err := NewEngine()
+	eng, err := NewEngine("")
 	if err == kopiarunner.ErrExeVariableNotSet {
 		t.Skip(err)
 	}
@@ -401,7 +402,7 @@ func TestActionsFilesystem(t *testing.T) {
 }
 
 func TestActionsS3(t *testing.T) {
-	eng, err := NewEngine()
+	eng, err := NewEngine("")
 	if err == kopiarunner.ErrExeVariableNotSet {
 		t.Skip(err)
 	}
@@ -446,7 +447,7 @@ func TestIOLimitPerWriteAction(t *testing.T) {
 	// set to 1 MB.
 	const timeout = 10 * time.Second
 
-	eng, err := NewEngine()
+	eng, err := NewEngine("")
 	if err == kopiarunner.ErrExeVariableNotSet {
 		t.Skip(err)
 	}
@@ -491,4 +492,69 @@ func TestIOLimitPerWriteAction(t *testing.T) {
 	if time.Since(st) > timeout {
 		t.Errorf("IO limit parameter did not cut down on the fio runtime")
 	}
+}
+
+func TestStatsPersist(t *testing.T) {
+	tmpDir, err := ioutil.TempDir("", "stats-persist-test")
+	testenv.AssertNoError(t, err)
+
+	snapStore, err := snapmeta.New(tmpDir)
+	testenv.AssertNoError(t, err)
+
+	defer os.RemoveAll(tmpDir) //nolint:errcheck
+
+	err = snapStore.ConnectOrCreateFilesystem(tmpDir)
+	testenv.AssertNoError(t, err)
+
+	actionstats := &ActionStats{
+		Count:        120,
+		TotalRuntime: 25 * time.Hour,
+		MinRuntime:   5 * time.Minute,
+		MaxRuntime:   35 * time.Minute,
+	}
+
+	creationTime := time.Now().Add(-time.Hour)
+
+	eng := &Engine{
+		MetaStore: snapStore,
+		CumulativeStats: EngineStats{
+			ActionCounter: 11235,
+			CreationTime:  creationTime,
+			PerActionStats: map[ActionKey]*ActionStats{
+				ActionKey("some-action"): actionstats,
+			},
+			DataRestoreCount: 99,
+		},
+	}
+
+	err = eng.SaveStats()
+	testenv.AssertNoError(t, err)
+
+	err = eng.MetaStore.FlushMetadata()
+	testenv.AssertNoError(t, err)
+
+	snapStoreNew, err := snapmeta.New(tmpDir)
+	testenv.AssertNoError(t, err)
+
+	// Connect to the same metadata store
+	err = snapStoreNew.ConnectOrCreateFilesystem(tmpDir)
+	testenv.AssertNoError(t, err)
+
+	err = snapStoreNew.LoadMetadata()
+	testenv.AssertNoError(t, err)
+
+	engNew := &Engine{
+		MetaStore: snapStoreNew,
+	}
+
+	err = engNew.LoadStats()
+	testenv.AssertNoError(t, err)
+
+	if got, want := engNew.Stats(), eng.Stats(); got != want {
+		t.Errorf("Stats do not match\n%v\n%v", got, want)
+	}
+
+	fmt.Println(eng.Stats())
+	fmt.Println(engNew.Stats())
+
 }

@@ -30,13 +30,13 @@ type Runner struct {
 var ErrExeVariableNotSet = errors.New("KOPIA_EXE variable has not been set")
 
 // NewRunner initializes a new kopia runner and returns its pointer
-func NewRunner() (*Runner, error) {
+func NewRunner(baseDir string) (*Runner, error) {
 	exe := os.Getenv("KOPIA_EXE")
 	if exe == "" {
 		return nil, ErrExeVariableNotSet
 	}
 
-	configDir, err := ioutil.TempDir("", "kopia-config")
+	configDir, err := ioutil.TempDir(baseDir, "kopia-config")
 	if err != nil {
 		return nil, err
 	}

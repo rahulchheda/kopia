@@ -100,7 +100,7 @@ func TestRandomized(t *testing.T) {
 
 	// Perform actions until the timer expires, at least until one action
 	// has been performed
-	for time.Since(st) <= *randomizedTestDur || eng.ActionCounter == 0 {
+	for time.Since(st) <= *randomizedTestDur || eng.RunStats.ActionCounter == 0 {
 		err := eng.RandomAction(opts)
 		testenv.AssertNoError(t, err)
 	}

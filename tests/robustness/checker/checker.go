@@ -27,8 +27,8 @@ type Checker struct {
 
 // NewChecker instantiates a new Checker, returning its pointer. A temporary
 // directory is created to mount restored data
-func NewChecker(snapIssuer snap.Snapshotter, snapmetaStore snapmeta.Store, validator Comparer) (*Checker, error) {
-	restoreDir, err := ioutil.TempDir("", "restore-data-")
+func NewChecker(snapIssuer snap.Snapshotter, snapmetaStore snapmeta.Store, validator Comparer, restoreDir string) (*Checker, error) {
+	restoreDir, err := ioutil.TempDir(restoreDir, "restore-data-")
 	if err != nil {
 		return nil, err
 	}

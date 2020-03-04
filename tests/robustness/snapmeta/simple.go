@@ -1,6 +1,8 @@
 package snapmeta
 
-import "sync"
+import (
+	"sync"
+)
 
 var _ Store = &Simple{}
 
