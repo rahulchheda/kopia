@@ -1,8 +1,12 @@
 package snapmeta
 
 import (
+	"errors"
 	"sync"
 )
+
+// ErrKeyNotFound is returned when the store can't find the key provided
+var ErrKeyNotFound = errors.New("key not found")
 
 var _ Store = &Simple{}
 
@@ -47,7 +51,7 @@ func (s *Simple) Load(key string) ([]byte, error) {
 		return retBuf, nil
 	}
 
-	return nil, nil
+	return nil, ErrKeyNotFound
 }
 
 // Delete implements the Storer interface Delete method
