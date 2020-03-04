@@ -4,6 +4,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -105,13 +106,9 @@ func NewEngine(workingDir string) (*Engine, error) {
 	e.Checker = chk
 
 	e.RunStats = EngineStats{
+		RunCounter:     1,
 		CreationTime:   time.Now(),
 		PerActionStats: make(map[ActionKey]*ActionStats),
-	}
-
-	err = e.LoadStats()
-	if err != nil {
-		return nil, err
 	}
 
 	return e, nil
@@ -157,16 +154,26 @@ func (e *Engine) InitS3(ctx context.Context, testRepoPath, metaRepoPath string) 
 		return err
 	}
 
-	err = e.MetaStore.LoadMetadata()
-	if err != nil {
-		return err
-	}
-
 	err = e.TestRepo.ConnectOrCreateS3(bucketName, testRepoPath)
 	if err != nil {
 		return err
 	}
 
+	return e.init(ctx)
+}
+
+func (e *Engine) init(ctx context.Context) error {
+	err := e.MetaStore.LoadMetadata()
+	if err != nil {
+		return err
+	}
+
+	err = e.LoadStats()
+	if err != nil {
+		return err
+	}
+
+	e.CumulativeStats.RunCounter++
 	_, _, err = e.TestRepo.Run("policy", "set", "--global", "--keep-latest", strconv.Itoa(1<<31-1), "--compression", "s2-default")
 	if err != nil {
 		return err
@@ -178,7 +185,6 @@ func (e *Engine) InitS3(ctx context.Context, testRepoPath, metaRepoPath string) 
 	}
 
 	return e.RestoreLiveSnapshotToDataDir(ctx)
-
 }
 
 // InitFilesystem attempts to connect to a test repo and metadata repo on the local
@@ -191,27 +197,12 @@ func (e *Engine) InitFilesystem(ctx context.Context, testRepoPath, metaRepoPath 
 		return err
 	}
 
-	err = e.MetaStore.LoadMetadata()
-	if err != nil {
-		return err
-	}
-
 	err = e.TestRepo.ConnectOrCreateFilesystem(testRepoPath)
 	if err != nil {
 		return err
 	}
 
-	_, _, err = e.TestRepo.Run("policy", "set", "--global", "--keep-latest", strconv.Itoa(1<<31-1), "--compression", "s2-default")
-	if err != nil {
-		return err
-	}
-
-	err = e.Checker.VerifySnapshotMetadata()
-	if err != nil {
-		return err
-	}
-
-	return e.RestoreLiveSnapshotToDataDir(ctx)
+	return e.init(ctx)
 }
 
 // RestoreLiveSnapshotToDataDir restores an existing snapshot to the data directory
@@ -484,6 +475,7 @@ func (e *Engine) ExecAction(actionKey ActionKey, opts map[string]string) error {
 }
 
 type EngineStats struct {
+	RunCounter     int64
 	ActionCounter  int64
 	CreationTime   time.Time
 	PerActionStats map[ActionKey]*ActionStats
@@ -505,6 +497,11 @@ func (e *Engine) SaveStats() error {
 func (e *Engine) LoadStats() error {
 	b, err := e.MetaStore.Load(engineStatsStoreKey)
 	if err != nil {
+		if errors.Is(err, snapmeta.ErrKeyNotFound) {
+			// Swallow key-not-found error. We may not have historical
+			// stats data
+			return nil
+		}
 		return err
 	}
 
@@ -536,6 +533,7 @@ func (stats *EngineStats) Stats() string {
 	fmt.Fprintln(b, "=============")
 	fmt.Fprintln(b, "Stat summary")
 	fmt.Fprintln(b, "=============")
+	fmt.Fprintf(b, "  Number of runs:    %10vs\n", stats.RunCounter)
 	fmt.Fprintf(b, "  Engine runtime:    %10vs\n", stats.getRuntimeSeconds())
 	fmt.Fprintf(b, "  Actions run:        %10v\n", stats.ActionCounter)
 	fmt.Fprintf(b, "  Data Dir Restores:  %10v\n", stats.ActionCounter)
