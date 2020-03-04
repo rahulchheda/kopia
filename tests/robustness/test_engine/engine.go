@@ -46,6 +46,7 @@ type Engine struct {
 
 	RunStats        EngineStats
 	CumulativeStats EngineStats
+	EngineLog       EngineLog
 }
 
 // NewEngine instantiates a new Engine and returns its pointer. It is
@@ -125,6 +126,16 @@ func (e *Engine) Cleanup() error {
 	defer e.cleanup()
 
 	if e.MetaStore != nil {
+		err := e.SaveLog()
+		if err != nil {
+			return err
+		}
+
+		err = e.SaveStats()
+		if err != nil {
+			return err
+		}
+
 		return e.MetaStore.FlushMetadata()
 	}
 
@@ -174,6 +185,12 @@ func (e *Engine) init(ctx context.Context) error {
 	}
 
 	e.CumulativeStats.RunCounter++
+
+	err = e.LoadLog()
+	if err != nil {
+		return err
+	}
+
 	_, _, err = e.TestRepo.Run("policy", "set", "--global", "--keep-latest", strconv.Itoa(1<<31-1), "--compression", "s2-default")
 	if err != nil {
 		return err
@@ -228,7 +245,7 @@ type ActionOpts map[ActionKey]map[string]string
 // Action is a unit of functionality that can be executed by
 // the engine
 type Action struct {
-	f func(eng *Engine, opts map[string]string) error
+	f func(eng *Engine, opts map[string]string, l *EngineLogEntry) error
 }
 
 // ActionKey refers to an action that can be executed by the engine
@@ -246,17 +263,20 @@ const (
 
 var actions = map[ActionKey]Action{
 	SnapshotRootDirActionKey: {
-		f: func(e *Engine, opts map[string]string) error {
+		f: func(e *Engine, opts map[string]string, l *EngineLogEntry) error {
 
 			log.Printf("Creating snapshot of root directory %s", e.FileWriter.LocalDataDir)
 
 			ctx := context.TODO()
 			_, err := e.Checker.TakeSnapshot(ctx, e.FileWriter.LocalDataDir)
+
+			setLogEntryCmdOpts(l, map[string]string{"snap-dir": e.FileWriter.LocalDataDir})
+
 			return err
 		},
 	},
 	RestoreRandomSnapshotActionKey: {
-		f: func(e *Engine, opts map[string]string) error {
+		f: func(e *Engine, opts map[string]string, l *EngineLogEntry) error {
 
 			snapIDList := e.Checker.GetLiveSnapIDs()
 			if len(snapIDList) == 0 {
@@ -266,6 +286,8 @@ var actions = map[ActionKey]Action{
 			ctx := context.TODO()
 			snapID := snapIDList[rand.Intn(len(snapIDList))]
 
+			setLogEntryCmdOpts(l, map[string]string{"snapID": snapID})
+
 			log.Printf("Restoring snapshot %s", snapID)
 
 			err := e.Checker.RestoreSnapshot(ctx, snapID, nil)
@@ -273,7 +295,7 @@ var actions = map[ActionKey]Action{
 		},
 	},
 	DeleteRandomSnapshotActionKey: {
-		f: func(e *Engine, opts map[string]string) error {
+		f: func(e *Engine, opts map[string]string, l *EngineLogEntry) error {
 
 			snapIDList := e.Checker.GetLiveSnapIDs()
 			if len(snapIDList) == 0 {
@@ -285,12 +307,14 @@ var actions = map[ActionKey]Action{
 
 			log.Printf("Deleting snapshot %s", snapID)
 
+			setLogEntryCmdOpts(l, map[string]string{"snapID": snapID})
+
 			err := e.Checker.DeleteSnapshot(ctx, snapID)
 			return err
 		},
 	},
 	WriteRandomFilesActionKey: {
-		f: func(e *Engine, opts map[string]string) error {
+		f: func(e *Engine, opts map[string]string, l *EngineLogEntry) error {
 
 			// Directory depth
 			maxDirDepth := getOptAsIntOrDefault(MaxDirDepthField, opts, defaultMaxDirDepth)
@@ -328,9 +352,20 @@ var actions = map[ActionKey]Action{
 				fioOpts = fioOpts.WithIOLimit(int64(ioLimit))
 			}
 
+			relBasePath := "."
+
 			log.Printf("Writing files at depth %v (fileSize: %v-%v, numFiles: %v, blockSize: %v, dedupPcnt: %v, ioLimit: %v)\n", dirDepth, minFileSizeB, maxFileSizeB, numFiles, blockSize, dedupPcnt, ioLimit)
 
-			err := e.FileWriter.WriteFilesAtDepthRandomBranch(".", dirDepth, fioOpts)
+			setLogEntryCmdOpts(l, map[string]string{
+				"dirDepth":    strconv.Itoa(dirDepth),
+				"relBasePath": relBasePath,
+			})
+
+			for k, v := range fioOpts {
+				l.CmdOpts[k] = v
+			}
+
+			err := e.FileWriter.WriteFilesAtDepthRandomBranch(relBasePath, dirDepth, fioOpts)
 			if err != nil {
 				if strings.Contains(err.Error(), "no space left on device") {
 					log.Printf("Hit device full error - Resoring an old snapshot (%v)", err.Error())
@@ -346,11 +381,13 @@ var actions = map[ActionKey]Action{
 		},
 	},
 	DeleteRandomSubdirectoryActionKey: {
-		f: func(e *Engine, opts map[string]string) error {
+		f: func(e *Engine, opts map[string]string, l *EngineLogEntry) error {
 			maxDirDepth := getOptAsIntOrDefault(MaxDirDepthField, opts, defaultMaxDirDepth)
 			dirDepth := rand.Intn(maxDirDepth)
 
 			log.Printf("Deleting directory at depth %v\n", dirDepth)
+
+			setLogEntryCmdOpts(l, map[string]string{"dirDepth": strconv.Itoa(dirDepth)})
 
 			err := e.FileWriter.DeleteDirAtDepth("", dirDepth)
 			if err != nil && err == fio.ErrNoDirFound {
@@ -361,6 +398,14 @@ var actions = map[ActionKey]Action{
 			return err
 		},
 	},
+}
+
+func setLogEntryCmdOpts(l *EngineLogEntry, opts map[string]string) {
+	if l == nil {
+		return
+	}
+
+	l.CmdOpts = opts
 }
 
 // Action constants
@@ -471,8 +516,112 @@ func (e *Engine) ExecAction(actionKey ActionKey, opts map[string]string) error {
 	defer e.RunStats.PerActionStats[actionKey].Record(st)
 	defer e.CumulativeStats.PerActionStats[actionKey].Record(st)
 
-	return action.f(e, opts)
+	logEntry := &EngineLogEntry{
+		StartTime:  st,
+		Action:     actionKey,
+		ActionOpts: opts,
+	}
+
+	err := action.f(e, opts, logEntry)
+
+	e.EngineLog.AddCompleted(logEntry, err)
+
+	return err
 }
+
+func (e *Engine) SaveLog() error {
+	b, err := e.EngineLog.MarshalJSON()
+	if err != nil {
+		return err
+	}
+
+	return e.MetaStore.Store(engineLogsStoreKey, b)
+}
+
+func (e *Engine) LoadLog() error {
+	b, err := e.MetaStore.Load(engineLogsStoreKey)
+
+	err = e.EngineLog.UnmarshalJSON(b)
+	if err != nil {
+		if errors.Is(err, snapmeta.ErrKeyNotFound) {
+			// Swallow key-not-found error. May not have historical logs
+			return nil
+		}
+		return err
+	}
+
+	return err
+}
+
+type EngineLog struct {
+	Log []EngineLogEntry
+}
+
+type EngineLogEntry struct {
+	StartTime  time.Time
+	EndTime    time.Time
+	Action     ActionKey
+	Error      error
+	Idx        int64
+	ActionOpts map[string]string
+	CmdOpts    map[string]string
+}
+
+func (l EngineLogEntry) String() string {
+	b := &strings.Builder{}
+
+	fmt.Fprintf(b, "%4v. %s - %s (%s) %v\n",
+		l.Idx,
+		l.StartTime,
+		l.EndTime,
+		l.EndTime.Sub(l.StartTime),
+		l.Action,
+	)
+
+	return b.String()
+}
+
+func (elog EngineLog) String() string {
+	b := &strings.Builder{}
+
+	for _, l := range elog.Log {
+		fmt.Fprintf(b, l.String())
+	}
+
+	return b.String()
+}
+
+func (elog EngineLog) MarshalJSON() ([]byte, error) {
+	return json.Marshal(&elog)
+}
+
+func (elog EngineLog) UnmarshalJSON(b []byte) error {
+	return json.Unmarshal(b, &elog)
+}
+
+func (elog EngineLog) AddEntry(l EngineLogEntry) {
+	elog.Log = append(elog.Log, l)
+	l.Idx = int64(len(elog.Log))
+}
+
+func (elog EngineLog) AddCompleted(logEntry *EngineLogEntry, err error) {
+	logEntry.EndTime = time.Now()
+	logEntry.Error = err
+	elog.AddEntry(*logEntry)
+}
+
+// func (elog EngineLog) RecordCompletedAction(entry *EngineLogEntry, st time.Time, act ActionKey, actOpt, cmdOpt map[string]string) {
+// 	entry.StartTime =  st
+// 	entry.EndTime = time.Now()
+// 	entry.Action =
+// 		EndTime:    time.Now(),
+// 		Action:     act,
+// 		ActionOpts: actOpt,
+// 		CmdOpts:    cmdOpt,
+// 	}
+
+// 	elog.AddEntry(*entry)
+// }
 
 type EngineStats struct {
 	RunCounter     int64
@@ -483,7 +632,10 @@ type EngineStats struct {
 	DataRestoreCount int64
 }
 
-const engineStatsStoreKey = "cumulative-engine-stats"
+const (
+	engineStatsStoreKey = "cumulative-engine-stats"
+	engineLogsStoreKey  = "engine-logs"
+)
 
 func (e *Engine) SaveStats() error {
 	cumulStatRaw, err := json.Marshal(e.CumulativeStats)
@@ -499,7 +651,8 @@ func (e *Engine) LoadStats() error {
 	if err != nil {
 		if errors.Is(err, snapmeta.ErrKeyNotFound) {
 			// Swallow key-not-found error. We may not have historical
-			// stats data
+			// stats data. Initialize the action map for the cumulative stats
+			e.CumulativeStats.PerActionStats = make(map[ActionKey]*ActionStats)
 			return nil
 		}
 		return err

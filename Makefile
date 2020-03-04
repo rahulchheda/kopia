@@ -163,6 +163,8 @@ robustness-tests: dist-binary fio-docker-build
 	FIO_DOCKER_IMAGE=$(FIO_DOCKER_TAG) \
 	KOPIA_EXE=$(KOPIA_INTEGRATION_EXE) \
 	$(GO_TEST) $(TEST_FLAGS) -timeout 55m github.com/kopia/kopia/tests/robustness
+	$(GO_TEST) -v -tags=utils -run=TestStats github.com/kopia/kopia/tests/robustness
+	$(GO_TEST) -v -tags=utils -run=TestLogString github.com/kopia/kopia/tests/robustness
 
 else 
 
