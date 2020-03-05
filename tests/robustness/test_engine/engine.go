@@ -27,8 +27,16 @@ const (
 	S3BucketNameEnvKey = "S3_BUCKET_NAME"
 )
 
-// ErrS3BucketNameEnvUnset is the error returned when the S3BucketNameEnvKey environment variable is not set
-var ErrS3BucketNameEnvUnset = fmt.Errorf("environment variable required: %v", S3BucketNameEnvKey)
+var (
+	// ErrNoOp is thrown when an action could not do anything useful
+	ErrNoOp = fmt.Errorf("no-op")
+	// ErrCannotPerformIO is returned if the engine determines there is not enough space
+	// to write files
+	ErrCannotPerformIO = fmt.Errorf("cannot perform i/o")
+	// ErrS3BucketNameEnvUnset is the error returned when the S3BucketNameEnvKey environment variable is not set
+	ErrS3BucketNameEnvUnset = fmt.Errorf("environment variable required: %v", S3BucketNameEnvKey)
+	noSpaceOnDeviceMatchStr = "no space left on device"
+)
 
 // Engine is the outer level testing framework for robustness testing
 type Engine struct {
@@ -38,11 +46,6 @@ type Engine struct {
 	Checker         *checker.Checker
 	cleanupRoutines []func()
 	baseDirPath     string
-
-	// ActionCounter      int64
-	// engineCreationTime time.Time
-	// perActionStats     map[ActionKey]*ActionStats
-	// dataRestoreCount   int64
 
 	RunStats        EngineStats
 	CumulativeStats EngineStats
@@ -121,7 +124,15 @@ func (e *Engine) Cleanup() error {
 	// at the end of the run
 	e.ExecAction(SnapshotRootDirActionKey, make(map[string]string))
 
-	log.Printf("Cleanup summary:\n%v", e.Stats())
+	e.RunStats.RunTime = time.Since(e.RunStats.CreationTime)
+	e.CumulativeStats.RunTime += e.RunStats.RunTime
+
+	log.Println("================")
+	log.Println("Cleanup summary:")
+	log.Println("")
+	log.Println(e.Stats())
+	log.Println("")
+	log.Println(e.EngineLog.StringThisRun())
 
 	defer e.cleanup()
 
@@ -196,12 +207,7 @@ func (e *Engine) init(ctx context.Context) error {
 		return err
 	}
 
-	err = e.Checker.VerifySnapshotMetadata()
-	if err != nil {
-		return err
-	}
-
-	return e.RestoreLiveSnapshotToDataDir(ctx)
+	return e.Checker.VerifySnapshotMetadata()
 }
 
 // InitFilesystem attempts to connect to a test repo and metadata repo on the local
@@ -224,23 +230,32 @@ func (e *Engine) InitFilesystem(ctx context.Context, testRepoPath, metaRepoPath 
 
 // RestoreLiveSnapshotToDataDir restores an existing snapshot to the data directory
 // to be used as a basis for kopia commands
-func (e *Engine) RestoreLiveSnapshotToDataDir(ctx context.Context) error {
-	snapIDs := e.Checker.GetLiveSnapIDs()
-	if len(snapIDs) > 0 {
-		randSnapID := snapIDs[rand.Intn(len(snapIDs))]
+// func (e *Engine) RestoreLiveSnapshotToDataDir(ctx context.Context) error {
+// 	snapIDs := e.Checker.GetLiveSnapIDs()
+// 	if len(snapIDs) > 0 {
+// 		randSnapID := snapIDs[rand.Intn(len(snapIDs))]
 
-		err := e.Checker.RestoreSnapshotToPath(ctx, randSnapID, e.FileWriter.LocalDataDir, os.Stdout)
-		if err != nil {
-			return err
-		}
-	}
+// 		err := e.Checker.RestoreSnapshotToPath(ctx, randSnapID, e.FileWriter.LocalDataDir, log.Writer())
+// 		if err != nil {
+// 			return err
+// 		}
+// 	}
 
-	return nil
-}
+// 	return nil
+// }
 
 // ActionOpts is a structure that designates the options for
 // picking and running an action
 type ActionOpts map[ActionKey]map[string]string
+
+func (actionOpts ActionOpts) getActionControlOpts() map[string]string {
+	actionControlOpts := defaultActionControls()
+	if actionOpts != nil && actionOpts[ActionControlActionKey] != nil {
+		actionControlOpts = actionOpts[ActionControlActionKey]
+	}
+
+	return actionControlOpts
+}
 
 // Action is a unit of functionality that can be executed by
 // the engine
@@ -259,6 +274,8 @@ const (
 	DeleteRandomSnapshotActionKey     ActionKey = "delete-random-snapID"
 	WriteRandomFilesActionKey         ActionKey = "write-random-files"
 	DeleteRandomSubdirectoryActionKey ActionKey = "delete-random-subdirectory"
+	DeleteDirectoryContentsActionKey  ActionKey = "delete-files"
+	RestoreIntoDataDirectoryActionKey ActionKey = "restore-into-data-dir"
 )
 
 var actions = map[ActionKey]Action{
@@ -280,7 +297,7 @@ var actions = map[ActionKey]Action{
 
 			snapIDList := e.Checker.GetLiveSnapIDs()
 			if len(snapIDList) == 0 {
-				return nil
+				return ErrNoOp
 			}
 
 			ctx := context.TODO()
@@ -299,7 +316,7 @@ var actions = map[ActionKey]Action{
 
 			snapIDList := e.Checker.GetLiveSnapIDs()
 			if len(snapIDList) == 0 {
-				return nil
+				return ErrNoOp
 			}
 
 			ctx := context.TODO()
@@ -348,7 +365,24 @@ var actions = map[ActionKey]Action{
 				WithNoFallocate()
 
 			ioLimit := getOptAsIntOrDefault(IOLimitPerWriteAction, opts, defaultIOLimitPerWriteAction)
+
 			if ioLimit > 0 {
+				freeSpaceLimitB := getOptAsIntOrDefault(FreeSpaceLimitField, opts, defaultFreeSpaceLimit)
+
+				freeSpaceB, err := getFreeSpaceB(e.FileWriter.LocalDataDir)
+				if err != nil {
+					return err
+				}
+				log.Printf("Free Space %v B, limit %v B, ioLimit %v B\n", freeSpaceB, freeSpaceLimitB, ioLimit)
+
+				if int(freeSpaceB)-ioLimit < freeSpaceLimitB {
+					ioLimit = int(freeSpaceB) - freeSpaceLimitB
+					log.Printf("Cutting down I/O limit for space %v", ioLimit)
+					if ioLimit <= 0 {
+						return ErrCannotPerformIO
+					}
+				}
+
 				fioOpts = fioOpts.WithIOLimit(int64(ioLimit))
 			}
 
@@ -365,25 +399,16 @@ var actions = map[ActionKey]Action{
 				l.CmdOpts[k] = v
 			}
 
-			err := e.FileWriter.WriteFilesAtDepthRandomBranch(relBasePath, dirDepth, fioOpts)
-			if err != nil {
-				if strings.Contains(err.Error(), "no space left on device") {
-					log.Printf("Hit device full error - Resoring an old snapshot (%v)", err.Error())
-					e.RunStats.DataRestoreCount++
-					e.CumulativeStats.DataRestoreCount++
-					e.RestoreLiveSnapshotToDataDir(context.Background())
-					return nil
-				}
-				return err
-			}
-
-			return nil
+			return e.FileWriter.WriteFilesAtDepthRandomBranch(relBasePath, dirDepth, fioOpts)
 		},
 	},
 	DeleteRandomSubdirectoryActionKey: {
 		f: func(e *Engine, opts map[string]string, l *EngineLogEntry) error {
 			maxDirDepth := getOptAsIntOrDefault(MaxDirDepthField, opts, defaultMaxDirDepth)
-			dirDepth := rand.Intn(maxDirDepth)
+			if maxDirDepth <= 0 {
+				return fmt.Errorf("invalid option setting: %s=%v", MaxDirDepthField, maxDirDepth)
+			}
+			dirDepth := rand.Intn(maxDirDepth) + 1
 
 			log.Printf("Deleting directory at depth %v\n", dirDepth)
 
@@ -398,6 +423,46 @@ var actions = map[ActionKey]Action{
 			return err
 		},
 	},
+	DeleteDirectoryContentsActionKey: {
+		f: func(e *Engine, opts map[string]string, l *EngineLogEntry) error {
+			maxDirDepth := getOptAsIntOrDefault(MaxDirDepthField, opts, defaultMaxDirDepth)
+			dirDepth := rand.Intn(maxDirDepth + 1)
+
+			pcnt := getOptAsIntOrDefault(DeletePercentOfContentsField, opts, defaultDeletePercentOfContents)
+
+			log.Printf("Deleting %d%% of directory contents at depth %v\n", pcnt, dirDepth)
+
+			setLogEntryCmdOpts(l, map[string]string{
+				"dirDepth": strconv.Itoa(dirDepth),
+				"percent":  strconv.Itoa(pcnt),
+			})
+
+			err := e.FileWriter.DeleteContentsAtDepth("", dirDepth, pcnt)
+
+			return err
+		},
+	},
+	RestoreIntoDataDirectoryActionKey: {
+		f: func(e *Engine, opts map[string]string, l *EngineLogEntry) error {
+			snapIDs := e.Checker.GetLiveSnapIDs()
+			if len(snapIDs) == 0 {
+				return ErrNoOp
+			}
+
+			randSnapID := snapIDs[rand.Intn(len(snapIDs))]
+
+			log.Printf("Restoring snap ID %v into data directory\n", randSnapID)
+
+			setLogEntryCmdOpts(l, map[string]string{"snapID": randSnapID})
+
+			err := e.Checker.RestoreSnapshotToPath(context.Background(), randSnapID, e.FileWriter.LocalDataDir, log.Writer())
+			if err != nil {
+				return err
+			}
+
+			return nil
+		},
+	},
 }
 
 func setLogEntryCmdOpts(l *EngineLogEntry, opts map[string]string) {
@@ -410,15 +475,17 @@ func setLogEntryCmdOpts(l *EngineLogEntry, opts map[string]string) {
 
 // Action constants
 const (
-	defaultMaxDirDepth           = 20
-	defaultMaxFileSize           = 1 * 1024 * 1024 * 1024 // 1GB
-	defaultMinFileSize           = 4096
-	defaultMaxNumFilesPerWrite   = 10000
-	defaultMinNumFilesPerWrite   = 1
-	defaultIOLimitPerWriteAction = 0 // A zero value does not impose any limit on IO
-	defaultMaxDedupePercent      = 100
-	defaultMinDedupePercent      = 0
-	defaultDedupePercentStep     = 25
+	defaultMaxDirDepth             = 20
+	defaultMaxFileSize             = 1 * 1024 * 1024 * 1024 // 1GB
+	defaultMinFileSize             = 4096
+	defaultMaxNumFilesPerWrite     = 10000
+	defaultMinNumFilesPerWrite     = 1
+	defaultIOLimitPerWriteAction   = 0                 // A zero value does not impose any limit on IO
+	defaultFreeSpaceLimit          = 100 * 1024 * 1024 // 100 MB
+	defaultMaxDedupePercent        = 100
+	defaultMinDedupePercent        = 0
+	defaultDedupePercentStep       = 25
+	defaultDeletePercentOfContents = 20
 )
 
 func getOptAsIntOrDefault(key string, opts map[string]string, def int) int {
@@ -440,21 +507,30 @@ func getOptAsIntOrDefault(key string, opts map[string]string, def int) int {
 
 // Option field names
 const (
-	MaxDirDepthField         = "max-dir-depth"
-	MaxFileSizeField         = "max-file-size"
-	MinFileSizeField         = "min-file-size"
-	MaxNumFilesPerWriteField = "max-num-files-per-write"
-	MinNumFilesPerWriteField = "min-num-files-per-write"
-	IOLimitPerWriteAction    = "io-limit-per-write"
-	MaxDedupePercentField    = "max-dedupe-percent"
-	MinDedupePercentField    = "min-dedupe-percent"
-	DedupePercentStepField   = "dedupe-percent"
+	MaxDirDepthField             = "max-dir-depth"
+	MaxFileSizeField             = "max-file-size"
+	MinFileSizeField             = "min-file-size"
+	MaxNumFilesPerWriteField     = "max-num-files-per-write"
+	MinNumFilesPerWriteField     = "min-num-files-per-write"
+	IOLimitPerWriteAction        = "io-limit-per-write"
+	FreeSpaceLimitField          = "free-space-limit"
+	MaxDedupePercentField        = "max-dedupe-percent"
+	MinDedupePercentField        = "min-dedupe-percent"
+	DedupePercentStepField       = "dedupe-percent"
+	ThrowNoSpaceOnDeviceErrField = "throw-no-space-error"
+	DeletePercentOfContentsField = "delete-contents-percent"
 )
 
 func defaultActionControls() map[string]string {
 	ret := make(map[string]string, len(actions))
 	for actionKey := range actions {
-		ret[string(actionKey)] = strconv.Itoa(1)
+		switch actionKey {
+		case RestoreIntoDataDirectoryActionKey:
+			// Don't restore into data directory by default
+			ret[string(actionKey)] = strconv.Itoa(0)
+		default:
+			ret[string(actionKey)] = strconv.Itoa(1)
+		}
 	}
 
 	return ret
@@ -484,27 +560,93 @@ func pickActionWeighted(actionControlOpts map[string]string, actionList map[Acti
 // in actionOpts[ActionControlActionKey], or uniform probability if that
 // key is not present in the input options
 func (e *Engine) RandomAction(actionOpts ActionOpts) error {
-	actionControlOpts := defaultActionControls()
-	if actionOpts != nil && actionOpts[ActionControlActionKey] != nil {
-		actionControlOpts = actionOpts[ActionControlActionKey]
-	}
+	actionControlOpts := actionOpts.getActionControlOpts()
 
 	actionName := pickActionWeighted(actionControlOpts, actions)
 	if string(actionName) == "" {
 		return fmt.Errorf("unable to pick an action with the action control options provided")
 	}
 
-	return e.ExecAction(actionName, actionOpts[actionName])
+	err := e.ExecAction(actionName, actionOpts[actionName])
+	err = e.checkErrRecovery(err, actionOpts)
+	return err
+}
+
+func (e *Engine) checkErrRecovery(incomingErr error, actionOpts ActionOpts) (outgoingErr error) {
+	if incomingErr == nil {
+		return nil
+	}
+
+	ctrl := actionOpts.getActionControlOpts()
+
+	switch {
+	case strings.Contains(incomingErr.Error(), noSpaceOnDeviceMatchStr) && ctrl[ThrowNoSpaceOnDeviceErrField] == "":
+		// no space left on device
+
+		restoreActionKey := RestoreIntoDataDirectoryActionKey
+		outgoingErr = e.ExecAction(restoreActionKey, actionOpts[restoreActionKey])
+
+		switch {
+		case errors.Is(outgoingErr, ErrNoOp):
+			deleteDirActionKey := DeleteDirectoryContentsActionKey
+			deleteRootOpts := map[string]string{
+				MaxDirDepthField:             strconv.Itoa(0),
+				DeletePercentOfContentsField: strconv.Itoa(100),
+			}
+
+			outgoingErr = e.ExecAction(deleteDirActionKey, deleteRootOpts)
+
+			e.RunStats.DataPurgeCount++
+			e.CumulativeStats.DataPurgeCount++
+
+		case outgoingErr == nil:
+			e.RunStats.DataRestoreCount++
+			e.CumulativeStats.DataRestoreCount++
+		}
+	}
+
+	if outgoingErr == nil {
+		e.RunStats.ErrorRecoveryCount++
+		e.CumulativeStats.ErrorRecoveryCount++
+	}
+
+	return outgoingErr
 }
 
 // ExecAction executes the action denoted by the provided ActionKey
 func (e *Engine) ExecAction(actionKey ActionKey, opts map[string]string) error {
+	if opts == nil {
+		opts = make(map[string]string)
+	}
+
 	e.RunStats.ActionCounter++
 	e.CumulativeStats.ActionCounter++
-	log.Printf("Engine executing ACTION: name=%q actionCount=%v totActCount=%v t=%vs", actionKey, e.RunStats.ActionCounter, e.CumulativeStats.ActionCounter, e.RunStats.getRuntimeSeconds())
+	log.Printf("Engine executing ACTION: name=%q actionCount=%v totActCount=%v t=%vs (%vs)", actionKey, e.RunStats.ActionCounter, e.CumulativeStats.ActionCounter, e.RunStats.getLifetimeSeconds(), e.getRuntimeSeconds())
 
 	action := actions[actionKey]
 	st := time.Now()
+
+	logEntry := &EngineLogEntry{
+		StartTime:       st,
+		EngineTimestamp: e.getTimestampS(st),
+		Action:          actionKey,
+		ActionOpts:      opts,
+	}
+
+	// Execute the action
+	err := action.f(e, opts, logEntry)
+
+	// If error was just a no-op, don't bother logging the action
+	switch {
+	case errors.Is(err, ErrNoOp):
+		e.RunStats.NoOpCount++
+		e.CumulativeStats.NoOpCount++
+
+		return err
+
+	case err != nil:
+		log.Printf("error=%q", err.Error())
+	}
 
 	if e.RunStats.PerActionStats != nil && e.RunStats.PerActionStats[actionKey] == nil {
 		e.RunStats.PerActionStats[actionKey] = new(ActionStats)
@@ -513,24 +655,24 @@ func (e *Engine) ExecAction(actionKey ActionKey, opts map[string]string) error {
 		e.CumulativeStats.PerActionStats[actionKey] = new(ActionStats)
 	}
 
-	defer e.RunStats.PerActionStats[actionKey].Record(st)
-	defer e.CumulativeStats.PerActionStats[actionKey].Record(st)
-
-	logEntry := &EngineLogEntry{
-		StartTime:  st,
-		Action:     actionKey,
-		ActionOpts: opts,
-	}
-
-	err := action.f(e, opts, logEntry)
+	e.RunStats.PerActionStats[actionKey].Record(st, err)
+	e.CumulativeStats.PerActionStats[actionKey].Record(st, err)
 
 	e.EngineLog.AddCompleted(logEntry, err)
 
 	return err
 }
 
+func (e *Engine) getTimestampS(t time.Time) int64 {
+	return e.getRuntimeSeconds()
+}
+
+func (e *Engine) getRuntimeSeconds() int64 {
+	return durationToSec(e.CumulativeStats.RunTime + time.Since(e.RunStats.CreationTime))
+}
+
 func (e *Engine) SaveLog() error {
-	b, err := e.EngineLog.MarshalJSON()
+	b, err := json.Marshal(e.EngineLog)
 	if err != nil {
 		return err
 	}
@@ -541,7 +683,7 @@ func (e *Engine) SaveLog() error {
 func (e *Engine) LoadLog() error {
 	b, err := e.MetaStore.Load(engineLogsStoreKey)
 
-	err = e.EngineLog.UnmarshalJSON(b)
+	err = json.Unmarshal(b, &e.EngineLog)
 	if err != nil {
 		if errors.Is(err, snapmeta.ErrKeyNotFound) {
 			// Swallow key-not-found error. May not have historical logs
@@ -550,40 +692,63 @@ func (e *Engine) LoadLog() error {
 		return err
 	}
 
+	e.EngineLog.runOffset = len(e.EngineLog.Log)
+
 	return err
 }
 
 type EngineLog struct {
-	Log []EngineLogEntry
+	runOffset int
+	Log       []*EngineLogEntry
 }
 
 type EngineLogEntry struct {
-	StartTime  time.Time
-	EndTime    time.Time
-	Action     ActionKey
-	Error      error
-	Idx        int64
-	ActionOpts map[string]string
-	CmdOpts    map[string]string
+	StartTime       time.Time
+	EndTime         time.Time
+	EngineTimestamp int64
+	Action          ActionKey
+	Error           string
+	Idx             int64
+	ActionOpts      map[string]string
+	CmdOpts         map[string]string
 }
 
-func (l EngineLogEntry) String() string {
+func (l *EngineLogEntry) String() string {
 	b := &strings.Builder{}
 
-	fmt.Fprintf(b, "%4v. %s - %s (%s) %v\n",
+	fmt.Fprintf(b, "%4v t=%ds %s (%s): %v -> error=%s\n",
 		l.Idx,
-		l.StartTime,
-		l.EndTime,
-		l.EndTime.Sub(l.StartTime),
+		l.EngineTimestamp,
+		formatTime(l.StartTime),
+		l.EndTime.Sub(l.StartTime).Round(100*time.Millisecond),
 		l.Action,
+		l.Error,
 	)
 
 	return b.String()
 }
 
-func (elog EngineLog) String() string {
+func formatTime(tm time.Time) string {
+	return tm.Format("2006/01/02 15:04:05 MST")
+}
+
+func (elog *EngineLog) StringThisRun() string {
 	b := &strings.Builder{}
 
+	for i, l := range elog.Log {
+		if i > elog.runOffset {
+			fmt.Fprintf(b, l.String())
+		}
+	}
+
+	return b.String()
+}
+
+func (elog *EngineLog) String() string {
+	b := &strings.Builder{}
+
+	fmt.Fprintf(b, "Log size:    %10v\n", len(elog.Log))
+	fmt.Fprintf(b, "========\n")
 	for _, l := range elog.Log {
 		fmt.Fprintf(b, l.String())
 	}
@@ -591,45 +756,34 @@ func (elog EngineLog) String() string {
 	return b.String()
 }
 
-func (elog EngineLog) MarshalJSON() ([]byte, error) {
-	return json.Marshal(&elog)
-}
-
-func (elog EngineLog) UnmarshalJSON(b []byte) error {
-	return json.Unmarshal(b, &elog)
-}
-
-func (elog EngineLog) AddEntry(l EngineLogEntry) {
+func (elog *EngineLog) AddEntry(l *EngineLogEntry) {
 	elog.Log = append(elog.Log, l)
 	l.Idx = int64(len(elog.Log))
 }
 
-func (elog EngineLog) AddCompleted(logEntry *EngineLogEntry, err error) {
+func (elog *EngineLog) AddCompleted(logEntry *EngineLogEntry, err error) {
 	logEntry.EndTime = time.Now()
-	logEntry.Error = err
-	elog.AddEntry(*logEntry)
+	if err != nil {
+		logEntry.Error = err.Error()
+	}
+	elog.AddEntry(logEntry)
+
+	if len(elog.Log) == 0 {
+		panic("Did not get added")
+	}
 }
-
-// func (elog EngineLog) RecordCompletedAction(entry *EngineLogEntry, st time.Time, act ActionKey, actOpt, cmdOpt map[string]string) {
-// 	entry.StartTime =  st
-// 	entry.EndTime = time.Now()
-// 	entry.Action =
-// 		EndTime:    time.Now(),
-// 		Action:     act,
-// 		ActionOpts: actOpt,
-// 		CmdOpts:    cmdOpt,
-// 	}
-
-// 	elog.AddEntry(*entry)
-// }
 
 type EngineStats struct {
 	RunCounter     int64
 	ActionCounter  int64
 	CreationTime   time.Time
+	RunTime        time.Duration
 	PerActionStats map[ActionKey]*ActionStats
 
-	DataRestoreCount int64
+	DataRestoreCount   int64
+	DataPurgeCount     int64
+	ErrorRecoveryCount int64
+	NoOpCount          int64
 }
 
 const (
@@ -653,6 +807,7 @@ func (e *Engine) LoadStats() error {
 			// Swallow key-not-found error. We may not have historical
 			// stats data. Initialize the action map for the cumulative stats
 			e.CumulativeStats.PerActionStats = make(map[ActionKey]*ActionStats)
+			e.CumulativeStats.CreationTime = time.Now()
 			return nil
 		}
 		return err
@@ -667,6 +822,8 @@ func (e *Engine) Stats() string {
 	fmt.Fprintln(b, "==================================")
 	fmt.Fprintln(b, "Engine Action Summary (Cumulative)")
 	fmt.Fprintln(b, "==================================")
+	fmt.Fprintf(b, "  Engine runtime:   %10vs\n", e.getRuntimeSeconds())
+	fmt.Fprintln(b, "")
 	fmt.Fprint(b, e.CumulativeStats.Stats())
 	fmt.Fprintln(b, "")
 
@@ -686,10 +843,13 @@ func (stats *EngineStats) Stats() string {
 	fmt.Fprintln(b, "=============")
 	fmt.Fprintln(b, "Stat summary")
 	fmt.Fprintln(b, "=============")
-	fmt.Fprintf(b, "  Number of runs:    %10vs\n", stats.RunCounter)
-	fmt.Fprintf(b, "  Engine runtime:    %10vs\n", stats.getRuntimeSeconds())
+	fmt.Fprintf(b, "  Number of runs:     %10v\n", stats.RunCounter)
+	fmt.Fprintf(b, "  Engine lifetime:   %10vs\n", stats.getLifetimeSeconds())
 	fmt.Fprintf(b, "  Actions run:        %10v\n", stats.ActionCounter)
-	fmt.Fprintf(b, "  Data Dir Restores:  %10v\n", stats.ActionCounter)
+	fmt.Fprintf(b, "  Errors recovered:   %10v\n", stats.ErrorRecoveryCount)
+	fmt.Fprintf(b, "  Data dir restores:  %10v\n", stats.DataRestoreCount)
+	fmt.Fprintf(b, "  Data dir purges:    %10v\n", stats.DataPurgeCount)
+	fmt.Fprintf(b, "  NoOp count:         %10v\n", stats.NoOpCount)
 	fmt.Fprintln(b, "")
 	fmt.Fprintln(b, "=============")
 	fmt.Fprintln(b, "Action stats")
@@ -701,18 +861,19 @@ func (stats *EngineStats) Stats() string {
 		fmt.Fprintf(b, "  Avg Runtime:      %10v\n", actionStat.avgRuntimeString())
 		fmt.Fprintf(b, "  Max Runtime:     %10vs\n", durationToSec(actionStat.MaxRuntime))
 		fmt.Fprintf(b, "  Min Runtime:     %10vs\n", durationToSec(actionStat.MinRuntime))
+		fmt.Fprintf(b, "  Error Count:      %10v\n", actionStat.ErrorCount)
 		fmt.Fprintln(b, "")
 	}
 
 	return b.String()
 }
 
-func (e *EngineStats) getRuntimeSeconds() float64 {
-	return durationToSec(time.Since(e.CreationTime))
+func (stats *EngineStats) getLifetimeSeconds() int64 {
+	return durationToSec(time.Since(stats.CreationTime))
 }
 
-func durationToSec(dur time.Duration) float64 {
-	return dur.Round(time.Second).Seconds()
+func durationToSec(dur time.Duration) int64 {
+	return int64(dur.Round(time.Second).Seconds())
 }
 
 // ActionStats tracks runtime statistics for an action
@@ -721,6 +882,7 @@ type ActionStats struct {
 	TotalRuntime time.Duration
 	MinRuntime   time.Duration
 	MaxRuntime   time.Duration
+	ErrorCount   int64
 }
 
 // AverageRuntime returns the average run time for the action
@@ -738,7 +900,7 @@ func (s *ActionStats) avgRuntimeString() string {
 
 // Record records the current time against the provided start time
 // and updates the stats accordingly
-func (s *ActionStats) Record(st time.Time) {
+func (s *ActionStats) Record(st time.Time, err error) {
 	thisRuntime := time.Since(st)
 	s.TotalRuntime += thisRuntime
 
@@ -751,4 +913,8 @@ func (s *ActionStats) Record(st time.Time) {
 	}
 
 	s.Count++
+
+	if err != nil {
+		s.ErrorCount++
+	}
 }

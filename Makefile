@@ -159,23 +159,25 @@ integration-tests: dist-binary
 
 ifeq ($(KOPIA_EXE),)
 
-robustness-tests: dist-binary fio-docker-build
+robustness-tests: dist-binary
 	FIO_DOCKER_IMAGE=$(FIO_DOCKER_TAG) \
 	KOPIA_EXE=$(KOPIA_INTEGRATION_EXE) \
-	$(GO_TEST) $(TEST_FLAGS) -timeout 55m github.com/kopia/kopia/tests/robustness
-	$(GO_TEST) -v -tags=utils -run=TestStats github.com/kopia/kopia/tests/robustness
-	$(GO_TEST) -v -tags=utils -run=TestLogString github.com/kopia/kopia/tests/robustness
+	$(GO_TEST) -count=1 $(TEST_FLAGS) -timeout 55m github.com/kopia/kopia/tests/robustness
+	$(MAKE) robustness-status
 
 else 
 
-robustness-tests: fio-docker-build
+robustness-tests:
 	FIO_DOCKER_IMAGE=$(FIO_DOCKER_TAG) \
-	$(GO_TEST) $(TEST_FLAGS) -timeout 55m github.com/kopia/kopia/tests/robustness
+	$(GO_TEST) -count=1 $(TEST_FLAGS) -timeout 55m github.com/kopia/kopia/tests/robustness
+	$(MAKE) robustness-status
 
 endif
 
-fio-docker-build:
-	docker build -t $(FIO_DOCKER_TAG) $(CURDIR)/tests/tools/fio_docker
+robustness-status: dist-binary
+	FIO_DOCKER_IMAGE=$(FIO_DOCKER_TAG) \
+	KOPIA_EXE=$(KOPIA_INTEGRATION_EXE) \
+	$(GO_TEST) -v -tags=utils -run=TestLogString github.com/kopia/kopia/tests/robustness
 
 robustness-tool-tests: dist-binary fio-docker-build
 	KOPIA_EXE=$(KOPIA_INTEGRATION_EXE) \

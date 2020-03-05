@@ -498,10 +498,10 @@ func TestStatsPersist(t *testing.T) {
 	tmpDir, err := ioutil.TempDir("", "stats-persist-test")
 	testenv.AssertNoError(t, err)
 
+	defer os.RemoveAll(tmpDir) //nolint:errcheck
+
 	snapStore, err := snapmeta.New(tmpDir)
 	testenv.AssertNoError(t, err)
-
-	defer os.RemoveAll(tmpDir) //nolint:errcheck
 
 	err = snapStore.ConnectOrCreateFilesystem(tmpDir)
 	testenv.AssertNoError(t, err)
@@ -556,5 +556,67 @@ func TestStatsPersist(t *testing.T) {
 
 	fmt.Println(eng.Stats())
 	fmt.Println(engNew.Stats())
+}
 
+func TestLogsPersist(t *testing.T) {
+	tmpDir, err := ioutil.TempDir("", "logs-persist-test")
+	testenv.AssertNoError(t, err)
+
+	defer os.RemoveAll(tmpDir) //nolint:errcheck
+
+	snapStore, err := snapmeta.New(tmpDir)
+	testenv.AssertNoError(t, err)
+
+	err = snapStore.ConnectOrCreateFilesystem(tmpDir)
+	testenv.AssertNoError(t, err)
+
+	log := EngineLog{
+		Log: []EngineLogEntry{
+			{
+				StartTime: time.Now().Add(-time.Hour),
+				EndTime:   time.Now(),
+				Action:    ActionKey("some action"),
+				Error:     "some error",
+				Idx:       11235,
+				ActionOpts: map[string]string{
+					"opt1": "opt1 value",
+				},
+				CmdOpts: map[string]string{
+					"cmdOpt": "cmdOptVal",
+				},
+			},
+		},
+	}
+
+	eng := &Engine{
+		MetaStore: snapStore,
+		EngineLog: log,
+	}
+
+	err = eng.SaveLog()
+	testenv.AssertNoError(t, err)
+
+	err = eng.MetaStore.FlushMetadata()
+	testenv.AssertNoError(t, err)
+
+	snapStoreNew, err := snapmeta.New(tmpDir)
+	testenv.AssertNoError(t, err)
+
+	// Connect to the same metadata store
+	err = snapStoreNew.ConnectOrCreateFilesystem(tmpDir)
+	testenv.AssertNoError(t, err)
+
+	err = snapStoreNew.LoadMetadata()
+	testenv.AssertNoError(t, err)
+
+	engNew := &Engine{
+		MetaStore: snapStoreNew,
+	}
+
+	err = engNew.LoadLog()
+	testenv.AssertNoError(t, err)
+
+	if got, want := engNew.EngineLog.String(), eng.EngineLog.String(); got != want {
+		t.Errorf("Logs do not match\n%v\n%v", got, want)
+	}
 }

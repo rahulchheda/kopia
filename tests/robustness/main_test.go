@@ -19,7 +19,7 @@ const (
 	fsMetadataPath = "/tmp/robustness-metadata"
 	s3DataPath     = "robustness-data/"
 	s3MetadataPath = "robustness-metadata/"
-	defaultTestDur = 15 * time.Minute
+	defaultTestDur = 3 * time.Minute
 )
 
 var (

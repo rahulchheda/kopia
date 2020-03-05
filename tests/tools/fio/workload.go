@@ -77,18 +77,51 @@ func (fr *Runner) DeleteRelDir(relDirPath string) error {
 	return os.RemoveAll(filepath.Join(fr.LocalDataDir, relDirPath))
 }
 
-// DeleteDirAtDepth delets a random directory at the given depth
+// DeleteDirAtDepth deletes a random directory at the given depth
 func (fr *Runner) DeleteDirAtDepth(relBasePath string, depth int) error {
+	if depth == 0 {
+		return ErrCanNotDeleteRoot
+	}
 	fullBasePath := filepath.Join(fr.LocalDataDir, relBasePath)
-	return fr.deleteDirAtDepth(fullBasePath, depth)
+	return fr.operateAtDepth(fullBasePath, depth, os.RemoveAll)
+}
+
+// DeleteEntriesAtDepth deletes some or all of the contents of a directory
+// at the provided depths
+func (fr *Runner) DeleteContentsAtDepth(relBasePath string, depth, pcnt int) error {
+	fullBasePath := filepath.Join(fr.LocalDataDir, relBasePath)
+	return fr.operateAtDepth(fullBasePath, depth, func(dirPath string) error {
+		fileInfoList, err := ioutil.ReadDir(dirPath)
+		if err != nil {
+			return err
+		}
+
+		for _, fi := range fileInfoList {
+			if rand.Intn(100) < pcnt {
+				path := filepath.Join(dirPath, fi.Name())
+				err = os.RemoveAll(path)
+				if err != nil {
+					return err
+				}
+			}
+		}
+
+		return nil
+	})
 }
 
 // List of known errors
 var (
-	ErrNoDirFound = errors.New("no directory found at this depth")
+	ErrNoDirFound       = errors.New("no directory found at this depth")
+	ErrCanNotDeleteRoot = errors.New("can not delete root directory")
 )
 
-func (fr *Runner) deleteDirAtDepth(path string, depth int) error {
+func (fr *Runner) operateAtDepth(path string, depth int, f func(string) error) error {
+	if depth <= 0 {
+		log.Printf("performing operation on directory %s\n", path)
+		return f(path)
+	}
+
 	fileInfoList, err := ioutil.ReadDir(path)
 	if err != nil {
 		return errors.Wrapf(err, "unable to read dir at path %v", path)
@@ -107,12 +140,7 @@ func (fr *Runner) deleteDirAtDepth(path string, depth int) error {
 	})
 
 	for _, dirName := range dirList {
-		if depth == 0 {
-			log.Printf("deleting directory %s\n", dirName)
-			return os.RemoveAll(dirName)
-		}
-
-		err = fr.deleteDirAtDepth(dirName, depth-1)
+		err = fr.operateAtDepth(dirName, depth-1, f)
 		if err != ErrNoDirFound {
 			return err
 		}
