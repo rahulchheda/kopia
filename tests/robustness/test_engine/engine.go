@@ -295,7 +295,7 @@ func (e *Engine) ExecAction(actionKey ActionKey, opts map[string]string) error {
 	action := actions[actionKey]
 	st := time.Now()
 
-	logEntry := &EngineLogEntry{
+	logEntry := &LogEntry{
 		StartTime:       st,
 		EngineTimestamp: e.getTimestampS(st),
 		Action:          actionKey,
