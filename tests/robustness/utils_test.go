@@ -10,17 +10,20 @@ import (
 	"github.com/kopia/kopia/tests/testenv"
 )
 
-func TestLogString(t *testing.T) {
+func TestRobustnessStatusLogString(t *testing.T) {
 	fmt.Println(eng.EngineLog.String())
 }
 
-func TestLogJSON(t *testing.T) {
+func TestRobustnessStatusLogJSON(t *testing.T) {
+	if testing.Short {
+		t.Skip("skipping full json log output")
+	}
 	b, err := json.MarshalIndent(eng.EngineLog, "", "   ")
 	testenv.AssertNoError(t, err)
 
 	fmt.Println(b)
 }
 
-func TestStats(t *testing.T) {
+func TestRobustnessStatusStats(t *testing.T) {
 	fmt.Println(eng.Stats())
 }
