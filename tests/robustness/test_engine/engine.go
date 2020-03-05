@@ -4,7 +4,6 @@ package engine
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -227,22 +226,6 @@ func (e *Engine) InitFilesystem(ctx context.Context, testRepoPath, metaRepoPath 
 
 	return e.init(ctx)
 }
-
-// RestoreLiveSnapshotToDataDir restores an existing snapshot to the data directory
-// to be used as a basis for kopia commands
-// func (e *Engine) RestoreLiveSnapshotToDataDir(ctx context.Context) error {
-// 	snapIDs := e.Checker.GetLiveSnapIDs()
-// 	if len(snapIDs) > 0 {
-// 		randSnapID := snapIDs[rand.Intn(len(snapIDs))]
-
-// 		err := e.Checker.RestoreSnapshotToPath(ctx, randSnapID, e.FileWriter.LocalDataDir, log.Writer())
-// 		if err != nil {
-// 			return err
-// 		}
-// 	}
-
-// 	return nil
-// }
 
 // ActionOpts is a structure that designates the options for
 // picking and running an action
@@ -587,7 +570,7 @@ func (e *Engine) checkErrRecovery(incomingErr error, actionOpts ActionOpts) (out
 		outgoingErr = e.ExecAction(restoreActionKey, actionOpts[restoreActionKey])
 
 		switch {
-		case errors.Is(outgoingErr, ErrNoOp):
+		case errorIs(outgoingErr, ErrNoOp):
 			deleteDirActionKey := DeleteDirectoryContentsActionKey
 			deleteRootOpts := map[string]string{
 				MaxDirDepthField:             strconv.Itoa(0),
@@ -611,6 +594,13 @@ func (e *Engine) checkErrRecovery(incomingErr error, actionOpts ActionOpts) (out
 	}
 
 	return outgoingErr
+}
+
+func errorIs(err, target error) bool {
+	if err == target {
+		return true
+	}
+	return false
 }
 
 // ExecAction executes the action denoted by the provided ActionKey
@@ -638,7 +628,7 @@ func (e *Engine) ExecAction(actionKey ActionKey, opts map[string]string) error {
 
 	// If error was just a no-op, don't bother logging the action
 	switch {
-	case errors.Is(err, ErrNoOp):
+	case errorIs(err, ErrNoOp):
 		e.RunStats.NoOpCount++
 		e.CumulativeStats.NoOpCount++
 
@@ -685,7 +675,7 @@ func (e *Engine) LoadLog() error {
 
 	err = json.Unmarshal(b, &e.EngineLog)
 	if err != nil {
-		if errors.Is(err, snapmeta.ErrKeyNotFound) {
+		if errorIs(err, snapmeta.ErrKeyNotFound) {
 			// Swallow key-not-found error. May not have historical logs
 			return nil
 		}
@@ -803,7 +793,7 @@ func (e *Engine) SaveStats() error {
 func (e *Engine) LoadStats() error {
 	b, err := e.MetaStore.Load(engineStatsStoreKey)
 	if err != nil {
-		if errors.Is(err, snapmeta.ErrKeyNotFound) {
+		if errorIs(err, snapmeta.ErrKeyNotFound) {
 			// Swallow key-not-found error. We may not have historical
 			// stats data. Initialize the action map for the cumulative stats
 			e.CumulativeStats.PerActionStats = make(map[ActionKey]*ActionStats)
