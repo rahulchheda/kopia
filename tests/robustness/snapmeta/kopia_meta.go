@@ -90,7 +90,7 @@ func (store *kopiaMetadata) LoadMetadata() error {
 		return err
 	}
 
-	err = json.NewDecoder(f).Decode(&(store.Simple.m))
+	err = json.NewDecoder(f).Decode(&(store.Simple))
 	if err != nil {
 		return err
 	}
@@ -112,7 +112,7 @@ func (store *kopiaMetadata) FlushMetadata() error {
 		os.Remove(f.Name()) //nolint:errcheck
 	}()
 
-	err = json.NewEncoder(f).Encode(store.Simple.m)
+	err = json.NewEncoder(f).Encode(store.Simple)
 	if err != nil {
 		return err
 	}

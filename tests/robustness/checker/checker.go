@@ -50,7 +50,7 @@ func (chk *Checker) Cleanup() {
 
 // GetSnapIDs gets the list of snapshot IDs being tracked by the checker's snapshot store
 func (chk *Checker) GetSnapIDs() []string {
-	return chk.snapshotMetadataStore.GetKeys()
+	return chk.snapshotMetadataStore.GetKeys(allSnapshotsIdxName)
 }
 
 // SnapshotMetadata holds metadata associated with a given snapshot
@@ -70,18 +70,7 @@ func (chk *Checker) GetSnapshotMetadata(snapID string) (*SnapshotMetadata, error
 // GetLiveSnapIDs gets the list of snapshot IDs being tracked by the checker's snapshot store
 // that do not have a deletion time associated with them
 func (chk *Checker) GetLiveSnapIDs() []string {
-	snapIDs := chk.GetSnapIDs()
-
-	var ret []string
-
-	for _, snapID := range snapIDs {
-		deleted, err := chk.IsSnapshotIDDeleted(snapID)
-		if err == nil && !deleted {
-			ret = append(ret, snapID)
-		}
-	}
-
-	return ret
+	return chk.snapshotMetadataStore.GetKeys(liveSnapshotsIdxName)
 }
 
 // IsSnapshotIDDeleted reports whether the metadata associated with the provided snapshot ID
@@ -170,6 +159,9 @@ func (chk *Checker) TakeSnapshot(ctx context.Context, sourceDir string) (snapID 
 		return snapID, err
 	}
 
+	chk.snapshotMetadataStore.AddToIndex(snapID, allSnapshotsIdxName)
+	chk.snapshotMetadataStore.AddToIndex(snapID, liveSnapshotsIdxName)
+
 	return snapID, nil
 }
 
@@ -216,6 +208,12 @@ func (chk *Checker) RestoreVerifySnapshot(ctx context.Context, snapID, destPath 
 	return nil
 }
 
+const (
+	deletedSnapshotsIdxName = "deleted-snapshots-idx"
+	liveSnapshotsIdxName    = "live-snapshots-idx"
+	allSnapshotsIdxName     = "all-snapshots-idx"
+)
+
 // DeleteSnapshot performs the Snapshotter's DeleteSnapshot action, and
 // marks the snapshot with the given snapshot ID as deleted
 func (chk *Checker) DeleteSnapshot(ctx context.Context, snapID string) error {
@@ -235,6 +233,9 @@ func (chk *Checker) DeleteSnapshot(ctx context.Context, snapID string) error {
 	if err != nil {
 		return err
 	}
+
+	chk.snapshotMetadataStore.AddToIndex(ssMeta.SnapID, deletedSnapshotsIdxName)
+	chk.snapshotMetadataStore.RemoveFromIndex(ssMeta.SnapID, liveSnapshotsIdxName)
 
 	return nil
 }
