@@ -51,7 +51,7 @@ func (elog *Log) StringThisRun() string {
 	b := &strings.Builder{}
 
 	for i, l := range elog.Log {
-		if i > elog.runOffset {
+		if i >= elog.runOffset {
 			fmt.Fprint(b, l.String())
 		}
 	}
@@ -74,8 +74,8 @@ func (elog *Log) String() string {
 
 // AddEntry adds a LogEntry to the Log
 func (elog *Log) AddEntry(l *LogEntry) {
-	elog.Log = append(elog.Log, l)
 	l.Idx = int64(len(elog.Log))
+	elog.Log = append(elog.Log, l)
 }
 
 // AddCompleted finalizes a log entry at the time it is called
@@ -91,6 +91,28 @@ func (elog *Log) AddCompleted(logEntry *LogEntry, err error) {
 	if len(elog.Log) == 0 {
 		panic("Did not get added")
 	}
+}
+
+// FindLast finds the most recent log entry with the provided ActionKey
+func (elog *Log) FindLast(actionKey ActionKey) *LogEntry {
+	return elog.findLastUntilIdx(actionKey, 0)
+}
+
+// FindLastThisRun finds the most recent log entry with the provided ActionKey,
+// limited to the current run only
+func (elog *Log) FindLastThisRun(actionKey ActionKey) (found *LogEntry) {
+	return elog.findLastUntilIdx(actionKey, elog.runOffset)
+}
+
+func (elog *Log) findLastUntilIdx(actionKey ActionKey, limitIdx int) *LogEntry {
+	for i := len(elog.Log) - 1; i >= limitIdx; i++ {
+		entry := elog.Log[i]
+		if entry != nil && entry.Action == actionKey {
+			return entry
+		}
+	}
+
+	return nil
 }
 
 func setLogEntryCmdOpts(l *LogEntry, opts map[string]string) {

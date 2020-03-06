@@ -164,12 +164,11 @@ robustness-tests: dist-binary
 	FIO_DOCKER_IMAGE=$(FIO_DOCKER_TAG) \
 	KOPIA_EXE=$(KOPIA_INTEGRATION_EXE) \
 	$(GO_TEST) -count=1 $(TEST_FLAGS) -timeout 55m github.com/kopia/kopia/tests/robustness
-	$(MAKE) robustness-status
 
 robustness-status: dist-binary
 	FIO_DOCKER_IMAGE=$(FIO_DOCKER_TAG) \
 	KOPIA_EXE=$(KOPIA_INTEGRATION_EXE) \
-	$(GO_TEST) -v -tags=utils -run=TestLogString github.com/kopia/kopia/tests/robustness
+	$(GO_TEST) -v -tags=utils -run=RobustnessStatus github.com/kopia/kopia/tests/robustness
 
 else 
 
@@ -177,11 +176,10 @@ else
 robustness-tests:
 	FIO_DOCKER_IMAGE=$(FIO_DOCKER_TAG) \
 	$(GO_TEST) -count=1 $(TEST_FLAGS) -timeout 55m github.com/kopia/kopia/tests/robustness
-	$(MAKE) robustness-status
 
 robustness-status:
 	FIO_DOCKER_IMAGE=$(FIO_DOCKER_TAG) \
-	$(GO_TEST) -v -tags=utils -run=TestLogString github.com/kopia/kopia/tests/robustness
+	$(GO_TEST) -v -tags=utils -run=RobustnessStatus github.com/kopia/kopia/tests/robustness
 
 endif
 

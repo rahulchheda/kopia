@@ -118,10 +118,14 @@ func NewEngine(workingDir string) (*Engine, error) {
 func (e *Engine) Cleanup() error {
 	// Perform a snapshot action to capture the state of the data directory
 	// at the end of the run
-	e.ExecAction(SnapshotRootDirActionKey, make(map[string]string)) //nolint:errcheck
-
-	e.RunStats.RunTime = time.Since(e.RunStats.CreationTime)
-	e.CumulativeStats.RunTime += e.RunStats.RunTime
+	lastWriteEntry := e.EngineLog.FindLastThisRun(WriteRandomFilesActionKey)
+	lastSnapEntry := e.EngineLog.FindLastThisRun(SnapshotRootDirActionKey)
+	if lastWriteEntry != nil {
+		if lastSnapEntry == nil || lastSnapEntry.Idx < lastWriteEntry.Idx {
+			// Only force a final snapshot if the data tree has been modified since the last snapshot
+			e.ExecAction(SnapshotRootDirActionKey, make(map[string]string)) //nolint:errcheck
+		}
+	}
 
 	log.Println("================")
 	log.Println("Cleanup summary:")
@@ -129,6 +133,9 @@ func (e *Engine) Cleanup() error {
 	log.Println(e.Stats())
 	log.Println("")
 	log.Println(e.EngineLog.StringThisRun())
+
+	e.RunStats.RunTime = time.Since(e.RunStats.CreationTime)
+	e.CumulativeStats.RunTime += e.RunStats.RunTime
 
 	defer e.cleanup()
 
