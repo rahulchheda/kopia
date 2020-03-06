@@ -23,6 +23,7 @@ type Checker struct {
 	snapshotIssuer        snap.Snapshotter
 	snapshotMetadataStore snapmeta.Store
 	validator             Comparer
+	RecoveryMode          bool
 }
 
 // NewChecker instantiates a new Checker, returning its pointer. A temporary
@@ -38,6 +39,7 @@ func NewChecker(snapIssuer snap.Snapshotter, snapmetaStore snapmeta.Store, valid
 		snapshotIssuer:        snapIssuer,
 		snapshotMetadataStore: snapmetaStore,
 		validator:             validator,
+		RecoveryMode:          true,
 	}, nil
 }
 
@@ -111,15 +113,21 @@ func (chk *Checker) VerifySnapshotMetadata() error {
 
 	for _, metaSnapID := range liveSnapsInMetadata {
 		if _, ok := liveMap[metaSnapID]; !ok {
-			log.Printf("Metadata present for snapID %v but not found in known metadata", metaSnapID)
-			errCount++
+			log.Printf("Metadata present for snapID %v but not found in list of repo snapshots", metaSnapID)
+			if chk.RecoveryMode {
+				chk.snapshotMetadataStore.Delete(metaSnapID)
+			} else {
+				errCount++
+			}
 		}
 	}
 
 	for _, liveSnapID := range liveSnapsInRepo {
 		if _, ok := metadataMap[liveSnapID]; !ok {
 			log.Printf("Live snapshot present for snapID %v but not found in known metadata", liveSnapID)
-			errCount++
+			if !chk.RecoveryMode {
+				errCount++
+			}
 		}
 	}
 
@@ -198,6 +206,20 @@ func (chk *Checker) RestoreVerifySnapshot(ctx context.Context, snapID, destPath 
 	err := chk.snapshotIssuer.RestoreSnapshot(snapID, destPath)
 	if err != nil {
 		return err
+	}
+
+	if ssMeta == nil && chk.RecoveryMode {
+		b, err := chk.validator.Gather(ctx, destPath)
+		if err != nil {
+			return err
+		}
+
+		ssMeta := &SnapshotMetadata{
+			SnapID:         snapID,
+			ValidationData: b,
+		}
+
+		return chk.saveSnapshotMetadata(ssMeta)
 	}
 
 	err = chk.validator.Compare(ctx, destPath, ssMeta.ValidationData, reportOut)
