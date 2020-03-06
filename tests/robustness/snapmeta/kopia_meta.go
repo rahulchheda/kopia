@@ -107,9 +107,9 @@ func (store *kopiaMetadata) LoadMetadata() error {
 	return nil
 }
 
-// GetPersistDirectory returns the path to the directory that will be persisted
+// GetPersistDir returns the path to the directory that will be persisted
 // as a snapshot to the kopia repository
-func (store *kopiaMetadata) GetPersistDirectory() string {
+func (store *kopiaMetadata) GetPersistDir() string {
 	return store.persistenceDir
 }
 
