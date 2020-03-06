@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log"
@@ -330,8 +331,10 @@ var actions = map[ActionKey]Action{
 
 			setLogEntryCmdOpts(l, map[string]string{"snapID": randSnapID})
 
-			err := e.Checker.RestoreSnapshotToPath(context.Background(), randSnapID, e.FileWriter.LocalDataDir, log.Writer())
+			b := &bytes.Buffer{}
+			err := e.Checker.RestoreSnapshotToPath(context.Background(), randSnapID, e.FileWriter.LocalDataDir, b)
 			if err != nil {
+				log.Print(b.String())
 				return err
 			}
 
