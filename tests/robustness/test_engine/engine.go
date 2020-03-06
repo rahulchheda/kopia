@@ -4,9 +4,11 @@ package engine
 import (
 	"context"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -62,6 +64,11 @@ func NewEngine(workingDir string) (*Engine, error) {
 
 	e := &Engine{
 		baseDirPath: baseDirPath,
+		RunStats: Stats{
+			RunCounter:     1,
+			CreationTime:   time.Now(),
+			PerActionStats: make(map[ActionKey]*ActionStats),
+		},
 	}
 
 	// Fill the file writer
@@ -94,6 +101,8 @@ func NewEngine(workingDir string) (*Engine, error) {
 
 	e.MetaStore = snapStore
 
+	e.setupLogging()
+
 	// Create the data integrity checker
 	chk, err := checker.NewChecker(kopiaSnapper, snapStore, fswalker.NewWalkCompare(), baseDirPath)
 	e.cleanupRoutines = append(e.cleanupRoutines, chk.Cleanup)
@@ -104,12 +113,6 @@ func NewEngine(workingDir string) (*Engine, error) {
 	}
 
 	e.Checker = chk
-
-	e.RunStats = Stats{
-		RunCounter:     1,
-		CreationTime:   time.Now(),
-		PerActionStats: make(map[ActionKey]*ActionStats),
-	}
 
 	return e, nil
 }
@@ -154,6 +157,27 @@ func (e *Engine) Cleanup() error {
 	}
 
 	return nil
+}
+
+func (e *Engine) setupLogging() error {
+	dirPath := e.MetaStore.GetPersistDir()
+
+	newLogPath := filepath.Join(dirPath, e.formatLogName())
+	f, err := os.Create(newLogPath)
+	if err != nil {
+		return err
+	}
+
+	// Write to both stderr and persistent log file
+	wrt := io.MultiWriter(os.Stderr, f)
+	log.SetOutput(wrt)
+
+	return nil
+}
+
+func (e *Engine) formatLogName() string {
+	st := e.RunStats.CreationTime
+	return fmt.Sprintf("Log_%s", st.Format("2006_01_02_15_04_05"))
 }
 
 func (e *Engine) cleanup() {

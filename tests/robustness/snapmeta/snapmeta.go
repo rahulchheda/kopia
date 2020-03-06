@@ -26,5 +26,6 @@ type Persister interface {
 	snap.RepoManager
 	LoadMetadata() error
 	FlushMetadata() error
+	GetPersistDir() string
 	Cleanup()
 }
