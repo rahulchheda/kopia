@@ -158,25 +158,32 @@ integration-tests: dist-binary
 
 ifeq ($(KOPIA_EXE),)
 
+# If KOPIA_EXE was NOT provided, build kopia from this repo and run robustness
+# tests and utils using the built binary
 robustness-tests: dist-binary
 	FIO_DOCKER_IMAGE=$(FIO_DOCKER_TAG) \
 	KOPIA_EXE=$(KOPIA_INTEGRATION_EXE) \
 	$(GO_TEST) -count=1 $(TEST_FLAGS) -timeout 55m github.com/kopia/kopia/tests/robustness
 	$(MAKE) robustness-status
 
+robustness-status: dist-binary
+	FIO_DOCKER_IMAGE=$(FIO_DOCKER_TAG) \
+	KOPIA_EXE=$(KOPIA_INTEGRATION_EXE) \
+	$(GO_TEST) -v -tags=utils -run=TestLogString github.com/kopia/kopia/tests/robustness
+
 else 
 
+# If KOPIA_EXE was provided, run the robustness tests and utils against that binary
 robustness-tests:
 	FIO_DOCKER_IMAGE=$(FIO_DOCKER_TAG) \
 	$(GO_TEST) -count=1 $(TEST_FLAGS) -timeout 55m github.com/kopia/kopia/tests/robustness
 	$(MAKE) robustness-status
 
-endif
-
-robustness-status: dist-binary
+robustness-status:
 	FIO_DOCKER_IMAGE=$(FIO_DOCKER_TAG) \
-	KOPIA_EXE=$(KOPIA_INTEGRATION_EXE) \
 	$(GO_TEST) -v -tags=utils -run=TestLogString github.com/kopia/kopia/tests/robustness
+
+endif
 
 robustness-tool-tests: dist-binary fio-docker-build
 	KOPIA_EXE=$(KOPIA_INTEGRATION_EXE) \
