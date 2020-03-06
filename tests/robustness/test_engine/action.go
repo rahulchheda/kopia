@@ -91,25 +91,30 @@ func (e *Engine) checkErrRecovery(incomingErr error, actionOpts ActionOpts) (out
 
 	if errIsNotEnoughSpace(incomingErr) && ctrl[ThrowNoSpaceOnDeviceErrField] == "" {
 		// no space left on device
+		// Delete everything in the data directory
+		const hundredPcnt = 100
+
+		deleteDirActionKey := DeleteDirectoryContentsActionKey
+		deleteRootOpts := map[string]string{
+			MaxDirDepthField:             strconv.Itoa(0),
+			DeletePercentOfContentsField: strconv.Itoa(hundredPcnt),
+		}
+
+		outgoingErr = e.ExecAction(deleteDirActionKey, deleteRootOpts)
+		if outgoingErr != nil {
+			return outgoingErr
+		}
+
+		e.RunStats.DataPurgeCount++
+		e.CumulativeStats.DataPurgeCount++
+
+		// Restore a previoius snapshot to the data directory
 		restoreActionKey := RestoreIntoDataDirectoryActionKey
 		outgoingErr = e.ExecAction(restoreActionKey, actionOpts[restoreActionKey])
 
-		switch {
-		case errorIs(outgoingErr, ErrNoOp):
-			const hundredPcnt = 100
-
-			deleteDirActionKey := DeleteDirectoryContentsActionKey
-			deleteRootOpts := map[string]string{
-				MaxDirDepthField:             strconv.Itoa(0),
-				DeletePercentOfContentsField: strconv.Itoa(hundredPcnt),
-			}
-
-			outgoingErr = e.ExecAction(deleteDirActionKey, deleteRootOpts)
-
-			e.RunStats.DataPurgeCount++
-			e.CumulativeStats.DataPurgeCount++
-
-		case outgoingErr == nil:
+		if errorIs(outgoingErr, ErrNoOp) {
+			outgoingErr = nil
+		} else {
 			e.RunStats.DataRestoreCount++
 			e.CumulativeStats.DataRestoreCount++
 		}
