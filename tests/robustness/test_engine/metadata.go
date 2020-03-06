@@ -26,16 +26,16 @@ func (e *Engine) SaveLog() error {
 func (e *Engine) LoadLog() error {
 	b, err := e.MetaStore.Load(engineLogsStoreKey)
 	if err != nil {
-		return err
-	}
-
-	err = json.Unmarshal(b, &e.EngineLog)
-	if err != nil {
 		if errorIs(err, snapmeta.ErrKeyNotFound) {
 			// Swallow key-not-found error. May not have historical logs
 			return nil
 		}
 
+		return err
+	}
+
+	err = json.Unmarshal(b, &e.EngineLog)
+	if err != nil {
 		return err
 	}
 
