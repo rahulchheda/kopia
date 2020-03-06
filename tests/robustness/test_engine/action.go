@@ -6,9 +6,118 @@ import (
 	"log"
 	"math/rand"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/kopia/kopia/tests/tools/fio"
 )
+
+// ExecAction executes the action denoted by the provided ActionKey
+func (e *Engine) ExecAction(actionKey ActionKey, opts map[string]string) error {
+	if opts == nil {
+		opts = make(map[string]string)
+	}
+
+	e.RunStats.ActionCounter++
+	e.CumulativeStats.ActionCounter++
+	log.Printf("Engine executing ACTION: name=%q actionCount=%v totActCount=%v t=%vs (%vs)", actionKey, e.RunStats.ActionCounter, e.CumulativeStats.ActionCounter, e.RunStats.getLifetimeSeconds(), e.getRuntimeSeconds())
+
+	action := actions[actionKey]
+	st := time.Now()
+
+	logEntry := &LogEntry{
+		StartTime:       st,
+		EngineTimestamp: e.getTimestampS(st),
+		Action:          actionKey,
+		ActionOpts:      opts,
+	}
+
+	// Execute the action
+	err := action.f(e, opts, logEntry)
+
+	// If error was just a no-op, don't bother logging the action
+	switch {
+	case errorIs(err, ErrNoOp):
+		e.RunStats.NoOpCount++
+		e.CumulativeStats.NoOpCount++
+
+		return err
+
+	case err != nil:
+		log.Printf("error=%q", err.Error())
+	}
+
+	if e.RunStats.PerActionStats != nil && e.RunStats.PerActionStats[actionKey] == nil {
+		e.RunStats.PerActionStats[actionKey] = new(ActionStats)
+	}
+	if e.CumulativeStats.PerActionStats != nil && e.CumulativeStats.PerActionStats[actionKey] == nil {
+		e.CumulativeStats.PerActionStats[actionKey] = new(ActionStats)
+	}
+
+	e.RunStats.PerActionStats[actionKey].Record(st, err)
+	e.CumulativeStats.PerActionStats[actionKey].Record(st, err)
+
+	e.EngineLog.AddCompleted(logEntry, err)
+
+	return err
+}
+
+// RandomAction executes a random action picked by the relative weights given
+// in actionOpts[ActionControlActionKey], or uniform probability if that
+// key is not present in the input options
+func (e *Engine) RandomAction(actionOpts ActionOpts) error {
+	actionControlOpts := actionOpts.getActionControlOpts()
+
+	actionName := pickActionWeighted(actionControlOpts, actions)
+	if string(actionName) == "" {
+		return fmt.Errorf("unable to pick an action with the action control options provided")
+	}
+
+	err := e.ExecAction(actionName, actionOpts[actionName])
+	err = e.checkErrRecovery(err, actionOpts)
+	return err
+}
+
+func (e *Engine) checkErrRecovery(incomingErr error, actionOpts ActionOpts) (outgoingErr error) {
+	if incomingErr == nil {
+		return nil
+	}
+
+	ctrl := actionOpts.getActionControlOpts()
+
+	switch {
+	case strings.Contains(incomingErr.Error(), noSpaceOnDeviceMatchStr) && ctrl[ThrowNoSpaceOnDeviceErrField] == "":
+		// no space left on device
+
+		restoreActionKey := RestoreIntoDataDirectoryActionKey
+		outgoingErr = e.ExecAction(restoreActionKey, actionOpts[restoreActionKey])
+
+		switch {
+		case errorIs(outgoingErr, ErrNoOp):
+			deleteDirActionKey := DeleteDirectoryContentsActionKey
+			deleteRootOpts := map[string]string{
+				MaxDirDepthField:             strconv.Itoa(0),
+				DeletePercentOfContentsField: strconv.Itoa(100),
+			}
+
+			outgoingErr = e.ExecAction(deleteDirActionKey, deleteRootOpts)
+
+			e.RunStats.DataPurgeCount++
+			e.CumulativeStats.DataPurgeCount++
+
+		case outgoingErr == nil:
+			e.RunStats.DataRestoreCount++
+			e.CumulativeStats.DataRestoreCount++
+		}
+	}
+
+	if outgoingErr == nil {
+		e.RunStats.ErrorRecoveryCount++
+		e.CumulativeStats.ErrorRecoveryCount++
+	}
+
+	return outgoingErr
+}
 
 // List of action keys
 const (
@@ -312,4 +421,11 @@ func pickActionWeighted(actionControlOpts map[string]string, actionList map[Acti
 	}
 
 	return keepKey
+}
+
+func errorIs(err, target error) bool {
+	if err == target {
+		return true
+	}
+	return false
 }

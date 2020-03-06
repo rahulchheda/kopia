@@ -6,6 +6,27 @@ import (
 	"time"
 )
 
+// Stats prints the engine stats, cumulative and from the current run
+func (e *Engine) Stats() string {
+	b := &strings.Builder{}
+
+	fmt.Fprintln(b, "==================================")
+	fmt.Fprintln(b, "Engine Action Summary (Cumulative)")
+	fmt.Fprintln(b, "==================================")
+	fmt.Fprintf(b, "  Engine runtime:   %10vs\n", e.getRuntimeSeconds())
+	fmt.Fprintln(b, "")
+	fmt.Fprint(b, e.CumulativeStats.Stats())
+	fmt.Fprintln(b, "")
+
+	fmt.Fprintln(b, "==================================")
+	fmt.Fprintln(b, "Engine Action Summary (This Run)")
+	fmt.Fprintln(b, "==================================")
+	fmt.Fprint(b, e.RunStats.Stats())
+	fmt.Fprintln(b, "")
+
+	return b.String()
+}
+
 // Stats tracks statistics during engine runtime
 type Stats struct {
 	RunCounter     int64
@@ -101,4 +122,12 @@ func (s *ActionStats) avgRuntimeString() string {
 	}
 
 	return fmt.Sprintf("%vs", durationToSec(s.AverageRuntime()))
+}
+
+func (e *Engine) getTimestampS(t time.Time) int64 {
+	return e.getRuntimeSeconds()
+}
+
+func (e *Engine) getRuntimeSeconds() int64 {
+	return durationToSec(e.CumulativeStats.RunTime + time.Since(e.RunStats.CreationTime))
 }
