@@ -105,7 +105,7 @@ func (elog *Log) FindLastThisRun(actionKey ActionKey) (found *LogEntry) {
 }
 
 func (elog *Log) findLastUntilIdx(actionKey ActionKey, limitIdx int) *LogEntry {
-	for i := len(elog.Log) - 1; i >= limitIdx; i++ {
+	for i := len(elog.Log) - 1; i >= limitIdx; i-- {
 		entry := elog.Log[i]
 		if entry != nil && entry.Action == actionKey {
 			return entry
