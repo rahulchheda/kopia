@@ -13,8 +13,8 @@ var _ Store = &Simple{}
 // Simple is a snapstore implementation that stores
 // snapshot metadata as a byte slice in a map in memory
 type Simple struct {
-	Data map[string][]byte
-	Idx  Index
+	Data map[string][]byte `json:"data"`
+	Idx  Index             `json:"idx"`
 	l    sync.Mutex
 }
 
@@ -23,6 +23,7 @@ type Simple struct {
 func NewSimple() *Simple {
 	return &Simple{
 		Data: make(map[string][]byte),
+		Idx:  Index(make(map[string]map[string]struct{})),
 	}
 }
 
