@@ -82,6 +82,7 @@ func (e *Engine) RandomAction(actionOpts ActionOpts) error {
 }
 
 func (e *Engine) checkErrRecovery(incomingErr error, actionOpts ActionOpts) (outgoingErr error) {
+	outgoingErr = incomingErr
 	if incomingErr == nil {
 		return nil
 	}
