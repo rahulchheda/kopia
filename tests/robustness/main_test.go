@@ -32,16 +32,26 @@ func TestMain(m *testing.M) {
 	var err error
 
 	eng, err = engine.NewEngine("")
-	if err == kopiarunner.ErrExeVariableNotSet {
+	switch {
+	case err == kopiarunner.ErrExeVariableNotSet:
 		fmt.Println("Skipping robustness tests if KOPIA_EXE is not set")
 		os.Exit(0)
+	case err != nil:
+		fmt.Printf("error on engine creation: %s", err.Error())
+		os.Exit(1)
 	}
 
 	switch {
 	case os.Getenv(engine.S3BucketNameEnvKey) != "":
-		eng.InitS3(context.Background(), s3DataPath, s3MetadataPath)
+		err = eng.InitS3(context.Background(), s3DataPath, s3MetadataPath)
+		if err != nil {
+			fmt.Printf("error initializing engine for S3: %s", err.Error())
+		}
 	default:
-		eng.InitFilesystem(context.Background(), fsDataPath, fsMetadataPath)
+		err = eng.InitFilesystem(context.Background(), fsDataPath, fsMetadataPath)
+		if err != nil {
+			fmt.Printf("error initializing engine for filesystem: %s", err.Error())
+		}
 	}
 
 	result := m.Run()
