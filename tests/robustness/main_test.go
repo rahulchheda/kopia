@@ -46,11 +46,13 @@ func TestMain(m *testing.M) {
 		err = eng.InitS3(context.Background(), s3DataPath, s3MetadataPath)
 		if err != nil {
 			fmt.Printf("error initializing engine for S3: %s", err.Error())
+			os.Exit(1)
 		}
 	default:
 		err = eng.InitFilesystem(context.Background(), fsDataPath, fsMetadataPath)
 		if err != nil {
 			fmt.Printf("error initializing engine for filesystem: %s", err.Error())
+			os.Exit(1)
 		}
 	}
 
