@@ -151,7 +151,6 @@ vtest:
 	$(GO_TEST) -count=1 -short -v -timeout 90s github.com/kopia/kopia/...
 
 dist-binary:
-	@echo KOPIA_INTEGRATION_EXE = $(KOPIA_INTEGRATION_EXE)
 	go build -o $(KOPIA_INTEGRATION_EXE) github.com/kopia/kopia
 
 integration-tests: dist-binary
