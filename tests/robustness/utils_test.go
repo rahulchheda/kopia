@@ -15,7 +15,7 @@ func TestRobustnessStatusLogString(t *testing.T) {
 }
 
 func TestRobustnessStatusLogJSON(t *testing.T) {
-	if testing.Short {
+	if testing.Short() {
 		t.Skip("skipping full json log output")
 	}
 	b, err := json.MarshalIndent(eng.EngineLog, "", "   ")
