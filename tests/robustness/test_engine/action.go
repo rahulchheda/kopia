@@ -89,7 +89,7 @@ func (e *Engine) checkErrRecovery(incomingErr error, actionOpts ActionOpts) (out
 
 	ctrl := actionOpts.getActionControlOpts()
 
-	if strings.Contains(incomingErr.Error(), noSpaceOnDeviceMatchStr) && ctrl[ThrowNoSpaceOnDeviceErrField] == "" {
+	if errIsNotEnoughSpace(incomingErr) && ctrl[ThrowNoSpaceOnDeviceErrField] == "" {
 		// no space left on device
 		restoreActionKey := RestoreIntoDataDirectoryActionKey
 		outgoingErr = e.ExecAction(restoreActionKey, actionOpts[restoreActionKey])
@@ -432,4 +432,8 @@ func pickActionWeighted(actionControlOpts map[string]string, actionList map[Acti
 
 func errorIs(err, target error) bool {
 	return err == target
+}
+
+func errIsNotEnoughSpace(err error) bool {
+	return err == ErrCannotPerformIO || strings.Contains(err.Error(), noSpaceOnDeviceMatchStr)
 }
