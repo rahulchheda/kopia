@@ -82,14 +82,17 @@ func (fr *Runner) DeleteDirAtDepth(relBasePath string, depth int) error {
 	if depth == 0 {
 		return ErrCanNotDeleteRoot
 	}
+
 	fullBasePath := filepath.Join(fr.LocalDataDir, relBasePath)
+
 	return fr.operateAtDepth(fullBasePath, depth, os.RemoveAll)
 }
 
-// DeleteEntriesAtDepth deletes some or all of the contents of a directory
+// DeleteContentsAtDepth deletes some or all of the contents of a directory
 // at the provided depths
 func (fr *Runner) DeleteContentsAtDepth(relBasePath string, depth, pcnt int) error {
 	fullBasePath := filepath.Join(fr.LocalDataDir, relBasePath)
+
 	return fr.operateAtDepth(fullBasePath, depth, func(dirPath string) error {
 		fileInfoList, err := ioutil.ReadDir(dirPath)
 		if err != nil {
@@ -97,7 +100,8 @@ func (fr *Runner) DeleteContentsAtDepth(relBasePath string, depth, pcnt int) err
 		}
 
 		for _, fi := range fileInfoList {
-			if rand.Intn(100) < pcnt {
+			const hundred = 100
+			if rand.Intn(hundred) < pcnt {
 				path := filepath.Join(dirPath, fi.Name())
 				err = os.RemoveAll(path)
 				if err != nil {

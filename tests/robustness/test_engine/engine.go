@@ -118,7 +118,7 @@ func NewEngine(workingDir string) (*Engine, error) {
 func (e *Engine) Cleanup() error {
 	// Perform a snapshot action to capture the state of the data directory
 	// at the end of the run
-	e.ExecAction(SnapshotRootDirActionKey, make(map[string]string))
+	e.ExecAction(SnapshotRootDirActionKey, make(map[string]string)) //nolint:errcheck
 
 	e.RunStats.RunTime = time.Since(e.RunStats.CreationTime)
 	e.CumulativeStats.RunTime += e.RunStats.RunTime

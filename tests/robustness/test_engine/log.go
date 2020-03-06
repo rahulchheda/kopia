@@ -27,11 +27,13 @@ type LogEntry struct {
 func (l *LogEntry) String() string {
 	b := &strings.Builder{}
 
+	const timeResol = 100 * time.Millisecond
+
 	fmt.Fprintf(b, "%4v t=%ds %s (%s): %v -> error=%s\n",
 		l.Idx,
 		l.EngineTimestamp,
 		formatTime(l.StartTime),
-		l.EndTime.Sub(l.StartTime).Round(100*time.Millisecond),
+		l.EndTime.Sub(l.StartTime).Round(timeResol),
 		l.Action,
 		l.Error,
 	)
@@ -50,7 +52,7 @@ func (elog *Log) StringThisRun() string {
 
 	for i, l := range elog.Log {
 		if i > elog.runOffset {
-			fmt.Fprintf(b, l.String())
+			fmt.Fprint(b, l.String())
 		}
 	}
 
@@ -62,8 +64,9 @@ func (elog *Log) String() string {
 
 	fmt.Fprintf(b, "Log size:    %10v\n", len(elog.Log))
 	fmt.Fprintf(b, "========\n")
+
 	for _, l := range elog.Log {
-		fmt.Fprintf(b, l.String())
+		fmt.Fprint(b, l.String())
 	}
 
 	return b.String()
@@ -82,6 +85,7 @@ func (elog *Log) AddCompleted(logEntry *LogEntry, err error) {
 	if err != nil {
 		logEntry.Error = err.Error()
 	}
+
 	elog.AddEntry(logEntry)
 
 	if len(elog.Log) == 0 {

@@ -25,6 +25,9 @@ func (e *Engine) SaveLog() error {
 // LoadLog loads the engine log from the metadata store
 func (e *Engine) LoadLog() error {
 	b, err := e.MetaStore.Load(engineLogsStoreKey)
+	if err != nil {
+		return err
+	}
 
 	err = json.Unmarshal(b, &e.EngineLog)
 	if err != nil {
@@ -32,6 +35,7 @@ func (e *Engine) LoadLog() error {
 			// Swallow key-not-found error. May not have historical logs
 			return nil
 		}
+
 		return err
 	}
 
@@ -59,8 +63,10 @@ func (e *Engine) LoadStats() error {
 			// stats data. Initialize the action map for the cumulative stats
 			e.CumulativeStats.PerActionStats = make(map[ActionKey]*ActionStats)
 			e.CumulativeStats.CreationTime = time.Now()
+
 			return nil
 		}
+
 		return err
 	}
 

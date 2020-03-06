@@ -28,7 +28,7 @@ func (e *Engine) ExecAction(actionKey ActionKey, opts map[string]string) error {
 
 	logEntry := &LogEntry{
 		StartTime:       st,
-		EngineTimestamp: e.getTimestampS(st),
+		EngineTimestamp: e.getTimestampS(),
 		Action:          actionKey,
 		ActionOpts:      opts,
 	}
@@ -51,6 +51,7 @@ func (e *Engine) ExecAction(actionKey ActionKey, opts map[string]string) error {
 	if e.RunStats.PerActionStats != nil && e.RunStats.PerActionStats[actionKey] == nil {
 		e.RunStats.PerActionStats[actionKey] = new(ActionStats)
 	}
+
 	if e.CumulativeStats.PerActionStats != nil && e.CumulativeStats.PerActionStats[actionKey] == nil {
 		e.CumulativeStats.PerActionStats[actionKey] = new(ActionStats)
 	}
@@ -76,6 +77,7 @@ func (e *Engine) RandomAction(actionOpts ActionOpts) error {
 
 	err := e.ExecAction(actionName, actionOpts[actionName])
 	err = e.checkErrRecovery(err, actionOpts)
+
 	return err
 }
 
@@ -86,19 +88,19 @@ func (e *Engine) checkErrRecovery(incomingErr error, actionOpts ActionOpts) (out
 
 	ctrl := actionOpts.getActionControlOpts()
 
-	switch {
-	case strings.Contains(incomingErr.Error(), noSpaceOnDeviceMatchStr) && ctrl[ThrowNoSpaceOnDeviceErrField] == "":
+	if strings.Contains(incomingErr.Error(), noSpaceOnDeviceMatchStr) && ctrl[ThrowNoSpaceOnDeviceErrField] == "" {
 		// no space left on device
-
 		restoreActionKey := RestoreIntoDataDirectoryActionKey
 		outgoingErr = e.ExecAction(restoreActionKey, actionOpts[restoreActionKey])
 
 		switch {
 		case errorIs(outgoingErr, ErrNoOp):
+			const hundredPcnt = 100
+
 			deleteDirActionKey := DeleteDirectoryContentsActionKey
 			deleteRootOpts := map[string]string{
 				MaxDirDepthField:             strconv.Itoa(0),
-				DeletePercentOfContentsField: strconv.Itoa(100),
+				DeletePercentOfContentsField: strconv.Itoa(hundredPcnt),
 			}
 
 			outgoingErr = e.ExecAction(deleteDirActionKey, deleteRootOpts)
@@ -393,6 +395,7 @@ func getOptAsIntOrDefault(key string, opts map[string]string, def int) int {
 
 func defaultActionControls() map[string]string {
 	ret := make(map[string]string, len(actions))
+
 	for actionKey := range actions {
 		switch actionKey {
 		case RestoreIntoDataDirectoryActionKey:
@@ -427,8 +430,5 @@ func pickActionWeighted(actionControlOpts map[string]string, actionList map[Acti
 }
 
 func errorIs(err, target error) bool {
-	if err == target {
-		return true
-	}
-	return false
+	return err == target
 }

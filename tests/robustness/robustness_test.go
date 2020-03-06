@@ -102,11 +102,11 @@ import (
 // }
 
 func TestRandomizedSmall(t *testing.T) {
-
 	err := eng.ExecAction(engine.RestoreIntoDataDirectoryActionKey, nil)
 	if err != nil && err == engine.ErrNoOp {
 		err = nil
 	}
+
 	testenv.AssertNoError(t, err)
 
 	st := time.Now()

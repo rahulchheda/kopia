@@ -124,7 +124,7 @@ func (s *ActionStats) avgRuntimeString() string {
 	return fmt.Sprintf("%vs", durationToSec(s.AverageRuntime()))
 }
 
-func (e *Engine) getTimestampS(t time.Time) int64 {
+func (e *Engine) getTimestampS() int64 {
 	return e.getRuntimeSeconds()
 }
 
