@@ -130,12 +130,11 @@ func (e *Engine) Cleanup() error {
 		}
 	}
 
-	log.Println("================")
-	log.Println("Cleanup summary:")
-	log.Println("")
-	log.Println(e.Stats())
-	log.Println("")
-	log.Println(e.EngineLog.StringThisRun())
+	log.Print()
+	log.Print("================\n")
+	log.Print("Cleanup summary:\n")
+	log.Printf("\n%s\n", e.Stats())
+	log.Printf("\n%s\n", e.EngineLog.StringThisRun())
 
 	e.RunStats.RunTime = time.Since(e.RunStats.CreationTime)
 	e.CumulativeStats.RunTime += e.RunStats.RunTime
