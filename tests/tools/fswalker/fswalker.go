@@ -97,6 +97,11 @@ func (chk *WalkCompare) Compare(ctx context.Context, path string, data []byte, r
 	if err != nil && reportOut != nil {
 		printReportSummary(report, reportOut)
 
+		// Don't spew these fields. They can be enormous and
+		// are probably redundant
+		report.WalkBefore = nil
+		report.WalkAfter = nil
+
 		b, marshalErr := json.MarshalIndent(report, "", "   ")
 		if marshalErr != nil {
 			_, reportErr := reportOut.Write([]byte(marshalErr.Error()))
