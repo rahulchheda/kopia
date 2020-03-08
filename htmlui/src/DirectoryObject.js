@@ -1,9 +1,8 @@
-import React, { Component } from 'react';
 import axios from 'axios';
+import React, { Component } from 'react';
 import Button from 'react-bootstrap/Button';
-import Spinner from 'react-bootstrap/Spinner';
 import Row from 'react-bootstrap/Row';
-
+import Spinner from 'react-bootstrap/Spinner';
 import { DirectoryItems } from "./DirectoryItems";
 
 export class DirectoryObject extends Component {
@@ -22,7 +21,6 @@ export class DirectoryObject extends Component {
     }
 
     fetchDirectory(props) {
-        console.log('fetching props:', props);
         let oid = props.match.params.oid;
 
         this.setState({
@@ -30,7 +28,7 @@ export class DirectoryObject extends Component {
         });
         axios.get('/api/v1/objects/' + oid).then(result => {
             this.setState({
-                items: result.data.entries,
+                items: result.data.entries || [],
                 isLoading: false,
             });
         }).catch(error => this.setState({
@@ -52,7 +50,7 @@ export class DirectoryObject extends Component {
             return <Spinner animation="border" variant="primary" />;
         }
 
-        return <>
+        return <div class="padded">
             <Row>
             <Button size="xxl" variant="dark" onClick={this.props.history.goBack} >
                 Back
@@ -62,6 +60,6 @@ export class DirectoryObject extends Component {
             <Row>
             <DirectoryItems items={items} />
             </Row>
-        </>
+        </div>
     }
 }

@@ -17,13 +17,29 @@ import (
 
 // ConnectOptions specifies options when persisting configuration to connect to a repository.
 type ConnectOptions struct {
+	PersistCredentials bool   `json:"persistCredentials"`
+	HostnameOverride   string `json:"hostnameOverride"`
+	UsernameOverride   string `json:"usernameOverride"`
+
 	content.CachingOptions
 }
 
+// ErrRepositoryNotInitialized is returned when attempting to connect to repository that has not
+// been initialized.
+var ErrRepositoryNotInitialized = errors.Errorf("repository not initialized in the provided storage")
+
 // Connect connects to the repository in the specified storage and persists the configuration and credentials in the file provided.
-func Connect(ctx context.Context, configFile string, st blob.Storage, password string, opt ConnectOptions) error {
+func Connect(ctx context.Context, configFile string, st blob.Storage, password string, opt *ConnectOptions) error {
+	if opt == nil {
+		opt = &ConnectOptions{}
+	}
+
 	formatBytes, err := st.GetBlob(ctx, FormatBlobID, 0, -1)
 	if err != nil {
+		if err == blob.ErrBlobNotFound {
+			return ErrRepositoryNotInitialized
+		}
+
 		return errors.Wrap(err, "unable to read format blob")
 	}
 
@@ -35,7 +51,17 @@ func Connect(ctx context.Context, configFile string, st blob.Storage, password s
 	var lc LocalConfig
 	lc.Storage = st.ConnectionInfo()
 
-	if err = setupCaching(configFile, &lc, opt.CachingOptions, f.UniqueID); err != nil {
+	lc.Hostname = opt.HostnameOverride
+	if lc.Hostname == "" {
+		lc.Hostname = getDefaultHostName(ctx)
+	}
+
+	lc.Username = opt.UsernameOverride
+	if lc.Username == "" {
+		lc.Username = getDefaultUserName(ctx)
+	}
+
+	if err = setupCaching(ctx, configFile, &lc, opt.CachingOptions, f.UniqueID); err != nil {
 		return errors.Wrap(err, "unable to set up caching")
 	}
 
@@ -55,13 +81,27 @@ func Connect(ctx context.Context, configFile string, st blob.Storage, password s
 	// now verify that the repository can be opened with the provided config file.
 	r, err := Open(ctx, configFile, password, nil)
 	if err != nil {
+		// we failed to open the repository after writing the config file,
+		// remove the config file we just wrote and any caches.
+		if derr := Disconnect(ctx, configFile); derr != nil {
+			log(ctx).Warningf("unable to disconnect after unsuccessful opening: %v", derr)
+		}
+
 		return err
+	}
+
+	if opt.PersistCredentials {
+		if err := persistPassword(ctx, configFile, password); err != nil {
+			return errors.Wrap(err, "unable to persist password")
+		}
+	} else {
+		deletePassword(ctx, configFile)
 	}
 
 	return r.Close(ctx)
 }
 
-func setupCaching(configPath string, lc *LocalConfig, opt content.CachingOptions, uniqueID []byte) error {
+func setupCaching(ctx context.Context, configPath string, lc *LocalConfig, opt content.CachingOptions, uniqueID []byte) error {
 	if opt.MaxCacheSizeBytes == 0 {
 		lc.Caching = content.CachingOptions{}
 		return nil
@@ -90,25 +130,27 @@ func setupCaching(configPath string, lc *LocalConfig, opt content.CachingOptions
 	lc.Caching.MaxMetadataCacheSizeBytes = opt.MaxMetadataCacheSizeBytes
 	lc.Caching.MaxListCacheDurationSec = opt.MaxListCacheDurationSec
 
-	log.Debugf("Creating cache directory '%v' with max size %v", lc.Caching.CacheDirectory, lc.Caching.MaxCacheSizeBytes)
+	log(ctx).Debugf("Creating cache directory '%v' with max size %v", lc.Caching.CacheDirectory, lc.Caching.MaxCacheSizeBytes)
 
 	if err := os.MkdirAll(lc.Caching.CacheDirectory, 0700); err != nil {
-		log.Warningf("unablet to create cache directory: %v", err)
+		log(ctx).Warningf("unablet to create cache directory: %v", err)
 	}
 
 	return nil
 }
 
 // Disconnect removes the specified configuration file and any local cache directories.
-func Disconnect(configFile string) error {
+func Disconnect(ctx context.Context, configFile string) error {
 	cfg, err := loadConfigFromFile(configFile)
 	if err != nil {
 		return err
 	}
 
+	deletePassword(ctx, configFile)
+
 	if cfg.Caching.CacheDirectory != "" {
 		if err = os.RemoveAll(cfg.Caching.CacheDirectory); err != nil {
-			log.Warningf("unable to to remove cache directory: %v", err)
+			log(ctx).Warningf("unable to remove cache directory: %v", err)
 		}
 	}
 

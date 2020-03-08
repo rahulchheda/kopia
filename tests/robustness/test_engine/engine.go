@@ -4,9 +4,13 @@ package engine
 import (
 	"context"
 	"fmt"
-	"math/rand"
+	"io"
+	"io/ioutil"
+	"log"
 	"os"
+	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/kopia/kopia/tests/robustness/checker"
 	"github.com/kopia/kopia/tests/robustness/snap"
@@ -21,8 +25,16 @@ const (
 	S3BucketNameEnvKey = "S3_BUCKET_NAME"
 )
 
-// ErrS3BucketNameEnvUnset is the error returned when the S3BucketNameEnvKey environment variable is not set
-var ErrS3BucketNameEnvUnset = fmt.Errorf("environment variable required: %v", S3BucketNameEnvKey)
+var (
+	// ErrNoOp is thrown when an action could not do anything useful
+	ErrNoOp = fmt.Errorf("no-op")
+	// ErrCannotPerformIO is returned if the engine determines there is not enough space
+	// to write files
+	ErrCannotPerformIO = fmt.Errorf("cannot perform i/o")
+	// ErrS3BucketNameEnvUnset is the error returned when the S3BucketNameEnvKey environment variable is not set
+	ErrS3BucketNameEnvUnset = fmt.Errorf("environment variable required: %v", S3BucketNameEnvKey)
+	noSpaceOnDeviceMatchStr = "no space left on device"
+)
 
 // Engine is the outer level testing framework for robustness testing
 type Engine struct {
@@ -31,6 +43,11 @@ type Engine struct {
 	MetaStore       snapmeta.Persister
 	Checker         *checker.Checker
 	cleanupRoutines []func()
+	baseDirPath     string
+
+	RunStats        Stats
+	CumulativeStats Stats
+	EngineLog       Log
 }
 
 // NewEngine instantiates a new Engine and returns its pointer. It is
@@ -39,24 +56,34 @@ type Engine struct {
 // - Kopia test repo snapshotter
 // - Kopia metadata storage repo
 // - FSWalker data integrity checker
-func NewEngine() (*Engine, error) {
-	e := new(Engine)
+func NewEngine(workingDir string) (*Engine, error) {
+	baseDirPath, err := ioutil.TempDir(workingDir, "engine-data-")
+	if err != nil {
+		return nil, err
+	}
 
-	var err error
+	e := &Engine{
+		baseDirPath: baseDirPath,
+		RunStats: Stats{
+			RunCounter:     1,
+			CreationTime:   time.Now(),
+			PerActionStats: make(map[ActionKey]*ActionStats),
+		},
+	}
 
 	// Fill the file writer
 	e.FileWriter, err = fio.NewRunner()
 	if err != nil {
-		e.Cleanup() //nolint:errcheck
+		e.cleanup() //nolint:errcheck
 		return nil, err
 	}
 
 	e.cleanupRoutines = append(e.cleanupRoutines, e.FileWriter.Cleanup)
 
 	// Fill Snapshotter interface
-	kopiaSnapper, err := kopiarunner.NewKopiaSnapshotter()
+	kopiaSnapper, err := kopiarunner.NewKopiaSnapshotter(baseDirPath)
 	if err != nil {
-		e.Cleanup() //nolint:errcheck
+		e.cleanup() //nolint:errcheck
 		return nil, err
 	}
 
@@ -64,9 +91,9 @@ func NewEngine() (*Engine, error) {
 	e.TestRepo = kopiaSnapper
 
 	// Fill the snapshot store interface
-	snapStore, err := snapmeta.New()
+	snapStore, err := snapmeta.New(baseDirPath)
 	if err != nil {
-		e.Cleanup() //nolint:errcheck
+		e.cleanup() //nolint:errcheck
 		return nil, err
 	}
 
@@ -74,12 +101,14 @@ func NewEngine() (*Engine, error) {
 
 	e.MetaStore = snapStore
 
+	e.setupLogging()
+
 	// Create the data integrity checker
-	chk, err := checker.NewChecker(kopiaSnapper, snapStore, fswalker.NewWalkCompare())
+	chk, err := checker.NewChecker(kopiaSnapper, snapStore, fswalker.NewWalkCompare(), baseDirPath)
 	e.cleanupRoutines = append(e.cleanupRoutines, chk.Cleanup)
 
 	if err != nil {
-		e.Cleanup() //nolint:errcheck
+		e.cleanup() //nolint:errcheck
 		return nil, err
 	}
 
@@ -90,19 +119,72 @@ func NewEngine() (*Engine, error) {
 
 // Cleanup cleans up after each component of the test engine
 func (e *Engine) Cleanup() error {
+	// Perform a snapshot action to capture the state of the data directory
+	// at the end of the run
+	lastWriteEntry := e.EngineLog.FindLastThisRun(WriteRandomFilesActionKey)
+	lastSnapEntry := e.EngineLog.FindLastThisRun(SnapshotRootDirActionKey)
+	if lastWriteEntry != nil {
+		if lastSnapEntry == nil || lastSnapEntry.Idx < lastWriteEntry.Idx {
+			// Only force a final snapshot if the data tree has been modified since the last snapshot
+			e.ExecAction(SnapshotRootDirActionKey, make(map[string]string)) //nolint:errcheck
+		}
+	}
+
+	log.Print()
+	log.Print("================\n")
+	log.Print("Cleanup summary:\n")
+	log.Printf("\n%s\n", e.Stats())
+	log.Printf("\n%s\n", e.EngineLog.StringThisRun())
+
+	e.RunStats.RunTime = time.Since(e.RunStats.CreationTime)
+	e.CumulativeStats.RunTime += e.RunStats.RunTime
+
 	defer e.cleanup()
 
 	if e.MetaStore != nil {
+		err := e.SaveLog()
+		if err != nil {
+			return err
+		}
+
+		err = e.SaveStats()
+		if err != nil {
+			return err
+		}
+
 		return e.MetaStore.FlushMetadata()
 	}
 
 	return nil
 }
 
+func (e *Engine) setupLogging() error {
+	dirPath := e.MetaStore.GetPersistDir()
+
+	newLogPath := filepath.Join(dirPath, e.formatLogName())
+	f, err := os.Create(newLogPath)
+	if err != nil {
+		return err
+	}
+
+	// Write to both stderr and persistent log file
+	wrt := io.MultiWriter(os.Stderr, f)
+	log.SetOutput(wrt)
+
+	return nil
+}
+
+func (e *Engine) formatLogName() string {
+	st := e.RunStats.CreationTime
+	return fmt.Sprintf("Log_%s", st.Format("2006_01_02_15_04_05"))
+}
+
 func (e *Engine) cleanup() {
 	for _, f := range e.cleanupRoutines {
 		f()
 	}
+
+	os.RemoveAll(e.baseDirPath) //nolint:errcheck
 }
 
 // InitS3 attempts to connect to a test repo and metadata repo on S3. If connection
@@ -120,37 +202,12 @@ func (e *Engine) InitS3(ctx context.Context, testRepoPath, metaRepoPath string) 
 		return err
 	}
 
-	err = e.MetaStore.LoadMetadata()
-	if err != nil {
-		return err
-	}
-
 	err = e.TestRepo.ConnectOrCreateS3(bucketName, testRepoPath)
 	if err != nil {
 		return err
 	}
 
-	_, _, err = e.TestRepo.Run("policy", "set", "--global", "--keep-latest", strconv.Itoa(1<<31-1))
-	if err != nil {
-		return err
-	}
-
-	err = e.Checker.VerifySnapshotMetadata()
-	if err != nil {
-		return err
-	}
-
-	snapIDs := e.Checker.GetLiveSnapIDs()
-	if len(snapIDs) > 0 {
-		randSnapID := snapIDs[rand.Intn(len(snapIDs))]
-
-		err = e.Checker.RestoreSnapshotToPath(ctx, randSnapID, e.FileWriter.DataDir, os.Stdout)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return e.init(ctx)
 }
 
 // InitFilesystem attempts to connect to a test repo and metadata repo on the local
@@ -163,30 +220,36 @@ func (e *Engine) InitFilesystem(ctx context.Context, testRepoPath, metaRepoPath 
 		return err
 	}
 
-	err = e.MetaStore.LoadMetadata()
-	if err != nil {
-		return err
-	}
-
 	err = e.TestRepo.ConnectOrCreateFilesystem(testRepoPath)
 	if err != nil {
 		return err
 	}
 
-	err = e.Checker.VerifySnapshotMetadata()
+	return e.init(ctx)
+}
+
+func (e *Engine) init(ctx context.Context) error {
+	err := e.MetaStore.LoadMetadata()
 	if err != nil {
 		return err
 	}
 
-	snapIDs := e.Checker.GetSnapIDs()
-	if len(snapIDs) > 0 {
-		randSnapID := snapIDs[rand.Intn(len(snapIDs))]
-
-		err = e.Checker.RestoreSnapshotToPath(ctx, randSnapID, e.FileWriter.DataDir, os.Stdout)
-		if err != nil {
-			return err
-		}
+	err = e.LoadStats()
+	if err != nil {
+		return err
 	}
 
-	return nil
+	e.CumulativeStats.RunCounter++
+
+	err = e.LoadLog()
+	if err != nil {
+		return err
+	}
+
+	_, _, err = e.TestRepo.Run("policy", "set", "--global", "--keep-latest", strconv.Itoa(1<<31-1), "--compression", "s2-default")
+	if err != nil {
+		return err
+	}
+
+	return e.Checker.VerifySnapshotMetadata()
 }

@@ -2,6 +2,7 @@ package serverapi
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
@@ -10,7 +11,11 @@ import (
 	"net/http"
 
 	"github.com/pkg/errors"
+
+	"github.com/kopia/kopia/repo/logging"
 )
+
+var log = logging.GetContextLoggerFunc("kopia/client")
 
 // DefaultUsername is the default username for Kopia server.
 const DefaultUsername = "kopia"
@@ -21,10 +26,14 @@ type Client struct {
 }
 
 // Get sends HTTP GET request and decodes the JSON response into the provided payload structure.
-func (c *Client) Get(path string, respPayload interface{}) error {
+func (c *Client) Get(ctx context.Context, path string, respPayload interface{}) error {
 	req, err := http.NewRequest("GET", c.options.BaseURL+path, nil)
 	if err != nil {
 		return err
+	}
+
+	if c.options.LogRequests {
+		log(ctx).Debugf("GET %v", c.options.BaseURL+path)
 	}
 
 	if c.options.Username != "" {
@@ -49,11 +58,15 @@ func (c *Client) Get(path string, respPayload interface{}) error {
 }
 
 // Post sends HTTP post request with given JSON payload structure and decodes the JSON response into another payload structure.
-func (c *Client) Post(path string, reqPayload, respPayload interface{}) error {
+func (c *Client) Post(ctx context.Context, path string, reqPayload, respPayload interface{}) error {
 	var buf bytes.Buffer
 
 	if err := json.NewEncoder(&buf).Encode(reqPayload); err != nil {
 		return errors.Wrap(err, "unable to encode request")
+	}
+
+	if c.options.LogRequests {
+		log(ctx).Infof("POST %v (%v bytes)", c.options.BaseURL+path, buf.Len())
 	}
 
 	req, err := http.NewRequest("POST", c.options.BaseURL+path, &buf)
@@ -97,6 +110,8 @@ type ClientOptions struct {
 	TrustedServerCertificateFingerprint string
 
 	RootCAs *x509.CertPool
+
+	LogRequests bool
 }
 
 // NewClient creates a options.HTTPClient for connecting to Kopia HTTP API.

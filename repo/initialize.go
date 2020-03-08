@@ -9,7 +9,10 @@ import (
 
 	"github.com/kopia/kopia/repo/blob"
 	"github.com/kopia/kopia/repo/content"
+	"github.com/kopia/kopia/repo/encryption"
+	"github.com/kopia/kopia/repo/hashing"
 	"github.com/kopia/kopia/repo/object"
+	"github.com/kopia/kopia/repo/splitter"
 )
 
 // BuildInfo is the build information of Kopia.
@@ -27,11 +30,14 @@ const (
 // NewRepositoryOptions specifies options that apply to newly created repositories.
 // All fields are optional, when not provided, reasonable defaults will be used.
 type NewRepositoryOptions struct {
-	UniqueID     []byte // force the use of particular unique ID
-	BlockFormat  content.FormattingOptions
-	DisableHMAC  bool
-	ObjectFormat object.Format // object format
+	UniqueID     []byte                    `json:"uniqueID"` // force the use of particular unique ID
+	BlockFormat  content.FormattingOptions `json:"blockFormat"`
+	DisableHMAC  bool                      `json:"disableHMAC"`
+	ObjectFormat object.Format             `json:"objectFormat"` // object format
 }
+
+// ErrAlreadyInitialized indicates that repository has already been initialized.
+var ErrAlreadyInitialized = errors.Errorf("repository already initialized")
 
 // Initialize creates initial repository data structures in the specified storage with given credentials.
 func Initialize(ctx context.Context, st blob.Storage, opt *NewRepositoryOptions, password string) error {
@@ -42,7 +48,7 @@ func Initialize(ctx context.Context, st blob.Storage, opt *NewRepositoryOptions,
 	// get the blob - expect ErrNotFound
 	_, err := st.GetBlob(ctx, FormatBlobID, 0, -1)
 	if err == nil {
-		return errors.Errorf("repository already initialized")
+		return ErrAlreadyInitialized
 	}
 
 	if err != blob.ErrBlobNotFound {
@@ -77,8 +83,8 @@ func formatBlobFromOptions(opt *NewRepositoryOptions) *formatBlob {
 		EncryptionAlgorithm:    defaultFormatEncryption,
 	}
 
-	if opt.BlockFormat.Encryption == "NONE" {
-		f.EncryptionAlgorithm = "NONE"
+	if opt.BlockFormat.Encryption == encryption.NoneAlgorithm {
+		f.EncryptionAlgorithm = encryption.NoneAlgorithm
 	}
 
 	return f
@@ -88,14 +94,14 @@ func repositoryObjectFormatFromOptions(opt *NewRepositoryOptions) *repositoryObj
 	f := &repositoryObjectFormat{
 		FormattingOptions: content.FormattingOptions{
 			Version:     1,
-			Hash:        applyDefaultString(opt.BlockFormat.Hash, content.DefaultHash),
-			Encryption:  applyDefaultString(opt.BlockFormat.Encryption, content.DefaultEncryption),
+			Hash:        applyDefaultString(opt.BlockFormat.Hash, hashing.DefaultAlgorithm),
+			Encryption:  applyDefaultString(opt.BlockFormat.Encryption, encryption.DefaultAlgorithm),
 			HMACSecret:  applyDefaultRandomBytes(opt.BlockFormat.HMACSecret, hmacSecretLength), //nolint:gomnd
 			MasterKey:   applyDefaultRandomBytes(opt.BlockFormat.MasterKey, masterKeyLength),   //nolint:gomnd
 			MaxPackSize: applyDefaultInt(opt.BlockFormat.MaxPackSize, 20<<20),                  //nolint:gomnd
 		},
 		Format: object.Format{
-			Splitter: applyDefaultString(opt.ObjectFormat.Splitter, object.DefaultSplitter),
+			Splitter: applyDefaultString(opt.ObjectFormat.Splitter, splitter.DefaultAlgorithm),
 		},
 	}
 

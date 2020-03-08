@@ -1,7 +1,6 @@
 package snapshot_test
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -9,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/kopia/kopia/internal/repotesting"
+	"github.com/kopia/kopia/internal/testlogging"
 	"github.com/kopia/kopia/repo"
 	"github.com/kopia/kopia/repo/manifest"
 	"github.com/kopia/kopia/snapshot"
@@ -16,7 +16,9 @@ import (
 
 func TestSnapshotsAPI(t *testing.T) {
 	var env repotesting.Environment
-	defer env.Setup(t).Close(t)
+
+	ctx := testlogging.Context(t)
+	defer env.Setup(t).Close(ctx, t)
 
 	src1 := snapshot.SourceInfo{
 		Host:     "host-1",
@@ -77,7 +79,7 @@ func TestSnapshotsAPI(t *testing.T) {
 func verifySnapshotManifestIDs(t *testing.T, rep *repo.Repository, src *snapshot.SourceInfo, expected []manifest.ID) {
 	t.Helper()
 
-	res, err := snapshot.ListSnapshotManifests(context.Background(), rep, src)
+	res, err := snapshot.ListSnapshotManifests(testlogging.Context(t), rep, src)
 	if err != nil {
 		t.Errorf("error listing snapshot manifests: %v", err)
 	}
@@ -99,7 +101,7 @@ func sortManifestIDs(s []manifest.ID) {
 func mustSaveSnapshot(t *testing.T, rep *repo.Repository, man *snapshot.Manifest) manifest.ID {
 	t.Helper()
 
-	id, err := snapshot.SaveSnapshot(context.Background(), rep, man)
+	id, err := snapshot.SaveSnapshot(testlogging.Context(t), rep, man)
 	if err != nil {
 		t.Fatalf("error saving snapshot: %v", err)
 	}
@@ -108,7 +110,7 @@ func mustSaveSnapshot(t *testing.T, rep *repo.Repository, man *snapshot.Manifest
 }
 
 func verifySources(t *testing.T, rep *repo.Repository, sources ...snapshot.SourceInfo) {
-	actualSources, err := snapshot.ListSources(context.Background(), rep)
+	actualSources, err := snapshot.ListSources(testlogging.Context(t), rep)
 	if err != nil {
 		t.Errorf("error listing sources: %v", err)
 	}
@@ -121,7 +123,7 @@ func verifySources(t *testing.T, rep *repo.Repository, sources ...snapshot.Sourc
 func verifyListSnapshots(t *testing.T, rep *repo.Repository, src snapshot.SourceInfo, expected []*snapshot.Manifest) {
 	t.Helper()
 
-	got, err := snapshot.ListSnapshots(context.Background(), rep, src)
+	got, err := snapshot.ListSnapshots(testlogging.Context(t), rep, src)
 	if err != nil {
 		t.Errorf("error loading manifests: %v", err)
 		return
@@ -141,7 +143,7 @@ func verifyListSnapshots(t *testing.T, rep *repo.Repository, src snapshot.Source
 }
 
 func verifyLoadSnapshots(t *testing.T, rep *repo.Repository, ids []manifest.ID, expected []*snapshot.Manifest) {
-	got, err := snapshot.LoadSnapshots(context.Background(), rep, ids)
+	got, err := snapshot.LoadSnapshots(testlogging.Context(t), rep, ids)
 	if err != nil {
 		t.Errorf("error loading manifests: %v", err)
 		return
@@ -177,6 +179,15 @@ func sourcesToStrings(sources ...snapshot.SourceInfo) []string {
 	return res
 }
 
+func mustAbs(t *testing.T, p string) string {
+	p2, err := filepath.Abs(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return p2
+}
+
 func TestParseSourceInfo(t *testing.T) {
 	cwd, _ := os.Getwd()
 
@@ -189,8 +200,8 @@ func TestParseSourceInfo(t *testing.T) {
 		{".", snapshot.SourceInfo{UserName: "default-user", Host: "default-host", Path: cwd}},
 		{"..", snapshot.SourceInfo{UserName: "default-user", Host: "default-host", Path: filepath.Clean(filepath.Join(cwd, ".."))}},
 		{"foo@bar:/some/path", snapshot.SourceInfo{UserName: "foo", Host: "bar", Path: "/some/path"}},
-		{"/some/path", snapshot.SourceInfo{UserName: "default-user", Host: "default-host", Path: "/some/path"}},
-		{"/some/path/../other-path", snapshot.SourceInfo{UserName: "default-user", Host: "default-host", Path: "/some/other-path"}},
+		{"/some/path", snapshot.SourceInfo{UserName: "default-user", Host: "default-host", Path: mustAbs(t, "/some/path")}},
+		{"/some/path/../other-path", snapshot.SourceInfo{UserName: "default-user", Host: "default-host", Path: mustAbs(t, "/some/other-path")}},
 		{"@some-host", snapshot.SourceInfo{Host: "some-host"}},
 		{"some-user@some-host", snapshot.SourceInfo{UserName: "some-user", Host: "some-host"}},
 	}

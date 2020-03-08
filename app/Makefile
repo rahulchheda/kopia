@@ -1,33 +1,55 @@
 SHELL:=/bin/bash
+REPO_OWNER=kopia
+
+electron_builder_flags:=
+electron_publish_flag:=never
+
+ifeq ($(TRAVIS_PULL_REQUEST),false)
+
+electron_publish_flag=always
+
+ifneq ($(TRAVIS_TAG),)
+# tagged release - create draft release, but don't publish
+electron_builder_flags+=-c.extraMetadata.version=$(TRAVIS_TAG:v%=%)
+electron_builder_flags+=-c.publish.releaseType=draft
+electron_builder_flags+=-c.publish.owner=$(REPO_OWNER)
+electron_builder_flags+=-c.publish.repo=kopia
+else
+# post-submit run, create a release in another repo
+electron_builder_flags+=-c.extraMetadata.version=$(shell date +%Y%m%d).0.$(TRAVIS_BUILD_NUMBER)
+electron_builder_flags+=-c.publish.owner=$(REPO_OWNER)
+electron_builder_flags+=-c.publish.repo=kopia-ui-release
+electron_builder_flags+=-c.publish.releaseType=release
+endif
+
+else
+
+# not running on Travis, or Travis in PR mode, don't build installer and don't publish
+ifneq ($(FORCE_KOPIA_UI_SIGN),)
+electron_builder_flags+=--dir
+endif
+
+endif
+
+ifeq ($(TRAVIS_OS_NAME),windows)
+# disable Kopia UI code signing on Windows.
+undefine CSC_LINK
+undefine CSC_KEY_PASSWORD
+endif
 
 dev: node_modules
-	PATH=$(TOOL_PATH) $(NPM_TOOL) run dev
+	$(npm) $(npm_flags) run dev
 
 run: build-html
-	PATH=$(TOOL_PATH) $(NPM_TOOL) run start-electron-prebuilt
+	$(npm) $(npm_flags) run start-electron-prebuilt
 
 build-html: node_modules
-	PATH=$(TOOL_PATH) $(NPM_TOOL) run build-html
+	$(npm) $(npm_flags) run build-html
 
-build-electron-dir: node_modules build-html
-	PATH=$(TOOL_PATH) $(NPM_TOOL) run build-electron-dir
-
-build-all-mac: node_modules build-html
-	PATH=$(TOOL_PATH) $(NPM_TOOL) run build-electron-mac
-
-build-all-win-linux-docker:
-	docker run --rm -ti \
-        --env-file <(env | grep -E "^DEBUG|^NODE_|^ELECTRON_|^YARN_|^NPM_|^CI|^CIRCLE|^TRAVIS_TAG|^TRAVIS|^TRAVIS_REPO_|^TRAVIS_BUILD_|^TRAVIS_BRANCH|^TRAVIS_PULL_REQUEST_|^APPVEYOR_|^CSC_|^GH_|^GITHUB_|^BT_|^AWS_|^STRIP|^BUILD_") \
-		--env ELECTRON_CACHE="/root/.cache/electron" \
-		--env ELECTRON_BUILDER_CACHE="/root/.cache/electron-builder" \
-		-v $(CURDIR):/project \
-		-v $(CURDIR)/../dist:/dist \
-		-v ~/.cache/electron-docker:/root/.cache/electron \
-		-v ~/.cache/electron-builder-docker:/root/.cache/electron-builder \
-		electronuserland/builder:wine \
-		/bin/bash -c "npm install && npm run build-html && npm run build-electron-win-linux"
+build-electron: node_modules build-html
+	$(npm) $(npm_flags) run build-electron -- $(electron_builder_flags) -p $(electron_publish_flag)
 
 include ../tools/tools.mk
 
-node_modules: $(NPM_TOOL)
-	PATH=$(TOOL_PATH) $(NPM_TOOL) install
+node_modules: $(npm)
+	$(npm) $(npm_flags) install

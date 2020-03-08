@@ -5,11 +5,14 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
+	"time"
 
+	"github.com/kopia/kopia/tests/robustness/snapmeta"
 	"github.com/kopia/kopia/tests/testenv"
 	"github.com/kopia/kopia/tests/tools/fio"
 	"github.com/kopia/kopia/tests/tools/fswalker"
@@ -24,7 +27,7 @@ var (
 )
 
 func TestEngineWritefilesBasicFS(t *testing.T) {
-	eng, err := NewEngine()
+	eng, err := NewEngine("")
 	if err == kopiarunner.ErrExeVariableNotSet {
 		t.Skip(err)
 	}
@@ -42,12 +45,15 @@ func TestEngineWritefilesBasicFS(t *testing.T) {
 
 	fileSize := int64(256 * 1024 * 1024)
 	numFiles := 10
-	err = eng.FileWriter.WriteFiles("", fileSize, numFiles, fio.Options{})
+
+	fioOpts := fio.Options{}.WithFileSize(fileSize).WithNumFiles(numFiles)
+
+	err = eng.FileWriter.WriteFiles("", fioOpts)
 	testenv.AssertNoError(t, err)
 
 	snapIDs := eng.Checker.GetSnapIDs()
 
-	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.DataDir)
+	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.LocalDataDir)
 	testenv.AssertNoError(t, err)
 
 	err = eng.Checker.RestoreSnapshot(ctx, snapID, os.Stdout)
@@ -60,7 +66,7 @@ func TestEngineWritefilesBasicFS(t *testing.T) {
 }
 
 func TestWriteFilesBasicS3(t *testing.T) {
-	eng, err := NewEngine()
+	eng, err := NewEngine("")
 	if err == kopiarunner.ErrExeVariableNotSet {
 		t.Skip(err)
 	}
@@ -78,12 +84,15 @@ func TestWriteFilesBasicS3(t *testing.T) {
 
 	fileSize := int64(256 * 1024 * 1024)
 	numFiles := 10
-	err = eng.FileWriter.WriteFiles("", fileSize, numFiles, fio.Options{})
+
+	fioOpts := fio.Options{}.WithFileSize(fileSize).WithNumFiles(numFiles)
+
+	err = eng.FileWriter.WriteFiles("", fioOpts)
 	testenv.AssertNoError(t, err)
 
 	snapIDs := eng.Checker.GetLiveSnapIDs()
 
-	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.DataDir)
+	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.LocalDataDir)
 	testenv.AssertNoError(t, err)
 
 	err = eng.Checker.RestoreSnapshot(ctx, snapID, os.Stdout)
@@ -96,7 +105,7 @@ func TestWriteFilesBasicS3(t *testing.T) {
 }
 
 func TestDeleteSnapshotS3(t *testing.T) {
-	eng, err := NewEngine()
+	eng, err := NewEngine("")
 	if err == kopiarunner.ErrExeVariableNotSet {
 		t.Skip(err)
 	}
@@ -114,10 +123,13 @@ func TestDeleteSnapshotS3(t *testing.T) {
 
 	fileSize := int64(256 * 1024 * 1024)
 	numFiles := 10
-	err = eng.FileWriter.WriteFiles("", fileSize, numFiles, fio.Options{})
+
+	fioOpts := fio.Options{}.WithFileSize(fileSize).WithNumFiles(numFiles)
+
+	err = eng.FileWriter.WriteFiles("", fioOpts)
 	testenv.AssertNoError(t, err)
 
-	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.DataDir)
+	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.LocalDataDir)
 	testenv.AssertNoError(t, err)
 
 	err = eng.Checker.RestoreSnapshot(ctx, snapID, os.Stdout)
@@ -133,7 +145,7 @@ func TestDeleteSnapshotS3(t *testing.T) {
 }
 
 func TestSnapshotVerificationFail(t *testing.T) {
-	eng, err := NewEngine()
+	eng, err := NewEngine("")
 	if err == kopiarunner.ErrExeVariableNotSet {
 		t.Skip(err)
 	}
@@ -152,11 +164,13 @@ func TestSnapshotVerificationFail(t *testing.T) {
 	// Perform writes
 	fileSize := int64(256 * 1024 * 1024)
 	numFiles := 10
-	err = eng.FileWriter.WriteFiles("", fileSize, numFiles, fio.Options{})
+	fioOpt := fio.Options{}.WithFileSize(fileSize).WithNumFiles(numFiles)
+
+	err = eng.FileWriter.WriteFiles("", fioOpt)
 	testenv.AssertNoError(t, err)
 
 	// Take a first snapshot
-	snapID1, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.DataDir)
+	snapID1, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.LocalDataDir)
 	testenv.AssertNoError(t, err)
 
 	// Get the metadata collected on that snapshot
@@ -164,13 +178,11 @@ func TestSnapshotVerificationFail(t *testing.T) {
 	testenv.AssertNoError(t, err)
 
 	// Do additional writes, writing 1 extra byte than before
-	err = eng.FileWriter.WriteFiles("", fileSize, numFiles, fio.Options{
-		"io_size": strconv.Itoa(int(fileSize + 1)),
-	})
+	err = eng.FileWriter.WriteFiles("", fioOpt.WithIOSize(fileSize+1))
 	testenv.AssertNoError(t, err)
 
 	// Take a second snapshot
-	snapID2, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.DataDir)
+	snapID2, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.LocalDataDir)
 	testenv.AssertNoError(t, err)
 
 	// Get the second snapshot's metadata
@@ -198,7 +210,7 @@ func TestDataPersistency(t *testing.T) {
 
 	defer os.RemoveAll(tempDir) //nolint:errcheck
 
-	eng, err := NewEngine()
+	eng, err := NewEngine("")
 	if err == kopiarunner.ErrExeVariableNotSet {
 		t.Skip(err)
 	}
@@ -220,11 +232,14 @@ func TestDataPersistency(t *testing.T) {
 	// Perform writes
 	fileSize := int64(256 * 1024 * 1024)
 	numFiles := 10
-	err = eng.FileWriter.WriteFiles("", fileSize, numFiles, fio.Options{})
+
+	fioOpt := fio.Options{}.WithFileSize(fileSize).WithNumFiles(numFiles)
+
+	err = eng.FileWriter.WriteFiles("", fioOpt)
 	testenv.AssertNoError(t, err)
 
 	// Take a snapshot
-	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.DataDir)
+	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.LocalDataDir)
 	testenv.AssertNoError(t, err)
 
 	// Get the walk data associated with the snapshot that was taken
@@ -236,7 +251,7 @@ func TestDataPersistency(t *testing.T) {
 	testenv.AssertNoError(t, err)
 
 	// Create a new engine
-	eng2, err := NewEngine()
+	eng2, err := NewEngine("")
 	testenv.AssertNoError(t, err)
 
 	defer eng2.cleanup()
@@ -250,6 +265,358 @@ func TestDataPersistency(t *testing.T) {
 
 	// Compare the data directory of the second engine with the fingerprint
 	// of the snapshot taken earlier. They should match.
-	err = fswalker.NewWalkCompare().Compare(ctx, eng2.FileWriter.DataDir, dataDirWalk.ValidationData, os.Stdout)
+	err = fswalker.NewWalkCompare().Compare(ctx, eng2.FileWriter.LocalDataDir, dataDirWalk.ValidationData, os.Stdout)
 	testenv.AssertNoError(t, err)
+}
+
+func TestPickActionWeighted(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		inputCtrlWeights map[string]float64
+		inputActionList  map[ActionKey]Action
+	}{
+		{
+			name: "basic uniform",
+			inputCtrlWeights: map[string]float64{
+				"A": 1,
+				"B": 1,
+				"C": 1,
+			},
+			inputActionList: map[ActionKey]Action{
+				"A": {},
+				"B": {},
+				"C": {},
+			},
+		},
+		{
+			name: "basic weighted",
+			inputCtrlWeights: map[string]float64{
+				"A": 1,
+				"B": 10,
+				"C": 100,
+			},
+			inputActionList: map[ActionKey]Action{
+				"A": {},
+				"B": {},
+				"C": {},
+			},
+		},
+		{
+			name: "include a zero weight",
+			inputCtrlWeights: map[string]float64{
+				"A": 1,
+				"B": 0,
+				"C": 1,
+			},
+			inputActionList: map[ActionKey]Action{
+				"A": {},
+				"B": {},
+				"C": {},
+			},
+		},
+		{
+			name: "include an ActionKey that is not in the action list",
+			inputCtrlWeights: map[string]float64{
+				"A": 1,
+				"B": 1,
+				"C": 1,
+				"D": 100,
+			},
+			inputActionList: map[ActionKey]Action{
+				"A": {},
+				"B": {},
+				"C": {},
+			},
+		},
+	} {
+		t.Log(tc.name)
+
+		weightsSum := 0.0
+		inputCtrlOpts := make(map[string]string)
+
+		for k, v := range tc.inputCtrlWeights {
+			// Do not weight actions that are not expected in the results
+			if _, ok := tc.inputActionList[ActionKey(k)]; !ok {
+				continue
+			}
+
+			inputCtrlOpts[k] = strconv.Itoa(int(v))
+			weightsSum += v
+		}
+
+		numTestLoops := 100000
+
+		results := make(map[ActionKey]int, len(tc.inputCtrlWeights))
+		for loop := 0; loop < numTestLoops; loop++ {
+			results[pickActionWeighted(inputCtrlOpts, tc.inputActionList)]++
+		}
+
+		for actionKey, count := range results {
+			p := tc.inputCtrlWeights[string(actionKey)] / weightsSum
+			exp := p * float64(numTestLoops)
+
+			errPcnt := math.Abs(exp-float64(count)) / exp
+			if errPcnt > 0.1 {
+				t.Errorf("Error in actual counts was above 10%% for %v (exp %v, actual %v)", actionKey, exp, count)
+			}
+		}
+	}
+}
+
+func TestActionsFilesystem(t *testing.T) {
+	eng, err := NewEngine("")
+	if err == kopiarunner.ErrExeVariableNotSet {
+		t.Skip(err)
+	}
+
+	testenv.AssertNoError(t, err)
+
+	defer func() {
+		cleanupErr := eng.Cleanup()
+		testenv.AssertNoError(t, cleanupErr)
+	}()
+
+	ctx := context.TODO()
+	err = eng.InitFilesystem(ctx, fsDataRepoPath, fsMetadataRepoPath)
+	testenv.AssertNoError(t, err)
+
+	actionOpts := ActionOpts{
+		WriteRandomFilesActionKey: map[string]string{
+			MaxDirDepthField:         "20",
+			MaxFileSizeField:         strconv.Itoa(10 * 1024 * 1024),
+			MinFileSizeField:         strconv.Itoa(10 * 1024 * 1024),
+			MaxNumFilesPerWriteField: "10",
+			MinNumFilesPerWriteField: "10",
+			MaxDedupePercentField:    "100",
+			MinDedupePercentField:    "100",
+			DedupePercentStepField:   "1",
+			IOLimitPerWriteAction:    "0",
+		},
+	}
+
+	numActions := 10
+	for loop := 0; loop < numActions; loop++ {
+		err := eng.RandomAction(actionOpts)
+		testenv.AssertNoError(t, err)
+	}
+}
+
+func TestActionsS3(t *testing.T) {
+	eng, err := NewEngine("")
+	if err == kopiarunner.ErrExeVariableNotSet {
+		t.Skip(err)
+	}
+
+	testenv.AssertNoError(t, err)
+
+	defer func() {
+		cleanupErr := eng.Cleanup()
+		testenv.AssertNoError(t, cleanupErr)
+	}()
+
+	ctx := context.TODO()
+	err = eng.InitS3(ctx, s3DataRepoPath, s3MetadataRepoPath)
+	testenv.AssertNoError(t, err)
+
+	actionOpts := ActionOpts{
+		WriteRandomFilesActionKey: map[string]string{
+			MaxDirDepthField:         "20",
+			MaxFileSizeField:         strconv.Itoa(10 * 1024 * 1024),
+			MinFileSizeField:         strconv.Itoa(10 * 1024 * 1024),
+			MaxNumFilesPerWriteField: "10",
+			MinNumFilesPerWriteField: "10",
+			MaxDedupePercentField:    "100",
+			MinDedupePercentField:    "100",
+			DedupePercentStepField:   "1",
+			IOLimitPerWriteAction:    "0",
+		},
+	}
+
+	numActions := 10
+	for loop := 0; loop < numActions; loop++ {
+		err := eng.RandomAction(actionOpts)
+		testenv.AssertNoError(t, err)
+	}
+}
+
+func TestIOLimitPerWriteAction(t *testing.T) {
+	// Instruct a write action to write an enormous amount of data
+	// that should take longer than this timeout without "io_limit",
+	// but finish in less time with "io_limit". Command instructs fio
+	// to generate 100 files x 10 MB each = 1 GB of i/o. The limit is
+	// set to 1 MB.
+	const timeout = 10 * time.Second
+
+	eng, err := NewEngine("")
+	if err == kopiarunner.ErrExeVariableNotSet {
+		t.Skip(err)
+	}
+
+	testenv.AssertNoError(t, err)
+
+	defer func() {
+		cleanupErr := eng.Cleanup()
+		testenv.AssertNoError(t, cleanupErr)
+	}()
+
+	ctx := context.TODO()
+	err = eng.InitFilesystem(ctx, fsDataRepoPath, fsMetadataRepoPath)
+	testenv.AssertNoError(t, err)
+
+	actionOpts := ActionOpts{
+		ActionControlActionKey: map[string]string{
+			string(SnapshotRootDirActionKey):          strconv.Itoa(0),
+			string(RestoreRandomSnapshotActionKey):    strconv.Itoa(0),
+			string(DeleteRandomSnapshotActionKey):     strconv.Itoa(0),
+			string(WriteRandomFilesActionKey):         strconv.Itoa(1),
+			string(DeleteRandomSubdirectoryActionKey): strconv.Itoa(0),
+		},
+		WriteRandomFilesActionKey: map[string]string{
+			MaxDirDepthField:         "2",
+			MaxFileSizeField:         strconv.Itoa(10 * 1024 * 1024),
+			MinFileSizeField:         strconv.Itoa(10 * 1024 * 1024),
+			MaxNumFilesPerWriteField: "100",
+			MinNumFilesPerWriteField: "100",
+			IOLimitPerWriteAction:    strconv.Itoa(1 * 1024 * 1024),
+		},
+	}
+
+	st := time.Now()
+
+	numActions := 1
+	for loop := 0; loop < numActions; loop++ {
+		err := eng.RandomAction(actionOpts)
+		testenv.AssertNoError(t, err)
+	}
+
+	if time.Since(st) > timeout {
+		t.Errorf("IO limit parameter did not cut down on the fio runtime")
+	}
+}
+
+func TestStatsPersist(t *testing.T) {
+	tmpDir, err := ioutil.TempDir("", "stats-persist-test")
+	testenv.AssertNoError(t, err)
+
+	defer os.RemoveAll(tmpDir) //nolint:errcheck
+
+	snapStore, err := snapmeta.New(tmpDir)
+	testenv.AssertNoError(t, err)
+
+	err = snapStore.ConnectOrCreateFilesystem(tmpDir)
+	testenv.AssertNoError(t, err)
+
+	actionstats := &ActionStats{
+		Count:        120,
+		TotalRuntime: 25 * time.Hour,
+		MinRuntime:   5 * time.Minute,
+		MaxRuntime:   35 * time.Minute,
+	}
+
+	creationTime := time.Now().Add(-time.Hour)
+
+	eng := &Engine{
+		MetaStore: snapStore,
+		CumulativeStats: Stats{
+			ActionCounter: 11235,
+			CreationTime:  creationTime,
+			PerActionStats: map[ActionKey]*ActionStats{
+				ActionKey("some-action"): actionstats,
+			},
+			DataRestoreCount: 99,
+		},
+	}
+
+	err = eng.SaveStats()
+	testenv.AssertNoError(t, err)
+
+	err = eng.MetaStore.FlushMetadata()
+	testenv.AssertNoError(t, err)
+
+	snapStoreNew, err := snapmeta.New(tmpDir)
+	testenv.AssertNoError(t, err)
+
+	// Connect to the same metadata store
+	err = snapStoreNew.ConnectOrCreateFilesystem(tmpDir)
+	testenv.AssertNoError(t, err)
+
+	err = snapStoreNew.LoadMetadata()
+	testenv.AssertNoError(t, err)
+
+	engNew := &Engine{
+		MetaStore: snapStoreNew,
+	}
+
+	err = engNew.LoadStats()
+	testenv.AssertNoError(t, err)
+
+	if got, want := engNew.Stats(), eng.Stats(); got != want {
+		t.Errorf("Stats do not match\n%v\n%v", got, want)
+	}
+
+	fmt.Println(eng.Stats())
+	fmt.Println(engNew.Stats())
+}
+
+func TestLogsPersist(t *testing.T) {
+	tmpDir, err := ioutil.TempDir("", "logs-persist-test")
+	testenv.AssertNoError(t, err)
+
+	defer os.RemoveAll(tmpDir) //nolint:errcheck
+
+	snapStore, err := snapmeta.New(tmpDir)
+	testenv.AssertNoError(t, err)
+
+	err = snapStore.ConnectOrCreateFilesystem(tmpDir)
+	testenv.AssertNoError(t, err)
+
+	log := Log{
+		Log: []*LogEntry{
+			{
+				StartTime: time.Now().Add(-time.Hour),
+				EndTime:   time.Now(),
+				Action:    ActionKey("some action"),
+				Error:     "some error",
+				Idx:       11235,
+				ActionOpts: map[string]string{
+					"opt1": "opt1 value",
+				},
+				CmdOpts: map[string]string{
+					"cmdOpt": "cmdOptVal",
+				},
+			},
+		},
+	}
+
+	eng := &Engine{
+		MetaStore: snapStore,
+		EngineLog: log,
+	}
+
+	err = eng.SaveLog()
+	testenv.AssertNoError(t, err)
+
+	err = eng.MetaStore.FlushMetadata()
+	testenv.AssertNoError(t, err)
+
+	snapStoreNew, err := snapmeta.New(tmpDir)
+	testenv.AssertNoError(t, err)
+
+	// Connect to the same metadata store
+	err = snapStoreNew.ConnectOrCreateFilesystem(tmpDir)
+	testenv.AssertNoError(t, err)
+
+	err = snapStoreNew.LoadMetadata()
+	testenv.AssertNoError(t, err)
+
+	engNew := &Engine{
+		MetaStore: snapStoreNew,
+	}
+
+	err = engNew.LoadLog()
+	testenv.AssertNoError(t, err)
+
+	if got, want := engNew.EngineLog.String(), eng.EngineLog.String(); got != want {
+		t.Errorf("Logs do not match\n%v\n%v", got, want)
+	}
 }

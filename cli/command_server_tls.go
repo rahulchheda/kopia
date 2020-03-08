@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -30,8 +31,8 @@ var (
 	serverStartTLSGenerateCertNames     = serverStartCommand.Flag("tls-generate-cert-name", "Host names/IP addresses to generate TLS certificate for").Default("127.0.0.1").Hidden().Strings()
 )
 
-func generateServerCertificate() (*x509.Certificate, *rsa.PrivateKey, error) {
-	log.Infof("generating new TLS certificate")
+func generateServerCertificate(ctx context.Context) (*x509.Certificate, *rsa.PrivateKey, error) {
+	log(ctx).Infof("generating new TLS certificate")
 
 	priv, err := rsa.GenerateKey(rand.Reader, *serverStartTLSGenerateRSAKeySize)
 	if err != nil {
@@ -61,10 +62,10 @@ func generateServerCertificate() (*x509.Certificate, *rsa.PrivateKey, error) {
 
 	for _, n := range *serverStartTLSGenerateCertNames {
 		if ip := net.ParseIP(n); ip != nil {
-			log.Infof("adding alternative IP to certificate: %v", ip)
+			log(ctx).Infof("adding alternative IP to certificate: %v", ip)
 			template.IPAddresses = append(template.IPAddresses, ip)
 		} else {
-			log.Infof("adding alternative DNS name to certificate: %v", n)
+			log(ctx).Infof("adding alternative DNS name to certificate: %v", n)
 			template.DNSNames = append(template.DNSNames, n)
 		}
 	}
@@ -115,7 +116,19 @@ func writeCertificateToFile(fname string, cert *x509.Certificate) error {
 	return nil
 }
 
-func startServerWithOptionalTLS(httpServer *http.Server) error {
+func startServerWithOptionalTLS(ctx context.Context, httpServer *http.Server) error {
+	l, err := net.Listen("tcp", httpServer.Addr)
+	if err != nil {
+		return errors.Wrap(err, "listen error")
+	}
+	defer l.Close() //nolint:errcheck
+
+	httpServer.Addr = l.Addr().String()
+
+	return startServerWithOptionalTLSAndListener(ctx, httpServer, l)
+}
+
+func startServerWithOptionalTLSAndListener(ctx context.Context, httpServer *http.Server, listener net.Listener) error {
 	// generate and save to PEM files
 	if *serverStartTLSGenerateCert && *serverStartTLSCertFile != "" && *serverStartTLSKeyFile != "" {
 		if _, err := os.Stat(*serverStartTLSCertFile); err == nil {
@@ -126,18 +139,18 @@ func startServerWithOptionalTLS(httpServer *http.Server) error {
 			return errors.Errorf("TLS key file already exists: %q", *serverStartTLSKeyFile)
 		}
 
-		cert, key, err := generateServerCertificate()
+		cert, key, err := generateServerCertificate(ctx)
 		if err != nil {
 			return errors.Wrap(err, "unable to generate server cert")
 		}
 
-		log.Infof("writing TLS certificate to %v", *serverStartTLSCertFile)
+		log(ctx).Infof("writing TLS certificate to %v", *serverStartTLSCertFile)
 
 		if err := writeCertificateToFile(*serverStartTLSCertFile, cert); err != nil {
 			return errors.Wrap(err, "unable to write private key")
 		}
 
-		log.Infof("writing TLS private key to %v", *serverStartTLSKeyFile)
+		log(ctx).Infof("writing TLS private key to %v", *serverStartTLSKeyFile)
 
 		if err := writePrivateKeyToFile(*serverStartTLSKeyFile, key); err != nil {
 			return errors.Wrap(err, "unable to write private key")
@@ -148,11 +161,11 @@ func startServerWithOptionalTLS(httpServer *http.Server) error {
 	case *serverStartTLSCertFile != "" && *serverStartTLSKeyFile != "":
 		// PEM files provided
 		fmt.Fprintf(os.Stderr, "SERVER ADDRESS: https://%v\n", httpServer.Addr)
-		return httpServer.ListenAndServeTLS(*serverStartTLSCertFile, *serverStartTLSKeyFile)
+		return httpServer.ServeTLS(listener, *serverStartTLSCertFile, *serverStartTLSKeyFile)
 
 	case *serverStartTLSGenerateCert:
 		// PEM files not provided, generate in-memory TLS cert/key but don't persit.
-		cert, key, err := generateServerCertificate()
+		cert, key, err := generateServerCertificate(ctx)
 		if err != nil {
 			return errors.Wrap(err, "unable to generate server cert")
 		}
@@ -170,10 +183,10 @@ func startServerWithOptionalTLS(httpServer *http.Server) error {
 		fmt.Fprintf(os.Stderr, "SERVER CERT SHA256: %v\n", hex.EncodeToString(fingerprint[:]))
 		fmt.Fprintf(os.Stderr, "SERVER ADDRESS: https://%v\n", httpServer.Addr)
 
-		return httpServer.ListenAndServeTLS("", "")
+		return httpServer.ServeTLS(listener, "", "")
 
 	default:
 		fmt.Fprintf(os.Stderr, "SERVER ADDRESS: http://%v\n", httpServer.Addr)
-		return httpServer.ListenAndServe()
+		return httpServer.Serve(listener)
 	}
 }

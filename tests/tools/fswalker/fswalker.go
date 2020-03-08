@@ -1,3 +1,5 @@
+// +build linux
+
 // Package fswalker provides the checker.Comparer interface using FSWalker
 // walker and reporter.
 package fswalker
@@ -5,15 +7,15 @@ package fswalker
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"io"
+	"log"
 	"path/filepath"
 	"strings"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/google/fswalker"
 	fspb "github.com/google/fswalker/proto/fswalker"
+	"github.com/pkg/errors"
 
 	"github.com/kopia/kopia/tests/robustness/checker"
 	"github.com/kopia/kopia/tests/tools/fswalker/reporter"
@@ -44,18 +46,18 @@ func NewWalkCompare() *WalkCompare {
 func (chk *WalkCompare) Gather(ctx context.Context, path string) ([]byte, error) {
 	walkData, err := walker.WalkPathHash(ctx, path)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "walk with hashing error during gather phase")
 	}
 
 	err = rerootWalkDataPaths(walkData, path)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "reroot walk paths error during gather phase")
 	}
 
 	// Store the walk data along with the snapshot ID
 	b, err := proto.Marshal(walkData)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "walk data proto marshal error")
 	}
 
 	return b, nil
@@ -71,22 +73,22 @@ func (chk *WalkCompare) Compare(ctx context.Context, path string, data []byte, r
 
 	err := proto.Unmarshal(data, beforeWalk)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "walk data unmarshal error")
 	}
 
 	afterWalk, err := walker.WalkPathHash(ctx, path)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "walk with hashing error during compare phase")
 	}
 
 	err = rerootWalkDataPaths(afterWalk, path)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "reroot walk paths error during compare phase")
 	}
 
 	report, err := reporter.Report(ctx, &fspb.ReportConfig{}, beforeWalk, afterWalk)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "report error")
 	}
 
 	chk.filterReportDiffs(report)
@@ -95,21 +97,26 @@ func (chk *WalkCompare) Compare(ctx context.Context, path string, data []byte, r
 	if err != nil && reportOut != nil {
 		printReportSummary(report, reportOut)
 
+		// Don't spew these fields. They can be enormous and
+		// are probably redundant
+		report.WalkBefore = nil
+		report.WalkAfter = nil
+
 		b, marshalErr := json.MarshalIndent(report, "", "   ")
 		if marshalErr != nil {
 			_, reportErr := reportOut.Write([]byte(marshalErr.Error()))
 			if reportErr != nil {
-				return fmt.Errorf("error while writing marshal error (%v): %v", marshalErr.Error(), reportErr.Error())
+				return errors.Wrapf(reportErr, "error while writing out marshal error (%v)", marshalErr.Error())
 			}
 
-			return marshalErr
+			return errors.Wrap(marshalErr, "error JSON marshaling report")
 		}
 
 		if _, wrErr := reportOut.Write(b); wrErr != nil {
-			return err
+			return errors.Wrap(err, "error writing report to output")
 		}
 
-		return err
+		return errors.Wrap(err, "validation error")
 	}
 
 	return nil
@@ -142,7 +149,7 @@ func (chk *WalkCompare) filterReportDiffs(report *fswalker.Report) {
 		}
 
 		if len(newDiffItemList) > 0 {
-			fmt.Println("Not Filtering", newDiffItemList)
+			log.Println("Not Filtering", newDiffItemList)
 			mod.Diff = strings.Join(newDiffItemList, "\n")
 			newModList = append(newModList, mod)
 		}
@@ -156,7 +163,9 @@ func isRootDirectoryRename(diffItem string, mod fswalker.ActionData) bool {
 		return false
 	}
 
-	return mod.Before.Info.IsDir && filepath.Dir(mod.Before.Path) == "."
+	// The mod.Before.Path may be given from fswalker Report as "./", so
+	// clean it before compare
+	return mod.Before.Info.IsDir && filepath.Clean(mod.Before.Path) == "."
 }
 
 func dirSizeMightBeOffByBlockSizeMultiple(str string, mod fswalker.ActionData) bool {

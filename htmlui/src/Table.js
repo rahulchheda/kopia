@@ -1,7 +1,7 @@
 import React from 'react';
-import { useTable, usePagination, useSortBy } from 'react-table';
-import Table from 'react-bootstrap/Table';
 import Pagination from 'react-bootstrap/Pagination';
+import Table from 'react-bootstrap/Table';
+import { usePagination, useSortBy, useTable } from 'react-table';
 
 function paginationItems(count, active, gotoPage) {
   let items = [];
@@ -63,7 +63,9 @@ export default function MyTable({ columns, data }) {
   } = useTable({
     columns,
     data,
-    initialState: { pageSize: 15 },
+    initialState: { pageSize: 10 },
+    autoResetPage: false,
+    autoResetSortBy: false,
   },
     useSortBy,
     usePagination,

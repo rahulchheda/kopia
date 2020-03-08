@@ -7,6 +7,7 @@ import (
 	"hash/fnv"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -16,8 +17,8 @@ import (
 
 	"github.com/kopia/kopia/fs"
 	"github.com/kopia/kopia/fs/ignorefs"
-	"github.com/kopia/kopia/internal/kopialogging"
 	"github.com/kopia/kopia/repo"
+	"github.com/kopia/kopia/repo/logging"
 	"github.com/kopia/kopia/repo/object"
 	"github.com/kopia/kopia/snapshot"
 	"github.com/kopia/kopia/snapshot/policy"
@@ -25,7 +26,7 @@ import (
 
 const copyBufferSize = 128 * 1024
 
-var log = kopialogging.Logger("kopia/upload")
+var log = logging.GetContextLoggerFunc("kopia/upload")
 
 var errCancelled = errors.New("canceled")
 
@@ -36,8 +37,8 @@ type Uploader struct {
 	// automatically cancel the Upload after certain number of bytes
 	MaxUploadBytes int64
 
-	// ignore file read errors
-	IgnoreFileErrors bool
+	// ignore read errors
+	IgnoreReadErrors bool
 
 	// probability with cached entries will be ignored, must be [0..100]
 	// 0=always use cached object entries if possible
@@ -51,13 +52,6 @@ type Uploader struct {
 
 	stats    snapshot.Stats
 	canceled int32
-
-	progressMutex          sync.Mutex
-	nextProgressReportTime time.Time
-	currentProgressDir     string // current directory for reporting progress
-	currentDirNumFiles     int    // number of files in current directory
-	currentDirCompleted    int64  // bytes completed in current directory
-	currentDirTotalSize    int64  // total # of bytes in current directory
 }
 
 // IsCancelled returns true if the upload is canceled.
@@ -77,7 +71,10 @@ func (u *Uploader) cancelReason() string {
 	return ""
 }
 
-func (u *Uploader) uploadFileInternal(ctx context.Context, f fs.File, pol *policy.Policy) entryResult {
+func (u *Uploader) uploadFileInternal(ctx context.Context, relativePath string, f fs.File, pol *policy.Policy) entryResult {
+	u.Progress.HashingFile(relativePath)
+	defer u.Progress.FinishedHashingFile(relativePath, f.Size())
+
 	file, err := f.Open(ctx)
 	if err != nil {
 		return entryResult{err: errors.Wrap(err, "unable to open file")}
@@ -115,7 +112,10 @@ func (u *Uploader) uploadFileInternal(ctx context.Context, f fs.File, pol *polic
 	return entryResult{de: de}
 }
 
-func (u *Uploader) uploadSymlinkInternal(ctx context.Context, f fs.Symlink) entryResult {
+func (u *Uploader) uploadSymlinkInternal(ctx context.Context, relativePath string, f fs.Symlink) entryResult {
+	u.Progress.HashingFile(relativePath)
+	defer u.Progress.FinishedHashingFile(relativePath, f.Size())
+
 	target, err := f.Readlink(ctx)
 	if err != nil {
 		return entryResult{err: errors.Wrap(err, "unable to read symlink")}
@@ -146,28 +146,6 @@ func (u *Uploader) uploadSymlinkInternal(ctx context.Context, f fs.Symlink) entr
 	return entryResult{de: de}
 }
 
-func (u *Uploader) addDirProgress(length int64) {
-	u.progressMutex.Lock()
-	u.currentDirCompleted += length
-	c := u.currentDirCompleted
-	shouldReport := false
-
-	if time.Now().After(u.nextProgressReportTime) {
-		shouldReport = true
-		u.nextProgressReportTime = time.Now().Add(100 * time.Millisecond) //nolint:gomnd
-	}
-
-	if c == u.currentDirTotalSize {
-		shouldReport = true
-	}
-
-	u.progressMutex.Unlock()
-
-	if shouldReport {
-		u.Progress.Progress(u.currentProgressDir, u.currentDirNumFiles, c, u.currentDirTotalSize, &u.stats)
-	}
-}
-
 func (u *Uploader) copyWithProgress(dst io.Writer, src io.Reader, completed, length int64) (int64, error) {
 	uploadBuf := make([]byte, copyBufferSize)
 
@@ -184,7 +162,7 @@ func (u *Uploader) copyWithProgress(dst io.Writer, src io.Reader, completed, len
 			if wroteBytes > 0 {
 				written += int64(wroteBytes)
 				completed += int64(wroteBytes)
-				u.addDirProgress(int64(wroteBytes))
+				u.Progress.HashedBytes(int64(wroteBytes))
 
 				if length < completed {
 					length = completed
@@ -239,8 +217,8 @@ func newDirEntry(md fs.Entry, oid object.ID) (*snapshot.DirEntry, error) {
 }
 
 // uploadFile uploads the specified File to the repository.
-func (u *Uploader) uploadFile(ctx context.Context, file fs.File, pol *policy.Policy) (*snapshot.DirEntry, error) {
-	res := u.uploadFileInternal(ctx, file, pol)
+func (u *Uploader) uploadFile(ctx context.Context, relativePath string, file fs.File, pol *policy.Policy) (*snapshot.DirEntry, error) {
+	res := u.uploadFileInternal(ctx, relativePath, file, pol)
 	if res.err != nil {
 		return nil, res.err
 	}
@@ -329,6 +307,14 @@ func (u *Uploader) processSubdirectories(ctx context.Context, relativePath strin
 		}
 
 		if err != nil {
+			// Note: This only catches errors in subdirectories of the snapshot root, not on the snapshot
+			// root itself. The intention is to always fail if the top level directory can't be read,
+			// otherwise a meaningless, empty snapshot is created that can't be restored.
+			ignoreDirErr := u.shouldIgnoreDirectoryReadErrors(policyTree)
+			if _, ok := err.(dirReadError); ok && ignoreDirErr {
+				log(ctx).Warningf("unable to read directory %q: %s, ignoring", dir.Name(), err)
+				return nil
+			}
 			return errors.Errorf("unable to process directory %q: %s", entry.Name(), err)
 		}
 
@@ -339,25 +325,6 @@ func (u *Uploader) processSubdirectories(ctx context.Context, relativePath strin
 
 		de.DirSummary = &subdirsumm
 		dirManifest.Entries = append(dirManifest.Entries, de)
-		return nil
-	})
-}
-
-func (u *Uploader) prepareProgress(relativePath string, entries fs.Entries) {
-	u.currentProgressDir = relativePath
-	u.currentDirTotalSize = 0
-	u.currentDirCompleted = 0
-	u.currentDirNumFiles = 0
-
-	// Phase #2 - compute the total size of files in current directory
-	_ = u.foreachEntryUnlessCancelled(relativePath, entries, func(entry fs.Entry, entryRelativePath string) error {
-		if _, ok := entry.(fs.File); !ok {
-			// skip directories
-			return nil
-		}
-
-		u.currentDirNumFiles++
-		u.currentDirTotalSize += entry.Size()
 		return nil
 	})
 }
@@ -389,18 +356,18 @@ func metadataEquals(e1, e2 fs.Entry) bool {
 	return true
 }
 
-func findCachedEntry(entry fs.Entry, prevEntries []fs.Entries) fs.Entry {
+func findCachedEntry(ctx context.Context, entry fs.Entry, prevEntries []fs.Entries) fs.Entry {
 	for _, e := range prevEntries {
 		if ent := e.FindByName(entry.Name()); ent != nil {
 			if metadataEquals(entry, ent) {
 				return ent
 			}
 
-			log.Debugf("found non-matching entry for %v: %v %v %v", entry.Name(), ent.Mode(), ent.Size(), ent.ModTime())
+			log(ctx).Debugf("found non-matching entry for %v: %v %v %v", entry.Name(), ent.Mode(), ent.Size(), ent.ModTime())
 		}
 	}
 
-	log.Debugf("could not find cache entry for %v", entry.Name())
+	log(ctx).Debugf("could not find cache entry for %v", entry.Name())
 
 	return nil
 }
@@ -413,10 +380,10 @@ func objectIDPercent(obj object.ID) int {
 	return int(h.Sum32() % 100) //nolint:gomnd
 }
 
-func (u *Uploader) maybeIgnoreCachedEntry(ent fs.Entry) fs.Entry {
+func (u *Uploader) maybeIgnoreCachedEntry(ctx context.Context, ent fs.Entry) fs.Entry {
 	if h, ok := ent.(object.HasObjectID); ok {
 		if objectIDPercent(h.ObjectID()) < u.ForceHashPercentage {
-			log.Debugf("ignoring valid cached object: %v", h.ObjectID())
+			log(ctx).Debugf("ignoring valid cached object: %v", h.ObjectID())
 			return nil
 		}
 
@@ -447,9 +414,9 @@ func (u *Uploader) prepareWorkItems(ctx context.Context, dirRelativePath string,
 		}
 
 		// See if we had this name during either of previous passes.
-		if cachedEntry := u.maybeIgnoreCachedEntry(findCachedEntry(entry, prevEntries)); cachedEntry != nil {
+		if cachedEntry := u.maybeIgnoreCachedEntry(ctx, findCachedEntry(ctx, entry, prevEntries)); cachedEntry != nil {
 			u.stats.CachedFiles++
-			u.addDirProgress(entry.Size())
+			u.Progress.CachedFile(filepath.Join(dirRelativePath, entry.Name()), entry.Size())
 
 			// compute entryResult now, cachedEntry is short-lived
 			cachedDirEntry, err := newDirEntry(entry, cachedEntry.(object.HasObjectID).ObjectID())
@@ -472,7 +439,7 @@ func (u *Uploader) prepareWorkItems(ctx context.Context, dirRelativePath string,
 					entry:             entry,
 					entryRelativePath: entryRelativePath,
 					uploadFunc: func() entryResult {
-						return u.uploadSymlinkInternal(ctx, entry)
+						return u.uploadSymlinkInternal(ctx, filepath.Join(dirRelativePath, entry.Name()), entry)
 					},
 				})
 
@@ -482,7 +449,7 @@ func (u *Uploader) prepareWorkItems(ctx context.Context, dirRelativePath string,
 					entry:             entry,
 					entryRelativePath: entryRelativePath,
 					uploadFunc: func() entryResult {
-						return u.uploadFileInternal(ctx, entry, policyTree.Child(entry.Name()).EffectivePolicy())
+						return u.uploadFileInternal(ctx, filepath.Join(dirRelativePath, entry.Name()), entry, policyTree.Child(entry.Name()).EffectivePolicy())
 					},
 				})
 
@@ -536,7 +503,7 @@ func (u *Uploader) launchWorkItems(workItems []*uploadWorkItem, wg *sync.WaitGro
 	}
 }
 
-func (u *Uploader) processUploadWorkItems(workItems []*uploadWorkItem, dirManifest *snapshot.DirManifest) error {
+func (u *Uploader) processUploadWorkItems(ctx context.Context, workItems []*uploadWorkItem, dirManifest *snapshot.DirManifest, ignoreFileErrs bool) error {
 	var wg sync.WaitGroup
 
 	u.launchWorkItems(workItems, &wg)
@@ -550,10 +517,10 @@ func (u *Uploader) processUploadWorkItems(workItems []*uploadWorkItem, dirManife
 		}
 
 		if result.err != nil {
-			if u.IgnoreFileErrors {
+			if ignoreFileErrs {
 				u.stats.ReadErrors++
 
-				log.Warningf("unable to hash file %q: %s, ignoring", it.entryRelativePath, result.err)
+				log(ctx).Warningf("unable to hash file %q: %s, ignoring", it.entryRelativePath, result.err)
 
 				continue
 			}
@@ -577,7 +544,7 @@ func maybeReadDirectoryEntries(ctx context.Context, dir fs.Directory) fs.Entries
 
 	ent, err := dir.Readdir(ctx)
 	if err != nil {
-		log.Warningf("unable to read previous directory entries: %v", err)
+		log(ctx).Warningf("unable to read previous directory entries: %v", err)
 		return nil
 	}
 
@@ -606,6 +573,11 @@ func uniqueDirectories(dirs []fs.Directory) []fs.Directory {
 	return result
 }
 
+// dirReadError distinguishes an error thrown when attempting to read a directory
+type dirReadError struct {
+	error
+}
+
 func uploadDirInternal(
 	ctx context.Context,
 	u *Uploader,
@@ -616,6 +588,9 @@ func uploadDirInternal(
 ) (object.ID, fs.DirectorySummary, error) {
 	u.stats.TotalDirectoryCount++
 
+	u.Progress.StartedDirectory(dirRelativePath)
+	defer u.Progress.FinishedDirectory(dirRelativePath)
+
 	var summ fs.DirectorySummary
 	summ.TotalDirCount = 1
 
@@ -623,14 +598,14 @@ func uploadDirInternal(
 		summ.IncompleteReason = u.cancelReason()
 	}()
 
-	log.Debugf("reading directory %v", dirRelativePath)
+	log(ctx).Debugf("reading directory %v", dirRelativePath)
 
 	entries, direrr := directory.Readdir(ctx)
 
-	log.Debugf("finished reading directory %v", dirRelativePath)
+	log(ctx).Debugf("finished reading directory %v", dirRelativePath)
 
 	if direrr != nil {
-		return "", fs.DirectorySummary{}, direrr
+		return "", fs.DirectorySummary{}, dirReadError{direrr}
 	}
 
 	var prevEntries []fs.Entries
@@ -653,21 +628,20 @@ func uploadDirInternal(
 		return "", fs.DirectorySummary{}, err
 	}
 
-	u.prepareProgress(dirRelativePath, entries)
-
-	log.Debugf("preparing work items %v", dirRelativePath)
+	log(ctx).Debugf("preparing work items %v", dirRelativePath)
 	workItems, workItemErr := u.prepareWorkItems(ctx, dirRelativePath, entries, policyTree, prevEntries, &summ)
-	log.Debugf("finished preparing work items %v", dirRelativePath)
+	log(ctx).Debugf("finished preparing work items %v", dirRelativePath)
 
 	if workItemErr != nil && workItemErr != errCancelled {
 		return "", fs.DirectorySummary{}, workItemErr
 	}
 
-	if err := u.processUploadWorkItems(workItems, dirManifest); err != nil && err != errCancelled {
+	ignoreFileErrs := u.shouldIgnoreFileReadErrors(policyTree)
+	if err := u.processUploadWorkItems(ctx, workItems, dirManifest, ignoreFileErrs); err != nil && err != errCancelled {
 		return "", fs.DirectorySummary{}, err
 	}
 
-	log.Debugf("finished processing uploads %v", dirRelativePath)
+	log(ctx).Debugf("finished processing uploads %v", dirRelativePath)
 
 	dirManifest.Summary = &summ
 
@@ -685,12 +659,32 @@ func uploadDirInternal(
 	return oid, summ, err
 }
 
+func (u *Uploader) shouldIgnoreFileReadErrors(policyTree *policy.Tree) bool {
+	errHandlingPolicy := policyTree.EffectivePolicy().ErrorHandlingPolicy
+
+	if u.IgnoreReadErrors {
+		return true
+	}
+
+	return errHandlingPolicy.IgnoreFileErrorsOrDefault(false)
+}
+
+func (u *Uploader) shouldIgnoreDirectoryReadErrors(policyTree *policy.Tree) bool {
+	errHandlingPolicy := policyTree.EffectivePolicy().ErrorHandlingPolicy
+
+	if u.IgnoreReadErrors {
+		return true
+	}
+
+	return errHandlingPolicy.IgnoreDirectoryErrorsOrDefault(false)
+}
+
 // NewUploader creates new Uploader object for a given repository.
 func NewUploader(r *repo.Repository) *Uploader {
 	return &Uploader{
 		repo:             r,
-		Progress:         &nullUploadProgress{},
-		IgnoreFileErrors: true,
+		Progress:         &NullUploadProgress{},
+		IgnoreReadErrors: false,
 		ParallelUploads:  1,
 	}
 }
@@ -700,20 +694,20 @@ func (u *Uploader) Cancel() {
 	atomic.StoreInt32(&u.canceled, 1)
 }
 
-func (u *Uploader) maybeOpenDirectoryFromManifest(man *snapshot.Manifest) fs.Directory {
+func (u *Uploader) maybeOpenDirectoryFromManifest(ctx context.Context, man *snapshot.Manifest) fs.Directory {
 	if man == nil {
 		return nil
 	}
 
 	ent, err := EntryFromDirEntry(u.repo, man.RootEntry)
 	if err != nil {
-		log.Warningf("invalid previous manifest root entry %v: %v", man.RootEntry, err)
+		log(ctx).Warningf("invalid previous manifest root entry %v: %v", man.RootEntry, err)
 		return nil
 	}
 
 	dir, ok := ent.(fs.Directory)
 	if !ok {
-		log.Debugf("previous manifest root is not a directory (was %T %+v)", ent, man.RootEntry)
+		log(ctx).Debugf("previous manifest root is not a directory (was %T %+v)", ent, man.RootEntry)
 		return nil
 	}
 
@@ -729,12 +723,26 @@ func (u *Uploader) Upload(
 	sourceInfo snapshot.SourceInfo,
 	previousManifests ...*snapshot.Manifest,
 ) (*snapshot.Manifest, error) {
-	log.Debugf("Uploading %v", sourceInfo)
+	log(ctx).Debugf("Uploading %v", sourceInfo)
 
 	s := &snapshot.Manifest{
 		Source: sourceInfo,
 	}
 
+	maxPreviousTotalFileSize := int64(0)
+	maxPreviousFileCount := 0
+
+	for _, m := range previousManifests {
+		if s := m.Stats.TotalFileSize; s > maxPreviousTotalFileSize {
+			maxPreviousTotalFileSize = s
+		}
+
+		if s := m.Stats.TotalFileCount; s > maxPreviousFileCount {
+			maxPreviousFileCount = s
+		}
+	}
+
+	u.Progress.UploadStarted(maxPreviousFileCount, maxPreviousTotalFileSize)
 	defer u.Progress.UploadFinished()
 
 	u.stats = snapshot.Stats{}
@@ -748,7 +756,7 @@ func (u *Uploader) Upload(
 		var previousDirs []fs.Directory
 
 		for _, m := range previousManifests {
-			if d := u.maybeOpenDirectoryFromManifest(m); d != nil {
+			if d := u.maybeOpenDirectoryFromManifest(ctx, m); d != nil {
 				previousDirs = append(previousDirs, d)
 			}
 		}
@@ -759,7 +767,7 @@ func (u *Uploader) Upload(
 		s.RootEntry, err = u.uploadDir(ctx, entry, policyTree, previousDirs)
 
 	case fs.File:
-		s.RootEntry, err = u.uploadFile(ctx, entry, policyTree.EffectivePolicy())
+		s.RootEntry, err = u.uploadFile(ctx, entry.Name(), entry, policyTree.EffectivePolicy())
 
 	default:
 		return nil, errors.Errorf("unsupported source: %v", s.Source)

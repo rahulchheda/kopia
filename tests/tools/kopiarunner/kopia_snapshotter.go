@@ -1,11 +1,7 @@
 package kopiarunner
 
 import (
-	"crypto/sha1"
 	"errors"
-	"fmt"
-	"os"
-	"path"
 	"regexp"
 	"strings"
 
@@ -20,8 +16,8 @@ type KopiaSnapshotter struct {
 }
 
 // NewKopiaSnapshotter instantiates a new KopiaSnapshotter and returns its pointer
-func NewKopiaSnapshotter() (*KopiaSnapshotter, error) {
-	runner, err := NewRunner()
+func NewKopiaSnapshotter(baseDir string) (*KopiaSnapshotter, error) {
+	runner, err := NewRunner(baseDir)
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +65,6 @@ func (ks *KopiaSnapshotter) ConnectOrCreateRepo(args ...string) error {
 // by the provided bucketName, at the provided path prefix. It will attempt to
 // create one there if connection was unsuccessful.
 func (ks *KopiaSnapshotter) ConnectOrCreateS3(bucketName, pathPrefix string) error {
-	path.Join(getHostPath(), pathPrefix)
 	args := []string{"s3", "--bucket", bucketName, "--prefix", pathPrefix}
 
 	return ks.ConnectOrCreateRepo(args...)
@@ -126,20 +121,8 @@ func (ks *KopiaSnapshotter) Run(args ...string) (stdout, stderr string, err erro
 	return ks.Runner.Run(args...)
 }
 
-func getHostPath() string {
-	hn, err := os.Hostname()
-	if err != nil {
-		return "kopia-test-1"
-	}
-
-	h := sha1.New()
-	fmt.Fprintf(h, "%v", hn)
-
-	return fmt.Sprintf("kopia-test-%x", h.Sum(nil)[0:8])
-}
-
 func parseSnapID(lines []string) (string, error) {
-	pattern := regexp.MustCompile(`uploaded snapshot ([\S]+)`)
+	pattern := regexp.MustCompile(`Created snapshot with root [\S]+ and ID ([\S]+)`)
 
 	for _, l := range lines {
 		match := pattern.FindAllStringSubmatch(l, 1)

@@ -1,12 +1,15 @@
-const { app, BrowserWindow, Menu, Tray, ipcMain } = require('electron')
+const { app, BrowserWindow, Menu, Tray, ipcMain, dialog } = require('electron')
 const path = require('path');
 const isDev = require('electron-is-dev');
 const config = require('electron-json-config');
-
+const { autoUpdater } = require("electron-updater");
 const { resourcesPath, selectByOS } = require('./utils');
 const { toggleLaunchAtStartup, willLaunchAtStartup, refreshWillLaunchAtStartup } = require('./auto-launch');
 const { stopServer, actuateServer, getServerAddress, getServerCertSHA256, getServerPassword } = require('./server');
+const log = require("electron-log")
+const firstRun = require('electron-first-run');
 
+app.name = 'KopiaUI';
 
 ipcMain.on('fetch-config', (event, arg) => {
   event.sender.send('config-updated', config.all());
@@ -25,6 +28,7 @@ let mainWindow = null;
 
 function advancedConfiguration() {
   if (configWindow) {
+    configWindow.focus();
     return;
   }
 
@@ -33,7 +37,7 @@ function advancedConfiguration() {
     height: 700,
     autoHideMenuBar: true,
     webPreferences: {
-      nodeIntegration: true
+      nodeIntegration: true,
     },
   })
 
@@ -42,31 +46,56 @@ function advancedConfiguration() {
   } else {
     configWindow.loadFile('./build/index.html');
   }
+  updateDockIcon();
 
   configWindow.on('closed', function () {
     ipcMain.removeAllListeners('status-updated-event');
     ipcMain.removeAllListeners('logs-updated-event');
     // forget the reference.
     configWindow = null;
+    updateDockIcon();
   });
 }
 
 function showMainWindow() {
   if (mainWindow) {
+    mainWindow.focus();
     return;
   }
 
   mainWindow = new BrowserWindow({
     width: 1000,
     height: 700,
+    title: 'Kopia UI Loading...',
     autoHideMenuBar: true,
+    webPreferences: {
+      nodeIntegration: true,
+      // use a preload script to expose node features to the browser window
+      preload: path.join(app.getAppPath(), "preload.js"),
+    },
+  })
+
+  mainWindow.webContents.on('did-fail-load', () => {
+    log.error('failed to load');
+
+    // schedule another attempt in 0.5s
+    if (mainWindow) {
+      setTimeout(() => {
+        log.info('reloading');
+        if (mainWindow) {
+          mainWindow.loadURL(getServerAddress() + '/?ts=' + new Date().valueOf());
+        }
+      }, 500)
+    }
   })
 
   mainWindow.loadURL(getServerAddress() + '/?ts=' + new Date().valueOf());
+  updateDockIcon();
 
   mainWindow.on('closed', function () {
     // forget the reference.
     mainWindow = null;
+    updateDockIcon();
   });
 }
 
@@ -113,12 +142,63 @@ app.on('certificate-error', (event, webContents, url, error, certificate, callba
 });
 
 // Ignore
-app.on('window-all-closed', function () {})
+app.on('window-all-closed', function () { })
 
 ipcMain.on('server-status-updated', updateTrayContextMenu);
 ipcMain.on('launch-at-startup-updated', updateTrayContextMenu);
 
+function checkForUpdates() {
+  autoUpdater.checkForUpdatesAndNotify();
+}
+
+function maybeMoveToApplicationsFolder() {
+  if (isDev) {
+    return;
+  }
+
+  try {
+    if (!app.isInApplicationsFolder()) {
+      let result = dialog.showMessageBoxSync({
+        buttons: ["Yes", "No"],
+        message: "For best experience, Kopia needs to be installed in Applications folder.\n\nDo you want to move it now?"
+      });
+      if (result == 0) {
+        return app.moveToApplicationsFolder();
+      }
+    }
+  }
+  catch (e) {
+    log.error('error' + e);
+    // ignore
+  }
+  return false;
+}
+
+function updateDockIcon() {
+  if (process.platform === 'darwin') {
+    if (configWindow || mainWindow) {
+      app.dock.show();
+    } else {
+      app.dock.hide();
+    }
+  }
+}
+
 app.on('ready', () => {
+  log.transports.file.level = "debug"
+  autoUpdater.logger = log
+
+  if (maybeMoveToApplicationsFolder()) {
+    return
+  }
+
+  updateDockIcon();
+
+  checkForUpdates();
+
+  // re-check for updates every 24 hours
+  setInterval(checkForUpdates, 86400000);
+
   tray = new Tray(
     path.join(
       resourcesPath(), 'icons',
@@ -128,6 +208,9 @@ app.on('ready', () => {
   updateTrayContextMenu();
   refreshWillLaunchAtStartup();
   actuateServer();
+  if (firstRun()) {
+    showMainWindow();
+  }
 })
 
 function updateTrayContextMenu() {
@@ -135,6 +218,7 @@ function updateTrayContextMenu() {
   const contextMenu = Menu.buildFromTemplate([
     { label: 'Show Main Window', click: showMainWindow },
     { label: 'Advanced Configuration...', click: advancedConfiguration },
+    { label: 'Check For Updates Now', click: checkForUpdates },
     { type: 'separator' },
     { label: 'Launch At Startup', type: 'checkbox', click: toggleLaunchAtStartup, checked: willLaunchAtStartup() },
     { label: 'Quit', role: 'quit' },

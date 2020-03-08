@@ -13,12 +13,13 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/kopia/kopia/internal/repologging"
+	"github.com/kopia/kopia/internal/retry"
 	"github.com/kopia/kopia/repo/blob"
 	"github.com/kopia/kopia/repo/blob/sharded"
+	"github.com/kopia/kopia/repo/logging"
 )
 
-var log = repologging.Logger("repo/filesystem")
+var log = logging.GetContextLoggerFunc("repo/filesystem")
 
 const (
 	fsStorageType        = "filesystem"
@@ -38,11 +39,38 @@ type fsImpl struct {
 	Options
 }
 
-func (fs *fsImpl) GetBlobFromPath(ctx context.Context, dirPath, path string, offset, length int64) ([]byte, error) {
-	f, err := os.Open(path) //nolint:gosec
-	if os.IsNotExist(err) {
-		return nil, blob.ErrBlobNotFound
+func isRetriable(err error) bool {
+	if err == nil {
+		return false
 	}
+
+	err = errors.Cause(err)
+
+	if os.IsNotExist(err) {
+		return false
+	}
+
+	if os.IsExist(err) {
+		return false
+	}
+
+	return true
+}
+
+func (fs *fsImpl) GetBlobFromPath(ctx context.Context, dirPath, path string, offset, length int64) ([]byte, error) {
+	val, err := retry.WithExponentialBackoff(ctx, "GetBlobFromPath:"+path, func() (interface{}, error) {
+		f, err := os.Open(path) //nolint:gosec
+		return f, err
+	}, isRetriable)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, blob.ErrBlobNotFound
+		}
+
+		return nil, err
+	}
+
+	f := val.(*os.File)
 
 	if err != nil {
 		return nil, err
@@ -70,42 +98,51 @@ func (fs *fsImpl) GetBlobFromPath(ctx context.Context, dirPath, path string, off
 }
 
 func (fs *fsImpl) PutBlobInPath(ctx context.Context, dirPath, path string, data []byte) error {
-	randSuffix := make([]byte, 8)
-	if _, err := rand.Read(randSuffix); err != nil {
-		return errors.Wrap(err, "can't get random bytes")
-	}
-
-	tempFile := fmt.Sprintf("%s.tmp.%x", path, randSuffix)
-
-	f, err := fs.createTempFileAndDir(tempFile)
-	if err != nil {
-		return errors.Wrap(err, "cannot create temporary file")
-	}
-
-	if _, err = f.Write(data); err != nil {
-		return errors.Wrap(err, "can't write temporary file")
-	}
-
-	if err = f.Close(); err != nil {
-		return errors.Wrap(err, "can't close temporary file")
-	}
-
-	err = os.Rename(tempFile, path)
-	if err != nil {
-		if removeErr := os.Remove(tempFile); removeErr != nil {
-			log.Warningf("can't remove temp file: %v", removeErr)
+	return retry.WithExponentialBackoffNoValue(ctx, "PutBlobInPath:"+path, func() error {
+		randSuffix := make([]byte, 8)
+		if _, err := rand.Read(randSuffix); err != nil {
+			return errors.Wrap(err, "can't get random bytes")
 		}
 
-		return err
-	}
+		progressCallback := blob.ProgressCallback(ctx)
 
-	if fs.FileUID != nil && fs.FileGID != nil && os.Geteuid() == 0 {
-		if chownErr := os.Chown(path, *fs.FileUID, *fs.FileGID); chownErr != nil {
-			log.Warningf("can't change file permissions: %v", chownErr)
+		if progressCallback != nil {
+			progressCallback(path, 0, int64(len(data)))
+			defer progressCallback(path, int64(len(data)), int64(len(data)))
 		}
-	}
 
-	return nil
+		tempFile := fmt.Sprintf("%s.tmp.%x", path, randSuffix)
+
+		f, err := fs.createTempFileAndDir(tempFile)
+		if err != nil {
+			return errors.Wrap(err, "cannot create temporary file")
+		}
+
+		if _, err = f.Write(data); err != nil {
+			return errors.Wrap(err, "can't write temporary file")
+		}
+
+		if err = f.Close(); err != nil {
+			return errors.Wrap(err, "can't close temporary file")
+		}
+
+		err = os.Rename(tempFile, path)
+		if err != nil {
+			if removeErr := os.Remove(tempFile); removeErr != nil {
+				log(ctx).Warningf("can't remove temp file: %v", removeErr)
+			}
+
+			return err
+		}
+
+		if fs.FileUID != nil && fs.FileGID != nil && os.Geteuid() == 0 {
+			if chownErr := os.Chown(path, *fs.FileUID, *fs.FileGID); chownErr != nil {
+				log(ctx).Warningf("can't change file permissions: %v", chownErr)
+			}
+		}
+
+		return nil
+	}, isRetriable)
 }
 
 func (fs *fsImpl) createTempFileAndDir(tempFile string) (*os.File, error) {
@@ -124,16 +161,27 @@ func (fs *fsImpl) createTempFileAndDir(tempFile string) (*os.File, error) {
 }
 
 func (fs *fsImpl) DeleteBlobInPath(ctx context.Context, dirPath, path string) error {
-	err := os.Remove(path)
-	if err == nil || os.IsNotExist(err) {
-		return nil
-	}
+	return retry.WithExponentialBackoffNoValue(ctx, "DeleteBlobInPath:"+path, func() error {
+		err := os.Remove(path)
+		if err == nil || os.IsNotExist(err) {
+			return nil
+		}
 
-	return err
+		return err
+	}, isRetriable)
 }
 
 func (fs *fsImpl) ReadDir(ctx context.Context, dirname string) ([]os.FileInfo, error) {
-	return ioutil.ReadDir(dirname)
+	v, err := retry.WithExponentialBackoff(ctx, "ReadDir:"+dirname, func() (interface{}, error) {
+		v, err := ioutil.ReadDir(dirname)
+		return v, err
+	}, isRetriable)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return v.([]os.FileInfo), nil
 }
 
 // TouchBlob updates file modification time to current time if it's sufficiently old.
@@ -152,7 +200,7 @@ func (fs *fsStorage) TouchBlob(ctx context.Context, blobID blob.ID, threshold ti
 		return nil
 	}
 
-	log.Debugf("updating timestamp on %v to %v", path, n)
+	log(ctx).Debugf("updating timestamp on %v to %v", path, n)
 
 	return os.Chtimes(path, n, n)
 }

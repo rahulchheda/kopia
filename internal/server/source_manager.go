@@ -26,21 +26,24 @@ const (
 // - FAILED - inactive
 // - UPLOADING - uploading a snapshot
 type sourceManager struct {
-	server *Server
-	src    snapshot.SourceInfo
-	closed chan struct{}
+	snapshotfs.NullUploadProgress
 
-	mu                   sync.RWMutex
-	pol                  *policy.Policy
-	state                string
-	nextSnapshotTime     time.Time
-	lastCompleteSnapshot *snapshot.Manifest
-	lastSnapshot         *snapshot.Manifest
+	server           *Server
+	src              snapshot.SourceInfo
+	closed           chan struct{}
+	snapshotRequests chan struct{}
+	wg               sync.WaitGroup
 
-	// state of current upload
-	uploadPath          string
-	uploadPathCompleted int64
-	uploadPathTotal     int64
+	mu                                 sync.RWMutex
+	uploader                           *snapshotfs.Uploader
+	pol                                policy.SchedulingPolicy
+	state                              string
+	nextSnapshotTime                   *time.Time
+	lastSnapshot                       *snapshot.Manifest
+	lastCompleteSnapshot               *snapshot.Manifest
+	manifestsSinceLastCompleteSnapshot []*snapshot.Manifest
+
+	progress *snapshotfs.CountingUploadProgress
 }
 
 func (s *sourceManager) Status() *serverapi.SourceStatus {
@@ -50,32 +53,59 @@ func (s *sourceManager) Status() *serverapi.SourceStatus {
 	st := &serverapi.SourceStatus{
 		Source:           s.src,
 		Status:           s.state,
-		LastSnapshotSize: s.lastSnapshot.Stats.TotalFileSize,
-		LastSnapshotTime: s.lastSnapshot.StartTime,
 		NextSnapshotTime: s.nextSnapshotTime,
-		Policy:           s.pol,
+		SchedulingPolicy: s.pol,
 	}
 
-	st.UploadStatus.UploadingPath = s.uploadPath
-	st.UploadStatus.UploadingPathCompleted = s.uploadPathCompleted
-	st.UploadStatus.UploadingPathTotal = s.uploadPathTotal
+	if ls := s.lastSnapshot; ls != nil {
+		st.LastSnapshotTime = &ls.StartTime
+	}
+
+	if ls := s.lastCompleteSnapshot; ls != nil {
+		st.LastSnapshotSize = &ls.Stats.TotalFileSize
+	}
+
+	if st.Status == "UPLOADING" {
+		c := s.progress.Snapshot()
+
+		st.UploadCounters = &c
+	}
 
 	return st
 }
 
 func (s *sourceManager) setStatus(stat string) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.state = stat
-	s.mu.Unlock()
+}
+
+func (s *sourceManager) currentUploader() *snapshotfs.Uploader {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.uploader
+}
+
+func (s *sourceManager) setUploader(u *snapshotfs.Uploader) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.uploader = u
 }
 
 func (s *sourceManager) run(ctx context.Context) {
 	s.setStatus("INITIALIZING")
 	defer s.setStatus("STOPPED")
 
-	if s.server.hostname == s.src.Host {
+	s.wg.Add(1)
+	defer s.wg.Done()
+
+	if s.server.rep.Hostname == s.src.Host {
+		log(ctx).Debugf("starting local source manager for %v", s.src)
 		s.runLocal(ctx)
 	} else {
+		log(ctx).Debugf("starting remote source manager for %v", s.src)
 		s.runRemote(ctx)
 	}
 }
@@ -84,26 +114,32 @@ func (s *sourceManager) runLocal(ctx context.Context) {
 	s.refreshStatus(ctx)
 
 	for {
-		var timeBeforeNextSnapshot time.Duration
+		var waitTime time.Duration
 
-		if !s.nextSnapshotTime.IsZero() {
-			timeBeforeNextSnapshot = time.Until(s.nextSnapshotTime)
-			log.Infof("time to next snapshot %v is %v", s.src, timeBeforeNextSnapshot)
+		if s.nextSnapshotTime != nil {
+			waitTime = time.Until(*s.nextSnapshotTime)
+			log(ctx).Debugf("time to next snapshot %v is %v", s.src, waitTime)
 		} else {
-			timeBeforeNextSnapshot = oneDay
+			log(ctx).Debugf("no scheduled snapshot for %v", s.src)
+			waitTime = oneDay
 		}
 
-		s.setStatus("WAITING")
+		s.setStatus("IDLE")
 		select {
 		case <-s.closed:
 			return
 
+		case <-s.snapshotRequests:
+			nt := time.Now()
+			s.nextSnapshotTime = &nt
+
+			continue
+
 		case <-time.After(statusRefreshInterval):
 			s.refreshStatus(ctx)
 
-		case <-time.After(timeBeforeNextSnapshot):
-			log.Infof("snapshotting %v", s.src)
-			s.setStatus("SNAPSHOTTING")
+		case <-time.After(waitTime):
+			log(ctx).Debugf("snapshotting %v", s.src)
 			s.snapshot(ctx)
 			s.refreshStatus(ctx)
 		}
@@ -124,52 +160,67 @@ func (s *sourceManager) runRemote(ctx context.Context) {
 	}
 }
 
-func (s *sourceManager) Progress(path string, numFiles int, pathCompleted, pathTotal int64, stats *snapshot.Stats) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.uploadPath = path
-	s.uploadPathCompleted = pathCompleted
-	s.uploadPathTotal = pathTotal
-	log.Debugf("path: %v %v/%v", path, pathCompleted, pathTotal)
+func (s *sourceManager) scheduleSnapshotNow() {
+	select {
+	case s.snapshotRequests <- struct{}{}: // scheduled snapshot
+	default: // already scheduled
+	}
 }
 
-func (s *sourceManager) UploadFinished() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (s *sourceManager) upload(ctx context.Context) serverapi.SourceActionResponse {
+	log(ctx).Infof("upload triggered via API: %v", s.src)
+	s.scheduleSnapshotNow()
 
-	s.uploadPath = ""
-	s.uploadPathCompleted = 0
-	s.uploadPathTotal = 0
-}
-
-func (s *sourceManager) upload() serverapi.SourceActionResponse {
-	log.Infof("upload triggered via API: %v", s.src)
 	return serverapi.SourceActionResponse{Success: true}
 }
 
-func (s *sourceManager) cancel() serverapi.SourceActionResponse {
-	log.Infof("cancel triggered via API: %v", s.src)
+func (s *sourceManager) cancel(ctx context.Context) serverapi.SourceActionResponse {
+	log(ctx).Infof("cancel triggered via API: %v", s.src)
+
+	if u := s.currentUploader(); u != nil {
+		log(ctx).Infof("canceling current upload")
+		u.Cancel()
+	}
+
 	return serverapi.SourceActionResponse{Success: true}
 }
 
-func (s *sourceManager) pause() serverapi.SourceActionResponse {
-	log.Infof("pause triggered via API: %v", s.src)
-	return serverapi.SourceActionResponse{Success: true}
+func (s *sourceManager) stop(ctx context.Context) {
+	log(ctx).Debugf("stopping source manager for %v", s.src)
+
+	if u := s.currentUploader(); u != nil {
+		log(ctx).Infof("canceling current upload")
+		u.Cancel()
+	}
+
+	close(s.closed)
 }
 
-func (s *sourceManager) resume() serverapi.SourceActionResponse {
-	log.Infof("resume triggered via API: %v", s.src)
-	return serverapi.SourceActionResponse{Success: true}
+func (s *sourceManager) waitUntilStopped(ctx context.Context) {
+	s.wg.Wait()
+	log(ctx).Debugf("source manager for %v has stopped", s.src)
 }
 
 func (s *sourceManager) snapshot(ctx context.Context) {
-	s.server.beginUpload(s.src)
-	defer s.server.endUpload(s.src)
+	s.setStatus("PENDING")
+
+	s.server.beginUpload(ctx, s.src)
+	defer s.server.endUpload(ctx, s.src)
+
+	s.setStatus("UPLOADING")
+
+	// check if we got closed while waiting on semaphore
+	select {
+	case <-s.closed:
+		log(ctx).Infof("not snapshotting %v because source manager is shutting down", s.src)
+		return
+
+	default:
+	}
 
 	localEntry, err := localfs.NewEntry(s.src.Path)
 	if err != nil {
-		log.Errorf("unable to create local filesystem: %v", err)
+		log(ctx).Errorf("unable to create local filesystem: %v", err)
 		return
 	}
 
@@ -177,63 +228,60 @@ func (s *sourceManager) snapshot(ctx context.Context) {
 
 	policyTree, err := policy.TreeForSource(ctx, s.server.rep, s.src)
 	if err != nil {
-		log.Errorf("unable to create policy getter: %v", err)
+		log(ctx).Errorf("unable to create policy getter: %v", err)
 	}
 
-	u.Progress = s
+	u.Progress = s.progress
 
-	log.Infof("starting upload of %v", s.src)
+	log(ctx).Infof("starting upload of %v", s.src)
+	s.setUploader(u)
+	manifest, err := u.Upload(ctx, localEntry, policyTree, s.src, s.manifestsSinceLastCompleteSnapshot...)
+	s.setUploader(nil)
 
-	manifest, err := u.Upload(ctx, localEntry, policyTree, s.src, s.lastCompleteSnapshot, s.lastSnapshot)
 	if err != nil {
-		log.Errorf("upload error: %v", err)
+		log(ctx).Errorf("upload error: %v", err)
 		return
 	}
 
 	snapshotID, err := snapshot.SaveSnapshot(ctx, s.server.rep, manifest)
 	if err != nil {
-		log.Errorf("unable to save snapshot: %v", err)
+		log(ctx).Errorf("unable to save snapshot: %v", err)
 		return
 	}
 
 	if _, err := policy.ApplyRetentionPolicy(ctx, s.server.rep, s.src, true); err != nil {
-		log.Errorf("unable to apply retention policy: %v", err)
+		log(ctx).Errorf("unable to apply retention policy: %v", err)
 		return
 	}
 
-	log.Infof("created snapshot %v", snapshotID)
+	log(ctx).Infof("created snapshot %v", snapshotID)
 
 	if err := s.server.rep.Flush(ctx); err != nil {
-		log.Errorf("unable to flush: %v", err)
+		log(ctx).Errorf("unable to flush: %v", err)
 		return
 	}
 }
 
-func (s *sourceManager) findClosestNextSnapshotTime() time.Time {
-	nextSnapshotTime := time.Now().Add(oneDay)
+func (s *sourceManager) findClosestNextSnapshotTime() *time.Time {
+	var nextSnapshotTime *time.Time
 
-	if s.pol != nil {
-		// compute next snapshot time based on interval
-		if interval := s.pol.SchedulingPolicy.IntervalSeconds; interval != 0 {
-			interval := time.Duration(interval) * time.Second
-			nt := s.lastSnapshot.StartTime.Add(interval).Truncate(interval)
+	// compute next snapshot time based on interval
+	if interval := s.pol.IntervalSeconds; interval != 0 {
+		interval := time.Duration(interval) * time.Second
+		nt := s.lastSnapshot.StartTime.Add(interval).Truncate(interval)
+		nextSnapshotTime = &nt
+	}
 
-			if nt.Before(nextSnapshotTime) {
-				nextSnapshotTime = nt
-			}
+	for _, tod := range s.pol.TimesOfDay {
+		nowLocalTime := time.Now().Local()
+		localSnapshotTime := time.Date(nowLocalTime.Year(), nowLocalTime.Month(), nowLocalTime.Day(), tod.Hour, tod.Minute, 0, 0, time.Local)
+
+		if tod.Hour < nowLocalTime.Hour() || (tod.Hour == nowLocalTime.Hour() && tod.Minute < nowLocalTime.Minute()) {
+			localSnapshotTime = localSnapshotTime.Add(oneDay)
 		}
 
-		for _, tod := range s.pol.SchedulingPolicy.TimesOfDay {
-			nowLocalTime := time.Now().Local()
-			localSnapshotTime := time.Date(nowLocalTime.Year(), nowLocalTime.Month(), nowLocalTime.Day(), tod.Hour, tod.Minute, 0, 0, time.Local)
-
-			if tod.Hour < nowLocalTime.Hour() || (tod.Hour == nowLocalTime.Hour() && tod.Minute < nowLocalTime.Minute()) {
-				localSnapshotTime = localSnapshotTime.Add(oneDay)
-			}
-
-			if localSnapshotTime.Before(nextSnapshotTime) {
-				nextSnapshotTime = localSnapshotTime
-			}
+		if nextSnapshotTime == nil || localSnapshotTime.Before(*nextSnapshotTime) {
+			nextSnapshotTime = &localSnapshotTime
 		}
 	}
 
@@ -241,7 +289,7 @@ func (s *sourceManager) findClosestNextSnapshotTime() time.Time {
 }
 
 func (s *sourceManager) refreshStatus(ctx context.Context) {
-	log.Debugf("refreshing state for %v", s.src)
+	log(ctx).Debugf("refreshing state for %v", s.src)
 
 	pol, _, err := policy.GetEffectivePolicy(ctx, s.server.rep, s.src)
 	if err != nil {
@@ -249,7 +297,7 @@ func (s *sourceManager) refreshStatus(ctx context.Context) {
 		return
 	}
 
-	s.pol = pol
+	s.pol = pol.SchedulingPolicy
 
 	snapshots, err := snapshot.ListSnapshots(ctx, s.server.rep, s.src)
 	if err != nil {
@@ -257,24 +305,37 @@ func (s *sourceManager) refreshStatus(ctx context.Context) {
 		return
 	}
 
+	s.manifestsSinceLastCompleteSnapshot = nil
 	s.lastCompleteSnapshot = nil
 
 	snaps := snapshot.SortByTime(snapshots, true)
 	if len(snaps) > 0 {
 		s.lastSnapshot = snaps[0]
+		for _, sn := range snaps {
+			s.manifestsSinceLastCompleteSnapshot = append(s.manifestsSinceLastCompleteSnapshot, sn)
+
+			// complete snapshot, end here
+			if sn.IncompleteReason == "" {
+				s.lastCompleteSnapshot = sn
+				break
+			}
+		}
+
 		s.nextSnapshotTime = s.findClosestNextSnapshotTime()
 	} else {
-		s.nextSnapshotTime = time.Time{}
+		s.nextSnapshotTime = nil
 		s.lastSnapshot = nil
 	}
 }
 
 func newSourceManager(src snapshot.SourceInfo, server *Server) *sourceManager {
 	m := &sourceManager{
-		src:    src,
-		server: server,
-		state:  "UNKNOWN",
-		closed: make(chan struct{}),
+		src:              src,
+		server:           server,
+		state:            "UNKNOWN",
+		closed:           make(chan struct{}),
+		snapshotRequests: make(chan struct{}, 1),
+		progress:         &snapshotfs.CountingUploadProgress{},
 	}
 
 	return m

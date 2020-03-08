@@ -1,7 +1,6 @@
 package filesystem
 
 import (
-	"context"
 	"io/ioutil"
 	"os"
 	"reflect"
@@ -12,12 +11,13 @@ import (
 	"github.com/kopia/kopia/repo/blob"
 
 	"github.com/kopia/kopia/internal/blobtesting"
+	"github.com/kopia/kopia/internal/testlogging"
 )
 
 func TestFileStorage(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
+	ctx := testlogging.Context(t)
 
 	// Test varioush shard configurations.
 	for _, shardSpec := range [][]int{
@@ -59,7 +59,7 @@ const (
 func TestFileStorageTouch(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
+	ctx := testlogging.Context(t)
 
 	path, _ := ioutil.TempDir("", "r-fs")
 	defer os.RemoveAll(path)
@@ -96,8 +96,34 @@ func TestFileStorageTouch(t *testing.T) {
 	verifyBlobTimestampOrder(t, fs, t3, t2, t1)
 }
 
+func TestFileStorageConcurrency(t *testing.T) {
+	path, _ := ioutil.TempDir("", "fs-concurrency")
+	defer os.RemoveAll(path)
+
+	ctx := testlogging.Context(t)
+
+	st, err := New(ctx, &Options{
+		Path: path,
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	blobtesting.VerifyConcurrentAccess(t, st, blobtesting.ConcurrentAccessOptions{
+		NumBlobs:                        16,
+		Getters:                         8,
+		Putters:                         8,
+		Deleters:                        8,
+		Listers:                         8,
+		Iterations:                      500,
+		RangeGetPercentage:              10,
+		NonExistentListPrefixPercentage: 10,
+	})
+}
+
 func verifyBlobTimestampOrder(t *testing.T, st blob.Storage, want ...blob.ID) {
-	blobs, err := blob.ListAllBlobs(context.Background(), st, "")
+	blobs, err := blob.ListAllBlobs(testlogging.Context(t), st, "")
 	if err != nil {
 		t.Errorf("error listing blobs: %v", err)
 		return

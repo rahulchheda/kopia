@@ -1,22 +1,29 @@
 package snapmeta
 
-import "sync"
+import (
+	"errors"
+	"sync"
+)
+
+// ErrKeyNotFound is returned when the store can't find the key provided
+var ErrKeyNotFound = errors.New("key not found")
 
 var _ Store = &Simple{}
 
 // Simple is a snapstore implementation that stores
 // snapshot metadata as a byte slice in a map in memory
 type Simple struct {
-	m map[string][]byte
-	l *sync.Mutex
+	Data map[string][]byte `json:"data"`
+	Idx  Index             `json:"idx"`
+	l    sync.Mutex
 }
 
 // NewSimple instantiates a new Simple snapstore and
 // returns its pointer
 func NewSimple() *Simple {
 	return &Simple{
-		m: make(map[string][]byte),
-		l: new(sync.Mutex),
+		Data: make(map[string][]byte),
+		Idx:  Index(make(map[string]map[string]struct{})),
 	}
 }
 
@@ -28,7 +35,7 @@ func (s *Simple) Store(key string, val []byte) error {
 	s.l.Lock()
 	defer s.l.Unlock()
 
-	s.m[key] = buf
+	s.Data[key] = buf
 
 	return nil
 }
@@ -38,14 +45,14 @@ func (s *Simple) Load(key string) ([]byte, error) {
 	s.l.Lock()
 	defer s.l.Unlock()
 
-	if buf, found := s.m[key]; found {
+	if buf, found := s.Data[key]; found {
 		retBuf := make([]byte, len(buf))
 		_ = copy(retBuf, buf)
 
 		return retBuf, nil
 	}
 
-	return nil, nil
+	return nil, ErrKeyNotFound
 }
 
 // Delete implements the Storer interface Delete method
@@ -53,19 +60,29 @@ func (s *Simple) Delete(key string) {
 	s.l.Lock()
 	defer s.l.Unlock()
 
-	delete(s.m, key)
+	delete(s.Data, key)
 }
 
-// GetKeys implements the Storer interface GetKeys method
-func (s *Simple) GetKeys() []string {
+// AddToIndex implements the Storer interface AddToIndex method
+func (s *Simple) AddToIndex(key, indexName string) {
 	s.l.Lock()
 	defer s.l.Unlock()
 
-	ret := make([]string, 0, len(s.m))
+	s.Idx.AddToIndex(key, indexName)
+}
 
-	for k := range s.m {
-		ret = append(ret, k)
-	}
+// RemoveFromIndex implements the Indexer interface RemoveFromIndex method
+func (s *Simple) RemoveFromIndex(key, indexName string) {
+	s.l.Lock()
+	defer s.l.Unlock()
 
-	return ret
+	s.Idx.RemoveFromIndex(key, indexName)
+}
+
+// GetKeys implements the Indexer interface GetKeys method
+func (s *Simple) GetKeys(indexName string) []string {
+	s.l.Lock()
+	defer s.l.Unlock()
+
+	return s.Idx.GetKeys(indexName)
 }

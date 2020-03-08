@@ -20,6 +20,8 @@ var (
 	connectMaxCacheSizeMB         int64
 	connectMaxMetadataCacheSizeMB int64
 	connectMaxListCacheDuration   time.Duration
+	connectHostname               string
+	connectUsername               string
 )
 
 func setupConnectOptions(cmd *kingpin.CmdClause) {
@@ -30,15 +32,20 @@ func setupConnectOptions(cmd *kingpin.CmdClause) {
 	cmd.Flag("content-cache-size-mb", "Size of local content cache").PlaceHolder("MB").Default("5000").Int64Var(&connectMaxCacheSizeMB)
 	cmd.Flag("metadata-cache-size-mb", "Size of local metadata cache").PlaceHolder("MB").Default("500").Int64Var(&connectMaxMetadataCacheSizeMB)
 	cmd.Flag("max-list-cache-duration", "Duration of index cache").Default("600s").Hidden().DurationVar(&connectMaxListCacheDuration)
+	cmd.Flag("override-hostname", "Override hostname used by this repository connection").Hidden().StringVar(&connectHostname)
+	cmd.Flag("override-username", "Override username used by this repository connection").Hidden().StringVar(&connectUsername)
 }
 
-func connectOptions() repo.ConnectOptions {
-	return repo.ConnectOptions{
+func connectOptions() *repo.ConnectOptions {
+	return &repo.ConnectOptions{
+		PersistCredentials: connectPersistCredentials,
 		CachingOptions: content.CachingOptions{
 			CacheDirectory:          connectCacheDirectory,
 			MaxCacheSizeBytes:       connectMaxCacheSizeMB << 20, //nolint:gomnd
 			MaxListCacheDurationSec: int(connectMaxListCacheDuration.Seconds()),
 		},
+		HostnameOverride: connectHostname,
+		UsernameOverride: connectUsername,
 	}
 }
 
@@ -47,7 +54,7 @@ func init() {
 }
 
 func runConnectCommandWithStorage(ctx context.Context, st blob.Storage) error {
-	password, err := getPasswordFromFlags(false, false)
+	password, err := getPasswordFromFlags(ctx, false, false)
 	if err != nil {
 		return errors.Wrap(err, "getting password")
 	}
@@ -59,14 +66,6 @@ func runConnectCommandWithStorageAndPassword(ctx context.Context, st blob.Storag
 	configFile := repositoryConfigFileName()
 	if err := repo.Connect(ctx, configFile, st, password, connectOptions()); err != nil {
 		return err
-	}
-
-	if connectPersistCredentials {
-		if err := persistPassword(configFile, getUserName(), password); err != nil {
-			return errors.Wrap(err, "unable to persist password")
-		}
-	} else {
-		deletePassword(configFile, getUserName())
 	}
 
 	printStderr("Connected to repository.\n")

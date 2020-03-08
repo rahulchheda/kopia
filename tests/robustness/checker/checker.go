@@ -23,12 +23,13 @@ type Checker struct {
 	snapshotIssuer        snap.Snapshotter
 	snapshotMetadataStore snapmeta.Store
 	validator             Comparer
+	RecoveryMode          bool
 }
 
 // NewChecker instantiates a new Checker, returning its pointer. A temporary
 // directory is created to mount restored data
-func NewChecker(snapIssuer snap.Snapshotter, snapmetaStore snapmeta.Store, validator Comparer) (*Checker, error) {
-	restoreDir, err := ioutil.TempDir("", "restore-data-")
+func NewChecker(snapIssuer snap.Snapshotter, snapmetaStore snapmeta.Store, validator Comparer, restoreDir string) (*Checker, error) {
+	restoreDir, err := ioutil.TempDir(restoreDir, "restore-data-")
 	if err != nil {
 		return nil, err
 	}
@@ -38,6 +39,7 @@ func NewChecker(snapIssuer snap.Snapshotter, snapmetaStore snapmeta.Store, valid
 		snapshotIssuer:        snapIssuer,
 		snapshotMetadataStore: snapmetaStore,
 		validator:             validator,
+		RecoveryMode:          true,
 	}, nil
 }
 
@@ -50,7 +52,7 @@ func (chk *Checker) Cleanup() {
 
 // GetSnapIDs gets the list of snapshot IDs being tracked by the checker's snapshot store
 func (chk *Checker) GetSnapIDs() []string {
-	return chk.snapshotMetadataStore.GetKeys()
+	return chk.snapshotMetadataStore.GetKeys(allSnapshotsIdxName)
 }
 
 // SnapshotMetadata holds metadata associated with a given snapshot
@@ -70,18 +72,7 @@ func (chk *Checker) GetSnapshotMetadata(snapID string) (*SnapshotMetadata, error
 // GetLiveSnapIDs gets the list of snapshot IDs being tracked by the checker's snapshot store
 // that do not have a deletion time associated with them
 func (chk *Checker) GetLiveSnapIDs() []string {
-	snapIDs := chk.GetSnapIDs()
-
-	var ret []string
-
-	for _, snapID := range snapIDs {
-		deleted, err := chk.IsSnapshotIDDeleted(snapID)
-		if err == nil && !deleted {
-			ret = append(ret, snapID)
-		}
-	}
-
-	return ret
+	return chk.snapshotMetadataStore.GetKeys(liveSnapshotsIdxName)
 }
 
 // IsSnapshotIDDeleted reports whether the metadata associated with the provided snapshot ID
@@ -122,15 +113,21 @@ func (chk *Checker) VerifySnapshotMetadata() error {
 
 	for _, metaSnapID := range liveSnapsInMetadata {
 		if _, ok := liveMap[metaSnapID]; !ok {
-			log.Printf("Metadata present for snapID %v but not found in known metadata", metaSnapID)
-			errCount++
+			log.Printf("Metadata present for snapID %v but not found in list of repo snapshots", metaSnapID)
+			if chk.RecoveryMode {
+				chk.snapshotMetadataStore.Delete(metaSnapID)
+			} else {
+				errCount++
+			}
 		}
 	}
 
 	for _, liveSnapID := range liveSnapsInRepo {
 		if _, ok := metadataMap[liveSnapID]; !ok {
 			log.Printf("Live snapshot present for snapID %v but not found in known metadata", liveSnapID)
-			errCount++
+			if !chk.RecoveryMode {
+				errCount++
+			}
 		}
 	}
 
@@ -170,6 +167,9 @@ func (chk *Checker) TakeSnapshot(ctx context.Context, sourceDir string) (snapID 
 		return snapID, err
 	}
 
+	chk.snapshotMetadataStore.AddToIndex(snapID, allSnapshotsIdxName)
+	chk.snapshotMetadataStore.AddToIndex(snapID, liveSnapshotsIdxName)
+
 	return snapID, nil
 }
 
@@ -208,6 +208,20 @@ func (chk *Checker) RestoreVerifySnapshot(ctx context.Context, snapID, destPath 
 		return err
 	}
 
+	if ssMeta == nil && chk.RecoveryMode {
+		b, err := chk.validator.Gather(ctx, destPath)
+		if err != nil {
+			return err
+		}
+
+		ssMeta := &SnapshotMetadata{
+			SnapID:         snapID,
+			ValidationData: b,
+		}
+
+		return chk.saveSnapshotMetadata(ssMeta)
+	}
+
 	err = chk.validator.Compare(ctx, destPath, ssMeta.ValidationData, reportOut)
 	if err != nil {
 		return err
@@ -215,6 +229,12 @@ func (chk *Checker) RestoreVerifySnapshot(ctx context.Context, snapID, destPath 
 
 	return nil
 }
+
+const (
+	deletedSnapshotsIdxName = "deleted-snapshots-idx"
+	liveSnapshotsIdxName    = "live-snapshots-idx"
+	allSnapshotsIdxName     = "all-snapshots-idx"
+)
 
 // DeleteSnapshot performs the Snapshotter's DeleteSnapshot action, and
 // marks the snapshot with the given snapshot ID as deleted
@@ -235,6 +255,9 @@ func (chk *Checker) DeleteSnapshot(ctx context.Context, snapID string) error {
 	if err != nil {
 		return err
 	}
+
+	chk.snapshotMetadataStore.AddToIndex(ssMeta.SnapID, deletedSnapshotsIdxName)
+	chk.snapshotMetadataStore.RemoveFromIndex(ssMeta.SnapID, liveSnapshotsIdxName)
 
 	return nil
 }

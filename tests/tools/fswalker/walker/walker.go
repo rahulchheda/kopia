@@ -1,3 +1,5 @@
+// +build linux
+
 // Package walker wraps calls to the the fswalker Walker
 package walker
 
@@ -63,5 +65,6 @@ func WalkPathHash(ctx context.Context, path string) (*fspb.Walk, error) {
 		Include:         []string{path},
 		HashPfx:         []string{""}, // Hash everything
 		MaxHashFileSize: MaxFileSizeToHash,
+		WalkCrossDevice: true,
 	})
 }

@@ -11,6 +11,7 @@ import (
 
 	"github.com/efarrer/iothrottler"
 	minio "github.com/minio/minio-go/v6"
+	"github.com/minio/minio-go/v6/pkg/credentials"
 	"github.com/pkg/errors"
 
 	"github.com/kopia/kopia/internal/retry"
@@ -70,7 +71,7 @@ func (s *s3Storage) GetBlob(ctx context.Context, b blob.ID, offset, length int64
 		return b, nil
 	}
 
-	v, err := exponentialBackoff(fmt.Sprintf("GetBlob(%q,%v,%v)", b, offset, length), attempt)
+	v, err := exponentialBackoff(ctx, fmt.Sprintf("GetBlob(%q,%v,%v)", b, offset, length), attempt)
 	if err != nil {
 		return nil, translateError(err)
 	}
@@ -78,8 +79,8 @@ func (s *s3Storage) GetBlob(ctx context.Context, b blob.ID, offset, length int64
 	return v.([]byte), nil
 }
 
-func exponentialBackoff(desc string, att retry.AttemptFunc) (interface{}, error) {
-	return retry.WithExponentialBackoff(desc, att, isRetriableError)
+func exponentialBackoff(ctx context.Context, desc string, att retry.AttemptFunc) (interface{}, error) {
+	return retry.WithExponentialBackoff(ctx, desc, att, isRetriableError)
 }
 
 func isRetriableError(err error) bool {
@@ -137,7 +138,7 @@ func (s *s3Storage) DeleteBlob(ctx context.Context, b blob.ID) error {
 		return nil, s.cli.RemoveObject(s.BucketName, s.getObjectNameString(b))
 	}
 
-	_, err := exponentialBackoff(fmt.Sprintf("DeleteBlob(%q)", b), attempt)
+	_, err := exponentialBackoff(ctx, fmt.Sprintf("DeleteBlob(%q)", b), attempt)
 
 	return translateError(err)
 }
@@ -224,13 +225,22 @@ func New(ctx context.Context, opt *Options) (blob.Storage, error) {
 		return nil, errors.New("bucket name must be specified")
 	}
 
-	cli, err := minio.NewWithRegion(opt.Endpoint, opt.AccessKeyID, opt.SecretAccessKey, !opt.DoNotUseTLS, opt.Region)
+	cli, err := minio.NewWithCredentials(opt.Endpoint, credentials.NewStaticV4(opt.AccessKeyID, opt.SecretAccessKey, opt.SessionToken), !opt.DoNotUseTLS, opt.Region)
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to create client")
 	}
 
 	downloadThrottler := iothrottler.NewIOThrottlerPool(toBandwidth(opt.MaxDownloadSpeedBytesPerSecond))
 	uploadThrottler := iothrottler.NewIOThrottlerPool(toBandwidth(opt.MaxUploadSpeedBytesPerSecond))
+
+	ok, err := cli.BucketExistsWithContext(ctx, opt.BucketName)
+	if err != nil {
+		return nil, errors.Wrapf(err, "unable to determine if bucket %q exists", opt.BucketName)
+	}
+
+	if !ok {
+		return nil, errors.Errorf("bucket %q does not exist", opt.BucketName)
+	}
 
 	return &s3Storage{
 		Options:           *opt,

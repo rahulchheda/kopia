@@ -27,6 +27,8 @@ var (
 	snapshotCreateDescription             = snapshotCreateCommand.Flag("description", "Free-form snapshot description.").String()
 	snapshotCreateForceHash               = snapshotCreateCommand.Flag("force-hash", "Force hashing of source files for a given percentage of files [0..100]").Default("0").Int()
 	snapshotCreateParallelUploads         = snapshotCreateCommand.Flag("parallel", "Upload N files in parallel").PlaceHolder("N").Default("0").Int()
+	snapshotCreateHostname                = snapshotCreateCommand.Flag("hostname", "Override local hostname.").String()
+	snapshotCreateUsername                = snapshotCreateCommand.Flag("username", "Override local username.").String()
 )
 
 func runBackupCommand(ctx context.Context, rep *repo.Repository) error {
@@ -51,7 +53,7 @@ func runBackupCommand(ctx context.Context, rep *repo.Repository) error {
 	u.ParallelUploads = *snapshotCreateParallelUploads
 	onCtrlC(u.Cancel)
 
-	u.Progress = cliProgress
+	u.Progress = progress
 
 	if len(*snapshotCreateDescription) > maxSnapshotDescriptionLength {
 		return errors.New("description too long")
@@ -60,16 +62,29 @@ func runBackupCommand(ctx context.Context, rep *repo.Repository) error {
 	var finalErrors []string
 
 	for _, snapshotDir := range sources {
-		log.Debugf("Backing up %v", snapshotDir)
+		if u.IsCancelled() {
+			printStderr("Upload canceled\n")
+			break
+		}
 
 		dir, err := filepath.Abs(snapshotDir)
 		if err != nil {
 			return errors.Errorf("invalid source: '%s': %s", snapshotDir, err)
 		}
 
-		sourceInfo := snapshot.SourceInfo{Path: filepath.Clean(dir), Host: getHostName(), UserName: getUserName()}
+		sourceInfo := snapshot.SourceInfo{
+			Path:     filepath.Clean(dir),
+			Host:     rep.Hostname,
+			UserName: rep.Username,
+		}
 
-		log.Infof("snapshotting %v", sourceInfo)
+		if h := *snapshotCreateHostname; h != "" {
+			sourceInfo.Host = h
+		}
+
+		if u := *snapshotCreateUsername; u != "" {
+			sourceInfo.UserName = u
+		}
 
 		if err := snapshotSingleSource(ctx, rep, u, sourceInfo); err != nil {
 			finalErrors = append(finalErrors, err.Error())
@@ -84,11 +99,13 @@ func runBackupCommand(ctx context.Context, rep *repo.Repository) error {
 }
 
 func snapshotSingleSource(ctx context.Context, rep *repo.Repository, u *snapshotfs.Uploader, sourceInfo snapshot.SourceInfo) error {
+	printStderr("Snapshotting %v ...\n", sourceInfo)
+
 	t0 := time.Now()
 
 	rep.Content.ResetStats()
 
-	localEntry, err := getLocalFSEntry(sourceInfo.Path)
+	localEntry, err := getLocalFSEntry(ctx, sourceInfo.Path)
 	if err != nil {
 		return errors.Wrap(err, "unable to get local filesystem entry")
 	}
@@ -103,7 +120,7 @@ func snapshotSingleSource(ctx context.Context, rep *repo.Repository, u *snapshot
 		return errors.Wrap(err, "unable to get policy tree")
 	}
 
-	log.Infof("uploading %v using %v previous manifests", sourceInfo, len(previous))
+	log(ctx).Debugf("uploading %v using %v previous manifests", sourceInfo, len(previous))
 
 	manifest, err := u.Upload(ctx, localEntry, policyTree, sourceInfo, previous...)
 	if err != nil {
@@ -117,9 +134,22 @@ func snapshotSingleSource(ctx context.Context, rep *repo.Repository, u *snapshot
 		return errors.Wrap(err, "cannot save manifest")
 	}
 
-	printStderr("uploaded snapshot %v (root %v) in %v\n", snapID, manifest.RootObjectID(), time.Since(t0))
+	if _, err = policy.ApplyRetentionPolicy(ctx, rep, sourceInfo, true); err != nil {
+		return errors.Wrap(err, "unable to apply retention policy")
+	}
 
-	_, err = policy.ApplyRetentionPolicy(ctx, rep, sourceInfo, true)
+	if ferr := rep.Flush(ctx); ferr != nil {
+		return errors.Wrap(ferr, "flush error")
+	}
+
+	progress.Finish()
+
+	var maybePartial string
+	if manifest.IncompleteReason != "" {
+		maybePartial = " partial"
+	}
+
+	printStderr("\nCreated%v snapshot with root %v and ID %v in %v\n", maybePartial, manifest.RootObjectID(), snapID, time.Since(t0).Truncate(time.Second))
 
 	return err
 }
@@ -169,9 +199,7 @@ func findPreviousSnapshotManifest(ctx context.Context, rep *repo.Repository, sou
 }
 
 func getLocalBackupPaths(ctx context.Context, rep *repo.Repository) ([]string, error) {
-	h := getHostName()
-	u := getUserName()
-	log.Debugf("Looking for previous backups of '%v@%v'...", u, h)
+	log(ctx).Debugf("Looking for previous backups of '%v@%v'...", rep.Hostname, rep.Username)
 
 	sources, err := snapshot.ListSources(ctx, rep)
 	if err != nil {
@@ -181,7 +209,7 @@ func getLocalBackupPaths(ctx context.Context, rep *repo.Repository) ([]string, e
 	var result []string
 
 	for _, src := range sources {
-		if src.Host == h && src.UserName == u {
+		if src.Host == rep.Hostname && src.UserName == rep.Username {
 			result = append(result, src.Path)
 		}
 	}
@@ -190,6 +218,5 @@ func getLocalBackupPaths(ctx context.Context, rep *repo.Repository) ([]string, e
 }
 
 func init() {
-	addUserAndHostFlags(snapshotCreateCommand)
 	snapshotCreateCommand.Action(repositoryAction(runBackupCommand))
 }
