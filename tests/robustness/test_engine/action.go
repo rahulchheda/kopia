@@ -33,8 +33,19 @@ func (e *Engine) ExecAction(actionKey ActionKey, opts map[string]string) (map[st
 		ActionOpts:      opts,
 	}
 
-	// Execute the action
-	out, err := action.f(e, opts, logEntry)
+	// Execute the action n times
+	err := ErrNoOp // Default to no-op error
+
+	// TODO: return more than the last output
+	var out map[string]string
+
+	n := getOptAsIntOrDefault(ActionRepeaterField, opts, defaultActionRepeats)
+	for i := 0; i < n; i++ {
+		out, err = action.f(e, opts, logEntry)
+		if err != nil {
+			break
+		}
+	}
 
 	// If error was just a no-op, don't bother logging the action
 	switch {
@@ -363,6 +374,7 @@ const (
 	defaultMinDedupePercent        = 0
 	defaultDedupePercentStep       = 25
 	defaultDeletePercentOfContents = 20
+	defaultActionRepeats           = 1
 )
 
 // Option field names
@@ -377,6 +389,7 @@ const (
 	MaxDedupePercentField        = "max-dedupe-percent"
 	MinDedupePercentField        = "min-dedupe-percent"
 	DedupePercentStepField       = "dedupe-percent"
+	ActionRepeaterField          = "repeat-action"
 	ThrowNoSpaceOnDeviceErrField = "throw-no-space-error"
 	DeletePercentOfContentsField = "delete-contents-percent"
 	SnapshotIDField              = "snapshot-ID"
