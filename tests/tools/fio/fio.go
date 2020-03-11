@@ -206,7 +206,7 @@ func (fr *Runner) Cleanup() {
 
 // RunConfigs runs fio using the provided Configs
 func (fr *Runner) RunConfigs(cfgs ...Config) (stdout, stderr string, err error) {
-	args := argsFromConfigs(append([]Config{fr.Global}, cfgs...)...)
+	args := fr.argsFromConfigs(append([]Config{fr.Global}, cfgs...)...)
 
 	return fr.Run(args...)
 }
@@ -254,8 +254,8 @@ func (fr *Runner) Run(args ...string) (stdout, stderr string, err error) {
 	o, err := c.Output()
 
 	if fr.Debug || err != nil {
-		log.Printf("finished '%s %v' with err=%v and output:\n%v\n%v", fr.Exe, argsStr, err, string(o), string(errOut))
+		log.Printf("finished '%s %v' with err=%v and output:\n%v\n%v", fr.Exe, argsStr, err, string(o), errOut.String())
 	}
 
-	return string(o), string(errOut), err
+	return string(o), errOut.String(), err
 }
