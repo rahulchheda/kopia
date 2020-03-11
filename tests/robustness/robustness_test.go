@@ -10,73 +10,71 @@ import (
 	"github.com/kopia/kopia/tests/testenv"
 )
 
-// func TestManySmallFiles(t *testing.T) {
-// 	fileSize := int64(4096)
-// 	numFiles := 10000
+func TestManySmallFiles(t *testing.T) {
+	fileSize := 4096
+	numFiles := 10000
 
-// 	fioOpt := fio.Options{}.
-// 		WithFileSize(fileSize).
-// 		WithNumFiles(numFiles).
-// 		WithBlockSize(fileSize)
+	fileWriteOpts := map[string]string{
+		engine.MaxDirDepthField:         strconv.Itoa(1),
+		engine.MaxFileSizeField:         strconv.Itoa(fileSize),
+		engine.MinFileSizeField:         strconv.Itoa(fileSize),
+		engine.MaxNumFilesPerWriteField: strconv.Itoa(numFiles),
+		engine.MinNumFilesPerWriteField: strconv.Itoa(numFiles),
+	}
 
-// 	err := eng.FileWriter.WriteFiles("", fioOpt)
-// 	testenv.AssertNoError(t, err)
+	_, err := eng.ExecAction(engine.WriteRandomFilesActionKey, fileWriteOpts)
+	testenv.AssertNoError(t, err)
 
-// 	ctx := context.TODO()
-// 	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.LocalDataDir)
-// 	testenv.AssertNoError(t, err)
+	snapOut, err := eng.ExecAction(engine.SnapshotRootDirActionKey, nil)
+	testenv.AssertNoError(t, err)
 
-// 	output, err := ioutil.TempFile("", t.Name())
-// 	testenv.AssertNoError(t, err)
+	_, err = eng.ExecAction(engine.RestoreSnapshotActionKey, snapOut)
+	testenv.AssertNoError(t, err)
+}
 
-// 	defer output.Close() //nolint:errcheck
+func TestOneLargeFile(t *testing.T) {
+	fileSize := 10 * 1024 * 1024 * 1024
+	numFiles := 1
 
-// 	err = eng.Checker.RestoreSnapshot(ctx, snapID, output)
-// 	testenv.AssertNoError(t, err)
-// }
+	fileWriteOpts := map[string]string{
+		engine.MaxDirDepthField:         strconv.Itoa(1),
+		engine.MaxFileSizeField:         strconv.Itoa(fileSize),
+		engine.MinFileSizeField:         strconv.Itoa(fileSize),
+		engine.MaxNumFilesPerWriteField: strconv.Itoa(numFiles),
+		engine.MinNumFilesPerWriteField: strconv.Itoa(numFiles),
+	}
 
-// func TestModifyWorkload(t *testing.T) {
-// 	const (
-// 		numSnapshots = 10
-// 		numDirs      = 10
-// 		maxOpsPerMod = 5
-// 	)
+	_, err := eng.ExecAction(engine.WriteRandomFilesActionKey, fileWriteOpts)
+	testenv.AssertNoError(t, err)
 
-// 	numFiles := 10
-// 	fileSize := int64(65536)
-// 	fioOpt := fio.Options{}.
-// 		WithBlockSize(4096).
-// 		WithDedupePercentage(35).
-// 		WithRandRepeat(false).
-// 		WithNumFiles(numFiles).
-// 		WithFileSize(fileSize)
+	snapOut, err := eng.ExecAction(engine.SnapshotRootDirActionKey, nil)
+	testenv.AssertNoError(t, err)
 
-// 	var resultIDs []string
+	_, err = eng.ExecAction(engine.RestoreSnapshotActionKey, snapOut)
+	testenv.AssertNoError(t, err)
+}
 
-// 	ctx := context.Background()
+// func TestManySmallFilesAcrossDirecoryTree(t *testing.T) {
+// 	fileSize := 4096
+// 	numFiles := 100000
 
-// 	for snapNum := 0; snapNum < numSnapshots; snapNum++ {
-// 		opsThisLoop := rand.Intn(maxOpsPerMod) + 1
-// 		for mod := 0; mod < opsThisLoop; mod++ {
-// 			dirIdxToMod := rand.Intn(numDirs)
-// 			writeToDir := filepath.Join(t.Name(), fmt.Sprintf("dir%d", dirIdxToMod))
-
-// 			err := eng.FileWriter.WriteFiles(writeToDir, fioOpt)
-// 			testenv.AssertNoError(t, err)
-// 		}
-
-// 		snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.LocalDataDir)
-// 		testenv.AssertNoError(t, err)
-
-// 		resultIDs = append(resultIDs, snapID)
+// 	fileWriteOpts := map[string]string{
+// 		engine.MaxDirDepthField:         strconv.Itoa(15),
+// 		engine.MaxFileSizeField:         strconv.Itoa(fileSize),
+// 		engine.MinFileSizeField:         strconv.Itoa(fileSize),
+// 		engine.MaxNumFilesPerWriteField: strconv.Itoa(numFiles),
+// 		engine.MinNumFilesPerWriteField: strconv.Itoa(numFiles),
 // 	}
 
-// 	for _, snapID := range resultIDs {
-// 		err := eng.Checker.RestoreSnapshot(ctx, snapID, nil)
-// 		testenv.AssertNoError(t, err)
-// 	}
-// }
+// 	_, err := eng.ExecAction(engine.WriteRandomFilesActionKey, fileWriteOpts)
+// 	testenv.AssertNoError(t, err)
 
+// 	snapOut, err := eng.ExecAction(engine.SnapshotRootDirActionKey, nil)
+// 	testenv.AssertNoError(t, err)
+
+// 	_, err = eng.ExecAction(engine.RestoreSnapshotActionKey, snapOut)
+// 	testenv.AssertNoError(t, err)
+// }
 // func TestRandomized(t *testing.T) {
 // 	st := time.Now()
 
@@ -102,7 +100,7 @@ import (
 // }
 
 func TestRandomizedSmall(t *testing.T) {
-	err := eng.ExecAction(engine.RestoreIntoDataDirectoryActionKey, nil)
+	_, err := eng.ExecAction(engine.RestoreIntoDataDirectoryActionKey, nil)
 	if err != nil && err == engine.ErrNoOp {
 		err = nil
 	}
@@ -114,7 +112,7 @@ func TestRandomizedSmall(t *testing.T) {
 	opts := engine.ActionOpts{
 		engine.ActionControlActionKey: map[string]string{
 			string(engine.SnapshotRootDirActionKey):          strconv.Itoa(2),
-			string(engine.RestoreRandomSnapshotActionKey):    strconv.Itoa(2),
+			string(engine.RestoreSnapshotActionKey):          strconv.Itoa(2),
 			string(engine.DeleteRandomSnapshotActionKey):     strconv.Itoa(1),
 			string(engine.WriteRandomFilesActionKey):         strconv.Itoa(8),
 			string(engine.DeleteRandomSubdirectoryActionKey): strconv.Itoa(1),
