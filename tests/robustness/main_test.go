@@ -18,7 +18,7 @@ var eng *engine.Engine
 const (
 	dataSubPath     = "robustness-data"
 	metadataSubPath = "robustness-metadata"
-	defaultTestDur  = 15 * time.Minute
+	defaultTestDur  = 5 * time.Minute
 )
 
 var (
