@@ -14,7 +14,7 @@ import (
 )
 
 // ExecAction executes the action denoted by the provided ActionKey
-func (e *Engine) ExecAction(actionKey ActionKey, opts map[string]string) error {
+func (e *Engine) ExecAction(actionKey ActionKey, opts map[string]string) (map[string]string, error) {
 	if opts == nil {
 		opts = make(map[string]string)
 	}
@@ -33,8 +33,19 @@ func (e *Engine) ExecAction(actionKey ActionKey, opts map[string]string) error {
 		ActionOpts:      opts,
 	}
 
-	// Execute the action
-	err := action.f(e, opts, logEntry)
+	// Execute the action n times
+	err := ErrNoOp // Default to no-op error
+
+	// TODO: return more than the last output
+	var out map[string]string
+
+	n := getOptAsIntOrDefault(ActionRepeaterField, opts, defaultActionRepeats)
+	for i := 0; i < n; i++ {
+		out, err = action.f(e, opts, logEntry)
+		if err != nil {
+			break
+		}
+	}
 
 	// If error was just a no-op, don't bother logging the action
 	switch {
@@ -42,7 +53,7 @@ func (e *Engine) ExecAction(actionKey ActionKey, opts map[string]string) error {
 		e.RunStats.NoOpCount++
 		e.CumulativeStats.NoOpCount++
 
-		return err
+		return out, err
 
 	case err != nil:
 		log.Printf("error=%q", err.Error())
@@ -61,7 +72,7 @@ func (e *Engine) ExecAction(actionKey ActionKey, opts map[string]string) error {
 
 	e.EngineLog.AddCompleted(logEntry, err)
 
-	return err
+	return out, err
 }
 
 // RandomAction executes a random action picked by the relative weights given
@@ -75,7 +86,7 @@ func (e *Engine) RandomAction(actionOpts ActionOpts) error {
 		return fmt.Errorf("unable to pick an action with the action control options provided")
 	}
 
-	err := e.ExecAction(actionName, actionOpts[actionName])
+	_, err := e.ExecAction(actionName, actionOpts[actionName])
 	err = e.checkErrRecovery(err, actionOpts)
 
 	return err
@@ -100,7 +111,7 @@ func (e *Engine) checkErrRecovery(incomingErr error, actionOpts ActionOpts) (out
 			DeletePercentOfContentsField: strconv.Itoa(hundredPcnt),
 		}
 
-		outgoingErr = e.ExecAction(deleteDirActionKey, deleteRootOpts)
+		_, outgoingErr = e.ExecAction(deleteDirActionKey, deleteRootOpts)
 		if outgoingErr != nil {
 			return outgoingErr
 		}
@@ -110,7 +121,7 @@ func (e *Engine) checkErrRecovery(incomingErr error, actionOpts ActionOpts) (out
 
 		// Restore a previoius snapshot to the data directory
 		restoreActionKey := RestoreIntoDataDirectoryActionKey
-		outgoingErr = e.ExecAction(restoreActionKey, actionOpts[restoreActionKey])
+		_, outgoingErr = e.ExecAction(restoreActionKey, actionOpts[restoreActionKey])
 
 		if errorIs(outgoingErr, ErrNoOp) {
 			outgoingErr = nil
@@ -132,7 +143,7 @@ func (e *Engine) checkErrRecovery(incomingErr error, actionOpts ActionOpts) (out
 const (
 	ActionControlActionKey            ActionKey = "action-control"
 	SnapshotRootDirActionKey          ActionKey = "snapshot-root"
-	RestoreRandomSnapshotActionKey    ActionKey = "restore-random-snapID"
+	RestoreSnapshotActionKey          ActionKey = "restore-random-snapID"
 	DeleteRandomSnapshotActionKey     ActionKey = "delete-random-snapID"
 	WriteRandomFilesActionKey         ActionKey = "write-random-files"
 	DeleteRandomSubdirectoryActionKey ActionKey = "delete-random-subdirectory"
@@ -156,7 +167,7 @@ func (actionOpts ActionOpts) getActionControlOpts() map[string]string {
 // Action is a unit of functionality that can be executed by
 // the engine
 type Action struct {
-	f func(eng *Engine, opts map[string]string, l *LogEntry) error
+	f func(eng *Engine, opts map[string]string, l *LogEntry) (out map[string]string, err error)
 }
 
 // ActionKey refers to an action that can be executed by the engine
@@ -164,62 +175,61 @@ type ActionKey string
 
 var actions = map[ActionKey]Action{
 	SnapshotRootDirActionKey: {
-		f: func(e *Engine, opts map[string]string, l *LogEntry) error {
+		f: func(e *Engine, opts map[string]string, l *LogEntry) (out map[string]string, err error) {
 
 			log.Printf("Creating snapshot of root directory %s", e.FileWriter.LocalDataDir)
 
 			ctx := context.TODO()
-			_, err := e.Checker.TakeSnapshot(ctx, e.FileWriter.LocalDataDir)
+			snapID, err := e.Checker.TakeSnapshot(ctx, e.FileWriter.LocalDataDir)
 
-			setLogEntryCmdOpts(l, map[string]string{"snap-dir": e.FileWriter.LocalDataDir})
+			setLogEntryCmdOpts(l, map[string]string{
+				"snap-dir": e.FileWriter.LocalDataDir,
+				"snapID":   snapID,
+			})
 
-			return err
+			return map[string]string{
+				SnapshotIDField: snapID,
+			}, err
 		},
 	},
-	RestoreRandomSnapshotActionKey: {
-		f: func(e *Engine, opts map[string]string, l *LogEntry) error {
-
-			snapIDList := e.Checker.GetLiveSnapIDs()
-			if len(snapIDList) == 0 {
-				return ErrNoOp
+	RestoreSnapshotActionKey: {
+		f: func(e *Engine, opts map[string]string, l *LogEntry) (out map[string]string, err error) {
+			snapID, err := e.getSnapIDOptOrRandLive(opts)
+			if err != nil {
+				return nil, err
 			}
-
-			ctx := context.TODO()
-			snapID := snapIDList[rand.Intn(len(snapIDList))]
 
 			setLogEntryCmdOpts(l, map[string]string{"snapID": snapID})
 
 			log.Printf("Restoring snapshot %s", snapID)
 
-			err := e.Checker.RestoreSnapshot(ctx, snapID, nil)
-			return err
+			ctx := context.Background()
+			err = e.Checker.RestoreSnapshot(ctx, snapID, nil)
+			return nil, err
 		},
 	},
 	DeleteRandomSnapshotActionKey: {
-		f: func(e *Engine, opts map[string]string, l *LogEntry) error {
-
-			snapIDList := e.Checker.GetLiveSnapIDs()
-			if len(snapIDList) == 0 {
-				return ErrNoOp
+		f: func(e *Engine, opts map[string]string, l *LogEntry) (out map[string]string, err error) {
+			snapID, err := e.getSnapIDOptOrRandLive(opts)
+			if err != nil {
+				return nil, err
 			}
-
-			ctx := context.TODO()
-			snapID := snapIDList[rand.Intn(len(snapIDList))]
 
 			log.Printf("Deleting snapshot %s", snapID)
 
 			setLogEntryCmdOpts(l, map[string]string{"snapID": snapID})
 
-			err := e.Checker.DeleteSnapshot(ctx, snapID)
-			return err
+			ctx := context.Background()
+			err = e.Checker.DeleteSnapshot(ctx, snapID)
+			return nil, err
 		},
 	},
 	WriteRandomFilesActionKey: {
-		f: func(e *Engine, opts map[string]string, l *LogEntry) error {
+		f: func(e *Engine, opts map[string]string, l *LogEntry) (out map[string]string, err error) {
 
 			// Directory depth
 			maxDirDepth := getOptAsIntOrDefault(MaxDirDepthField, opts, defaultMaxDirDepth)
-			dirDepth := rand.Intn(maxDirDepth)
+			dirDepth := rand.Intn(maxDirDepth + 1)
 
 			// File size range
 			maxFileSizeB := getOptAsIntOrDefault(MaxFileSizeField, opts, defaultMaxFileSize)
@@ -255,7 +265,7 @@ var actions = map[ActionKey]Action{
 
 				freeSpaceB, err := getFreeSpaceB(e.FileWriter.LocalDataDir)
 				if err != nil {
-					return err
+					return nil, err
 				}
 				log.Printf("Free Space %v B, limit %v B, ioLimit %v B\n", freeSpaceB, freeSpaceLimitB, ioLimit)
 
@@ -263,7 +273,7 @@ var actions = map[ActionKey]Action{
 					ioLimit = int(freeSpaceB) - freeSpaceLimitB
 					log.Printf("Cutting down I/O limit for space %v", ioLimit)
 					if ioLimit <= 0 {
-						return ErrCannotPerformIO
+						return nil, ErrCannotPerformIO
 					}
 				}
 
@@ -283,14 +293,14 @@ var actions = map[ActionKey]Action{
 				l.CmdOpts[k] = v
 			}
 
-			return e.FileWriter.WriteFilesAtDepthRandomBranch(relBasePath, dirDepth, fioOpts)
+			return nil, e.FileWriter.WriteFilesAtDepthRandomBranch(relBasePath, dirDepth, fioOpts)
 		},
 	},
 	DeleteRandomSubdirectoryActionKey: {
-		f: func(e *Engine, opts map[string]string, l *LogEntry) error {
+		f: func(e *Engine, opts map[string]string, l *LogEntry) (out map[string]string, err error) {
 			maxDirDepth := getOptAsIntOrDefault(MaxDirDepthField, opts, defaultMaxDirDepth)
 			if maxDirDepth <= 0 {
-				return fmt.Errorf("invalid option setting: %s=%v", MaxDirDepthField, maxDirDepth)
+				return nil, fmt.Errorf("invalid option setting: %s=%v", MaxDirDepthField, maxDirDepth)
 			}
 			dirDepth := rand.Intn(maxDirDepth) + 1
 
@@ -298,17 +308,17 @@ var actions = map[ActionKey]Action{
 
 			setLogEntryCmdOpts(l, map[string]string{"dirDepth": strconv.Itoa(dirDepth)})
 
-			err := e.FileWriter.DeleteDirAtDepth("", dirDepth)
+			err = e.FileWriter.DeleteDirAtDepth("", dirDepth)
 			if err != nil && err == fio.ErrNoDirFound {
 				log.Print(err)
-				return nil
+				return nil, nil
 			}
 
-			return err
+			return nil, err
 		},
 	},
 	DeleteDirectoryContentsActionKey: {
-		f: func(e *Engine, opts map[string]string, l *LogEntry) error {
+		f: func(e *Engine, opts map[string]string, l *LogEntry) (out map[string]string, err error) {
 			maxDirDepth := getOptAsIntOrDefault(MaxDirDepthField, opts, defaultMaxDirDepth)
 			dirDepth := rand.Intn(maxDirDepth + 1)
 
@@ -321,16 +331,16 @@ var actions = map[ActionKey]Action{
 				"percent":  strconv.Itoa(pcnt),
 			})
 
-			err := e.FileWriter.DeleteContentsAtDepth("", dirDepth, pcnt)
+			err = e.FileWriter.DeleteContentsAtDepth("", dirDepth, pcnt)
 
-			return err
+			return nil, err
 		},
 	},
 	RestoreIntoDataDirectoryActionKey: {
-		f: func(e *Engine, opts map[string]string, l *LogEntry) error {
+		f: func(e *Engine, opts map[string]string, l *LogEntry) (out map[string]string, err error) {
 			snapIDs := e.Checker.GetLiveSnapIDs()
 			if len(snapIDs) == 0 {
-				return ErrNoOp
+				return nil, ErrNoOp
 			}
 
 			randSnapID := snapIDs[rand.Intn(len(snapIDs))]
@@ -340,13 +350,13 @@ var actions = map[ActionKey]Action{
 			setLogEntryCmdOpts(l, map[string]string{"snapID": randSnapID})
 
 			b := &bytes.Buffer{}
-			err := e.Checker.RestoreSnapshotToPath(context.Background(), randSnapID, e.FileWriter.LocalDataDir, b)
+			err = e.Checker.RestoreSnapshotToPath(context.Background(), randSnapID, e.FileWriter.LocalDataDir, b)
 			if err != nil {
 				log.Print(b.String())
-				return err
+				return nil, err
 			}
 
-			return nil
+			return nil, nil
 		},
 	},
 }
@@ -364,6 +374,7 @@ const (
 	defaultMinDedupePercent        = 0
 	defaultDedupePercentStep       = 25
 	defaultDeletePercentOfContents = 20
+	defaultActionRepeats           = 1
 )
 
 // Option field names
@@ -378,8 +389,10 @@ const (
 	MaxDedupePercentField        = "max-dedupe-percent"
 	MinDedupePercentField        = "min-dedupe-percent"
 	DedupePercentStepField       = "dedupe-percent"
+	ActionRepeaterField          = "repeat-action"
 	ThrowNoSpaceOnDeviceErrField = "throw-no-space-error"
 	DeletePercentOfContentsField = "delete-contents-percent"
+	SnapshotIDField              = "snapshot-ID"
 )
 
 func getOptAsIntOrDefault(key string, opts map[string]string, def int) int {
@@ -441,4 +454,18 @@ func errorIs(err, target error) bool {
 
 func errIsNotEnoughSpace(err error) bool {
 	return err == ErrCannotPerformIO || strings.Contains(err.Error(), noSpaceOnDeviceMatchStr)
+}
+
+func (e *Engine) getSnapIDOptOrRandLive(opts map[string]string) (snapID string, err error) {
+	snapID = opts[SnapshotIDField]
+	if snapID != "" {
+		return snapID, nil
+	}
+
+	snapIDList := e.Checker.GetLiveSnapIDs()
+	if len(snapIDList) == 0 {
+		return "", ErrNoOp
+	}
+
+	return snapIDList[rand.Intn(len(snapIDList))], nil
 }

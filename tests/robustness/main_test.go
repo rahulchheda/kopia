@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path"
 	"testing"
 	"time"
 
@@ -15,15 +16,14 @@ import (
 var eng *engine.Engine
 
 const (
-	fsDataPath     = "/tmp/robustness-data"
-	fsMetadataPath = "/tmp/robustness-metadata"
-	s3DataPath     = "robustness-data/"
-	s3MetadataPath = "robustness-metadata/"
-	defaultTestDur = 15 * time.Minute
+	dataSubPath     = "robustness-data"
+	metadataSubPath = "robustness-metadata"
+	defaultTestDur  = 5 * time.Minute
 )
 
 var (
 	randomizedTestDur = flag.Duration("rand-test-duration", defaultTestDur, "Set the duration for the randomized test")
+	repoPathPrefix    = flag.String("repo-path-prefix", "", "Point the robustness tests at this path prefix")
 )
 
 func TestMain(m *testing.M) {
@@ -41,19 +41,13 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	switch {
-	case os.Getenv(engine.S3BucketNameEnvKey) != "":
-		err = eng.InitS3(context.Background(), s3DataPath, s3MetadataPath)
-		if err != nil {
-			fmt.Printf("error initializing engine for S3: %s\n", err.Error())
-			os.Exit(1)
-		}
-	default:
-		err = eng.InitFilesystem(context.Background(), fsDataPath, fsMetadataPath)
-		if err != nil {
-			fmt.Printf("error initializing engine for filesystem: %s\n", err.Error())
-			os.Exit(1)
-		}
+	dataRepoPath := path.Join(*repoPathPrefix, dataSubPath)
+	metadataRepoPath := path.Join(*repoPathPrefix, metadataSubPath)
+
+	err = eng.Init(context.Background(), dataRepoPath, metadataRepoPath)
+	if err != nil {
+		fmt.Printf("error initializing engine for S3: %s\n", err.Error())
+		os.Exit(1)
 	}
 
 	result := m.Run()

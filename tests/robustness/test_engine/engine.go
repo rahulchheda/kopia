@@ -187,6 +187,18 @@ func (e *Engine) cleanup() {
 	os.RemoveAll(e.baseDirPath) //nolint:errcheck
 }
 
+// Init initializes the Engine to a repository location according to the environment setup.
+// - If S3_BUCKET_NAME is set, initialize S3
+// - Else initialize filesystem
+func (e *Engine) Init(ctx context.Context, testRepoPath, metaRepoPath string) error {
+	switch {
+	case os.Getenv(S3BucketNameEnvKey) != "":
+		return e.InitS3(ctx, testRepoPath, metaRepoPath)
+	default:
+		return e.InitFilesystem(ctx, testRepoPath, metaRepoPath)
+	}
+}
+
 // InitS3 attempts to connect to a test repo and metadata repo on S3. If connection
 // is successful, the engine is populated with the metadata associated with the
 // snapshot in that repo. A new repo will be created if one does not already
