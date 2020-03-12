@@ -163,7 +163,7 @@ ifeq ($(KOPIA_EXE),)
 robustness-tests: dist-binary
 	FIO_DOCKER_IMAGE=$(FIO_DOCKER_TAG) \
 	KOPIA_EXE=$(KOPIA_INTEGRATION_EXE) \
-	$(GO_TEST) -count=1 -timeout 55m github.com/kopia/kopia/tests/robustness $(TEST_FLAGS)
+	$(GO_TEST) -count=1 github.com/kopia/kopia/tests/robustness $(TEST_FLAGS)
 
 robustness-status: dist-binary
 	FIO_DOCKER_IMAGE=$(FIO_DOCKER_TAG) \
@@ -175,7 +175,7 @@ else
 # If KOPIA_EXE was provided, run the robustness tests and utils against that binary
 robustness-tests:
 	FIO_DOCKER_IMAGE=$(FIO_DOCKER_TAG) \
-	$(GO_TEST) -count=1 -timeout 55m github.com/kopia/kopia/tests/robustness $(TEST_FLAGS)
+	$(GO_TEST) -count=1 github.com/kopia/kopia/tests/robustness $(TEST_FLAGS)
 
 robustness-status:
 	FIO_DOCKER_IMAGE=$(FIO_DOCKER_TAG) \
