@@ -55,6 +55,7 @@ func TestOneLargeFile(t *testing.T) {
 }
 
 func TestManySmallFilesAcrossDirecoryTree(t *testing.T) {
+	t.Skip("Test takes too long - need to address performance issues with fio writes")
 	fileSize := 4096
 	numFiles := 10000
 	filesPerWrite := 10
