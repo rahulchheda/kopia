@@ -1,8 +1,9 @@
-// Package testenv contains environment for use in testing.
+// Package testenv contains Environment for use in testing.
 package testenv
 
 import (
 	"bufio"
+	"bytes"
 	cryptorand "crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -14,11 +15,12 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/pkg/errors"
+
+	"github.com/kopia/kopia/internal/iocopy"
 )
 
 const (
@@ -35,7 +37,7 @@ type CLITest struct {
 	Exe       string
 
 	fixedArgs   []string
-	environment []string
+	Environment []string
 }
 
 // SourceInfo reprents a single source (user@host:/path) with its snapshots.
@@ -92,11 +94,11 @@ func NewCLITest(t *testing.T) *CLITest {
 		ConfigDir:   ConfigDir,
 		Exe:         filepath.FromSlash(exe),
 		fixedArgs:   fixedArgs,
-		environment: []string{"KOPIA_PASSWORD=" + repoPassword},
+		Environment: []string{"KOPIA_PASSWORD=" + repoPassword},
 	}
 }
 
-// Cleanup cleans up the test environment unless the test has failed.
+// Cleanup cleans up the test Environment unless the test has failed.
 func (e *CLITest) Cleanup(t *testing.T) {
 	if t.Failed() {
 		t.Logf("skipped cleanup for failed test, examine repository: %v", e.RepoDir)
@@ -133,7 +135,7 @@ func (e *CLITest) RunAndProcessStderr(t *testing.T, callback func(line string) b
 
 	// nolint:gosec
 	c := exec.Command(e.Exe, cmdArgs...)
-	c.Env = append(os.Environ(), e.environment...)
+	c.Env = append(os.Environ(), e.Environment...)
 
 	stderrPipe, err := c.StderrPipe()
 	if err != nil {
@@ -205,31 +207,16 @@ func (e *CLITest) Run(t *testing.T, args ...string) (stdout, stderr []string, er
 
 	// nolint:gosec
 	c := exec.Command(e.Exe, cmdArgs...)
-	c.Env = append(os.Environ(), e.environment...)
+	c.Env = append(os.Environ(), e.Environment...)
 
-	stderrPipe, err := c.StderrPipe()
-	if err != nil {
-		t.Fatalf("can't set up stderr pipe reader")
-	}
-
-	var errOut []byte
-
-	var wg sync.WaitGroup
-
-	wg.Add(1)
-
-	go func() {
-		defer wg.Done()
-
-		errOut, err = ioutil.ReadAll(stderrPipe)
-	}()
+	errOut := &bytes.Buffer{}
+	c.Stderr = errOut
 
 	o, err := c.Output()
 
-	wg.Wait()
-	t.Logf("finished 'kopia %v' with err=%v and output:\n%v\nstderr:\n%v\n", strings.Join(args, " "), err, trimOutput(string(o)), trimOutput(string(errOut)))
+	t.Logf("finished 'kopia %v' with err=%v and output:\n%v\nstderr:\n%v\n", strings.Join(args, " "), err, trimOutput(string(o)), trimOutput(errOut.String()))
 
-	return splitLines(string(o)), splitLines(string(errOut)), err
+	return splitLines(string(o)), splitLines(errOut.String()), err
 }
 
 func trimOutput(s string) string {
@@ -378,7 +365,7 @@ func createRandomFile(filename string, options DirectoryTreeOptions, counters *D
 
 	length := rand.Int63n(maxFileSize)
 
-	_, err = io.Copy(f, io.LimitReader(rand.New(rand.NewSource(time.Now().UnixNano())), length))
+	_, err = iocopy.Copy(f, io.LimitReader(rand.New(rand.NewSource(time.Now().UnixNano())), length))
 	if err != nil {
 		return errors.Wrap(err, "file create error")
 	}

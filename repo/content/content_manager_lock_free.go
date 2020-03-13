@@ -10,18 +10,19 @@ import (
 	"math/rand"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/pkg/errors"
 
 	"github.com/kopia/kopia/repo/blob"
+	"github.com/kopia/kopia/repo/encryption"
+	"github.com/kopia/kopia/repo/hashing"
 )
 
 // lockFreeManager contains parts of Manager state that can be accessed without locking
 type lockFreeManager struct {
 	// this one is not lock-free
-	stats Stats
+	Stats Stats
 
 	listCache      *listCache
 	st             blob.Storage
@@ -37,8 +38,8 @@ type lockFreeManager struct {
 	writeFormatVersion int32 // format version to write
 
 	maxPackSize       int
-	hasher            HashFunc
-	encryptor         Encryptor
+	hasher            hashing.HashFunc
+	encryptor         encryption.Encryptor
 	minPreambleLength int
 	maxPreambleLength int
 	paddingUnit       int
@@ -47,13 +48,13 @@ type lockFreeManager struct {
 	repositoryFormatBytes []byte
 }
 
-func (bm *lockFreeManager) maybeEncryptContentDataForPacking(data []byte, contentID ID) ([]byte, error) {
+func (bm *lockFreeManager) maybeEncryptContentDataForPacking(output, data []byte, contentID ID) ([]byte, error) {
 	iv, err := getPackedContentIV(contentID)
 	if err != nil {
 		return nil, errors.Wrapf(err, "unable to get packed content IV for %q", contentID)
 	}
 
-	return bm.encryptor.Encrypt(data, iv)
+	return bm.encryptor.Encrypt(output, data, iv)
 }
 
 func appendRandomBytes(b []byte, count int) ([]byte, error) {
@@ -75,7 +76,7 @@ func (bm *lockFreeManager) loadPackIndexesUnlocked(ctx context.Context) ([]Index
 
 		if i > 0 {
 			bm.listCache.deleteListCache()
-			log.Debugf("encountered NOT_FOUND when loading, sleeping %v before retrying #%v", nextSleepTime, i)
+			log(ctx).Debugf("encountered NOT_FOUND when loading, sleeping %v before retrying #%v", nextSleepTime, i)
 			time.Sleep(nextSleepTime)
 			nextSleepTime *= 2
 		}
@@ -94,7 +95,7 @@ func (bm *lockFreeManager) loadPackIndexesUnlocked(ctx context.Context) ([]Index
 
 			var updated bool
 
-			updated, err = bm.committedContents.use(contentIDs)
+			updated, err = bm.committedContents.use(ctx, contentIDs)
 			if err != nil {
 				return nil, false, err
 			}
@@ -111,7 +112,7 @@ func (bm *lockFreeManager) loadPackIndexesUnlocked(ctx context.Context) ([]Index
 }
 
 func (bm *lockFreeManager) tryLoadPackIndexBlobsUnlocked(ctx context.Context, contents []IndexBlobInfo) error {
-	ch, unprocessedIndexesSize, err := bm.unprocessedIndexBlobsUnlocked(contents)
+	ch, unprocessedIndexesSize, err := bm.unprocessedIndexBlobsUnlocked(ctx, contents)
 	if err != nil {
 		return err
 	}
@@ -120,7 +121,7 @@ func (bm *lockFreeManager) tryLoadPackIndexBlobsUnlocked(ctx context.Context, co
 		return nil
 	}
 
-	log.Debugf("downloading %v new index blobs (%v bytes)...", len(ch), unprocessedIndexesSize)
+	log(ctx).Debugf("downloading %v new index blobs (%v bytes)...", len(ch), unprocessedIndexesSize)
 
 	var wg sync.WaitGroup
 
@@ -139,7 +140,7 @@ func (bm *lockFreeManager) tryLoadPackIndexBlobsUnlocked(ctx context.Context, co
 					return
 				}
 
-				if err := bm.committedContents.addContent(indexBlobID, data, false); err != nil {
+				if err := bm.committedContents.addContent(ctx, indexBlobID, data, false); err != nil {
 					errch <- errors.Wrap(err, "unable to add to committed content cache")
 					return
 				}
@@ -155,24 +156,24 @@ func (bm *lockFreeManager) tryLoadPackIndexBlobsUnlocked(ctx context.Context, co
 		return err
 	}
 
-	log.Debugf("Index contents downloaded.")
+	log(ctx).Debugf("Index contents downloaded.")
 
 	return nil
 }
 
 // unprocessedIndexBlobsUnlocked returns a closed channel filled with content IDs that are not in committedContents cache.
-func (bm *lockFreeManager) unprocessedIndexBlobsUnlocked(contents []IndexBlobInfo) (resultCh <-chan blob.ID, totalSize int64, err error) {
+func (bm *lockFreeManager) unprocessedIndexBlobsUnlocked(ctx context.Context, contents []IndexBlobInfo) (resultCh <-chan blob.ID, totalSize int64, err error) {
 	ch := make(chan blob.ID, len(contents))
 	defer close(ch)
 
 	for _, c := range contents {
-		has, err := bm.committedContents.cache.hasIndexBlobID(c.BlobID)
+		has, err := bm.committedContents.cache.hasIndexBlobID(ctx, c.BlobID)
 		if err != nil {
 			return nil, 0, err
 		}
 
 		if has {
-			log.Debugf("index blob %q already in cache, skipping", c.BlobID)
+			log(ctx).Debugf("index blob %q already in cache, skipping", c.BlobID)
 			continue
 		}
 
@@ -218,8 +219,7 @@ func (bm *lockFreeManager) getContentDataUnlocked(ctx context.Context, bi *Info)
 		return nil, err
 	}
 
-	atomic.AddInt32(&bm.stats.ReadContents, 1)
-	atomic.AddInt64(&bm.stats.ReadBytes, int64(len(payload)))
+	bm.Stats.readContent(len(payload))
 
 	iv, err := getPackedContentIV(bi.ID)
 	if err != nil {
@@ -235,12 +235,12 @@ func (bm *lockFreeManager) getContentDataUnlocked(ctx context.Context, bi *Info)
 }
 
 func (bm *lockFreeManager) decryptAndVerify(encrypted, iv []byte) ([]byte, error) {
-	decrypted, err := bm.encryptor.Decrypt(encrypted, iv)
+	decrypted, err := bm.encryptor.Decrypt(nil, encrypted, iv)
 	if err != nil {
 		return nil, errors.Wrap(err, "decrypt")
 	}
 
-	atomic.AddInt64(&bm.stats.DecryptedBytes, int64(len(decrypted)))
+	bm.Stats.decrypted(len(decrypted))
 
 	if bm.encryptor.IsAuthenticated() {
 		// already verified
@@ -252,16 +252,18 @@ func (bm *lockFreeManager) decryptAndVerify(encrypted, iv []byte) ([]byte, error
 	return decrypted, bm.verifyChecksum(decrypted, iv)
 }
 
-func (bm *lockFreeManager) preparePackDataContent(ctx context.Context, pp *pendingPackInfo, packFile blob.ID) ([]byte, packIndexBuilder, error) {
-	formatLog.Debugf("preparing content data with %v items", len(pp.currentPackItems))
+func (bm *lockFreeManager) preparePackDataContent(ctx context.Context, contentData []byte, pp *pendingPackInfo, packFile blob.ID) ([]byte, packIndexBuilder, error) {
+	formatLog(ctx).Debugf("preparing content data with %v items", len(pp.currentPackItems))
 
-	contentData, err := appendRandomBytes(append([]byte(nil), bm.repositoryFormatBytes...), rand.Intn(bm.maxPreambleLength-bm.minPreambleLength+1)+bm.minPreambleLength)
+	contentData, err := appendRandomBytes(append(contentData, bm.repositoryFormatBytes...), rand.Intn(bm.maxPreambleLength-bm.minPreambleLength+1)+bm.minPreambleLength)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "unable to prepare content preamble")
 	}
 
 	packFileIndex := packIndexBuilder{}
 	haveContent := false
+
+	var encryptedTmp []byte
 
 	for contentID, info := range pp.currentPackItems {
 		if info.Payload == nil {
@@ -272,14 +274,12 @@ func (bm *lockFreeManager) preparePackDataContent(ctx context.Context, pp *pendi
 
 		haveContent = true
 
-		var encrypted []byte
-
-		encrypted, err = bm.maybeEncryptContentDataForPacking(info.Payload, info.ID)
+		encryptedTmp, err = bm.maybeEncryptContentDataForPacking(encryptedTmp[:0], info.Payload, info.ID)
 		if err != nil {
-			return nil, nil, errors.Wrapf(err, "unable to encrypt %q", contentID)
+			return nil, nil, errors.Wrapf(err, "unable to encrypt %q", info.ID)
 		}
 
-		formatLog.Debugf("adding %v length=%v deleted=%v", contentID, len(info.Payload), info.Deleted)
+		formatLog(ctx).Debugf("adding %v length=%v deleted=%v", contentID, len(info.Payload), info.Deleted)
 
 		packFileIndex.Add(Info{
 			ID:               contentID,
@@ -287,15 +287,15 @@ func (bm *lockFreeManager) preparePackDataContent(ctx context.Context, pp *pendi
 			FormatVersion:    byte(bm.writeFormatVersion),
 			PackBlobID:       packFile,
 			PackOffset:       uint32(len(contentData)),
-			Length:           uint32(len(encrypted)),
+			Length:           uint32(len(encryptedTmp)),
 			TimestampSeconds: info.TimestampSeconds,
 		})
 
 		if contentID.HasPrefix() {
-			bm.metadataCache.put(ctx, cacheKey(contentID), cloneBytes(encrypted))
+			bm.metadataCache.put(ctx, cacheKey(contentID), cloneBytes(encryptedTmp))
 		}
 
-		contentData = append(contentData, encrypted...)
+		contentData = append(contentData, encryptedTmp...)
 	}
 
 	if len(packFileIndex) == 0 {
@@ -316,9 +316,9 @@ func (bm *lockFreeManager) preparePackDataContent(ctx context.Context, pp *pendi
 	}
 
 	origContentLength := len(contentData)
-	contentData, err = bm.appendPackFileIndexRecoveryData(contentData, packFileIndex)
+	contentData, err = bm.appendPackFileIndexRecoveryData(ctx, contentData, packFileIndex)
 
-	formatLog.Debugf("finished content %v bytes (%v bytes index)", len(contentData), len(contentData)-origContentLength)
+	formatLog(ctx).Debugf("finished content %v bytes (%v bytes index)", len(contentData), len(contentData)-origContentLength)
 
 	return contentData, packFileIndex, err
 }
@@ -339,11 +339,10 @@ func (bm *lockFreeManager) getIndexBlobInternal(ctx context.Context, blobID blob
 		return nil, err
 	}
 
-	atomic.AddInt32(&bm.stats.ReadContents, 1)
-	atomic.AddInt64(&bm.stats.ReadBytes, int64(len(payload)))
+	bm.Stats.readContent(len(payload))
 
-	payload, err = bm.encryptor.Decrypt(payload, iv)
-	atomic.AddInt64(&bm.stats.DecryptedBytes, int64(len(payload)))
+	payload, err = bm.encryptor.Decrypt(nil, payload, iv)
+	bm.Stats.decrypted(len(payload))
 
 	if err != nil {
 		return nil, err
@@ -371,27 +370,26 @@ func getIndexBlobIV(s blob.ID) ([]byte, error) {
 }
 
 func (bm *lockFreeManager) writePackFileNotLocked(ctx context.Context, packFile blob.ID, data []byte) error {
-	atomic.AddInt32(&bm.stats.WrittenContents, 1)
-	atomic.AddInt64(&bm.stats.WrittenBytes, int64(len(data)))
+	bm.Stats.wroteContent(len(data))
 	bm.listCache.deleteListCache()
 
 	return bm.st.PutBlob(ctx, packFile, data)
 }
 
-func (bm *lockFreeManager) encryptAndWriteContentNotLocked(ctx context.Context, data []byte, prefix blob.ID) (blob.ID, error) {
-	hash := bm.hashData(data)
+func (bm *lockFreeManager) encryptAndWriteBlobNotLocked(ctx context.Context, data []byte, prefix blob.ID) (blob.ID, error) {
+	var hashOutput [maxHashSize]byte
+
+	hash := bm.hashData(hashOutput[:0], data)
 	blobID := prefix + blob.ID(hex.EncodeToString(hash))
 
-	// Encrypt the content in-place.
-	atomic.AddInt64(&bm.stats.EncryptedBytes, int64(len(data)))
+	bm.Stats.encrypted(len(data))
 
-	data2, err := bm.encryptor.Encrypt(data, hash)
+	data2, err := bm.encryptor.Encrypt(nil, data, hash)
 	if err != nil {
 		return "", err
 	}
 
-	atomic.AddInt32(&bm.stats.WrittenContents, 1)
-	atomic.AddInt64(&bm.stats.WrittenBytes, int64(len(data2)))
+	bm.Stats.wroteContent(len(data2))
 	bm.listCache.deleteListCache()
 
 	if err := bm.st.PutBlob(ctx, blobID, data2); err != nil {
@@ -401,79 +399,53 @@ func (bm *lockFreeManager) encryptAndWriteContentNotLocked(ctx context.Context, 
 	return blobID, nil
 }
 
-func (bm *lockFreeManager) hashData(data []byte) []byte {
+func (bm *lockFreeManager) hashData(output, data []byte) []byte {
 	// Hash the content and compute encryption key.
-	contentID := bm.hasher(data)
-	atomic.AddInt32(&bm.stats.HashedContents, 1)
-	atomic.AddInt64(&bm.stats.HashedBytes, int64(len(data)))
+	contentID := bm.hasher(output, data)
+	bm.Stats.hashedContent(len(data))
 
 	return contentID
 }
 
 func (bm *lockFreeManager) writePackIndexesNew(ctx context.Context, data []byte) (blob.ID, error) {
-	return bm.encryptAndWriteContentNotLocked(ctx, data, newIndexBlobPrefix)
+	return bm.encryptAndWriteBlobNotLocked(ctx, data, newIndexBlobPrefix)
 }
 
 func (bm *lockFreeManager) verifyChecksum(data, contentID []byte) error {
-	expected := bm.hasher(data)
+	var hashOutput [maxHashSize]byte
+
+	expected := bm.hasher(hashOutput[:0], data)
 	expected = expected[len(expected)-aes.BlockSize:]
 
 	if !bytes.HasSuffix(contentID, expected) {
-		atomic.AddInt32(&bm.stats.InvalidContents, 1)
+		bm.Stats.foundInvalidContent()
 		return errors.Errorf("invalid checksum for blob %x, expected %x", contentID, expected)
 	}
 
-	atomic.AddInt32(&bm.stats.ValidContents, 1)
+	bm.Stats.foundValidContent()
 
 	return nil
 }
 
 // CreateHashAndEncryptor returns new hashing and encrypting functions based on
 // the specified formatting options
-func CreateHashAndEncryptor(f *FormattingOptions) (HashFunc, Encryptor, error) {
-	h, err := createHashFunc(f)
+func CreateHashAndEncryptor(f *FormattingOptions) (hashing.HashFunc, encryption.Encryptor, error) {
+	h, err := hashing.CreateHashFunc(f)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "unable to create hash")
 	}
 
-	e, err := createEncryptor(f)
+	e, err := encryption.CreateEncryptor(f)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "unable to create encryptor")
 	}
 
-	contentID := h(nil)
+	contentID := h(nil, nil)
 
-	_, err = e.Encrypt(nil, contentID)
+	_, err = e.Encrypt(nil, nil, contentID)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "invalid encryptor")
 	}
 
 	return h, e, nil
-}
-
-func createHashFunc(f *FormattingOptions) (HashFunc, error) {
-	h := hashFunctions[f.Hash]
-	if h == nil {
-		return nil, errors.Errorf("unknown hash function %v", f.Hash)
-	}
-
-	hashFunc, err := h(f)
-	if err != nil {
-		return nil, errors.Wrap(err, "unable to initialize hash")
-	}
-
-	if hashFunc == nil {
-		return nil, errors.Errorf("nil hash function returned for %v", f.Hash)
-	}
-
-	return hashFunc, nil
-}
-
-func createEncryptor(f *FormattingOptions) (Encryptor, error) {
-	e := encryptors[f.Encryption]
-	if e == nil {
-		return nil, errors.Errorf("unknown encryption algorithm: %v", f.Encryption)
-	}
-
-	return e(f)
 }
