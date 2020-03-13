@@ -36,9 +36,7 @@ const (
 
 	// FioDockerImageEnvKey specifies the docker image tag to use. If
 	// FioExeEnvKey is set, the local executable will be used instead of
-	// docker, even if this variable is also set. The exception is if
-	// FioUseDockerEnvKey is not an empty string, which will force
-	// use of the fio docker image independent of FioExeEnvKey.
+	// docker, even if this variable is also set.
 	FioDockerImageEnvKey = "FIO_DOCKER_IMAGE"
 
 	// LocalFioDataPathEnvKey is the local path where fio data will be
@@ -49,10 +47,6 @@ const (
 	// relative to the docker host. If left blank, defaults to local fio data path
 	// (works unless running via docker from within a container, e.g. for development)
 	HostFioDataPathEnvKey = "HOST_FIO_DATA_PATH"
-
-	// FioUseDockerEnvKey forces the fio runner to use the docker image, even if
-	// an executable path is provided.
-	FioUseDockerEnvKey = "FIO_USE_DOCKER"
 )
 
 // Known error messages
@@ -76,7 +70,6 @@ func NewRunner() (fr *Runner, err error) {
 	imgStr := os.Getenv(FioDockerImageEnvKey)
 	localFioDataPathStr := os.Getenv(LocalFioDataPathEnvKey)
 	hostFioDataPathStr := os.Getenv(HostFioDataPathEnvKey)
-	forceDocker := os.Getenv(FioUseDockerEnvKey) != ""
 
 	var exeArgs []string
 
@@ -90,7 +83,7 @@ func NewRunner() (fr *Runner, err error) {
 	}
 
 	switch {
-	case exeStr != "" && !forceDocker:
+	case exeStr != "":
 		// Provided a local FIO executable to run
 		Exe = exeStr
 
@@ -113,7 +106,7 @@ func NewRunner() (fr *Runner, err error) {
 			"run",
 			"--rm",
 			"-v",
-			fmt.Sprintf("%s:%s", hostFioDataPathStr, fioDataContainerPath), // /c/Users/usr/fio-data:/fio-data
+			fmt.Sprintf("%s:%s", hostFioDataPathStr, fioDataContainerPath),
 			imgStr,
 		}
 
@@ -172,12 +165,12 @@ func (fr *Runner) verifySetupWithTestWrites() error {
 
 	opt := Options{}.WithNumFiles(nrFiles).WithFileSize(fileSizeB)
 
+	defer fr.DeleteRelDir("test") //nolint:errcheck
+
 	err := fr.WriteFiles(subDirPath, opt)
 	if err != nil {
 		return errors.Wrap(err, "unable to perform writes")
 	}
-
-	defer fr.DeleteRelDir("test") //nolint:errcheck
 
 	fl, err := ioutil.ReadDir(filepath.Join(fr.LocalDataDir, subDirPath))
 	if err != nil {
@@ -206,12 +199,12 @@ func (fr *Runner) Cleanup() {
 
 // RunConfigs runs fio using the provided Configs
 func (fr *Runner) RunConfigs(cfgs ...Config) (stdout, stderr string, err error) {
-	args := fr.argsFromConfigs(append([]Config{fr.Global}, cfgs...)...)
+	args := argsFromConfigs(append([]Config{fr.Global}, cfgs...)...)
 
 	return fr.Run(args...)
 }
 
-func (fr *Runner) argsFromConfigs(cfgs ...Config) []string {
+func argsFromConfigs(cfgs ...Config) []string {
 	var args []string
 
 	// Apply global config before any other configs

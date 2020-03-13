@@ -26,7 +26,7 @@ let tray = null
 let configWindow = null;
 let mainWindow = null;
 
-function advancedConfiguration() {
+function serverConfiguration() {
   if (configWindow) {
     configWindow.focus();
     return;
@@ -42,7 +42,7 @@ function advancedConfiguration() {
   })
 
   if (isDev) {
-    configWindow.loadURL('http://localhost:3000');
+    configWindow.loadURL('http://localhost:3000/?ts=' + new Date().valueOf());
   } else {
     configWindow.loadFile('./build/index.html');
   }
@@ -70,8 +70,6 @@ function showMainWindow() {
     autoHideMenuBar: true,
     webPreferences: {
       nodeIntegration: true,
-      // use a preload script to expose node features to the browser window
-      preload: path.join(app.getAppPath(), "preload.js"),
     },
   })
 
@@ -217,7 +215,7 @@ function updateTrayContextMenu() {
   console.log('updating tray...');
   const contextMenu = Menu.buildFromTemplate([
     { label: 'Show Main Window', click: showMainWindow },
-    { label: 'Advanced Configuration...', click: advancedConfiguration },
+    { label: 'Server Configuration...', click: serverConfiguration },
     { label: 'Check For Updates Now', click: checkForUpdates },
     { type: 'separator' },
     { label: 'Launch At Startup', type: 'checkbox', click: toggleLaunchAtStartup, checked: willLaunchAtStartup() },

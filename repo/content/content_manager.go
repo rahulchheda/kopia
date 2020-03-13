@@ -12,7 +12,9 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	"go.opencensus.io/stats"
 
+	"github.com/kopia/kopia/internal/bufcache"
 	"github.com/kopia/kopia/repo/blob"
 	"github.com/kopia/kopia/repo/logging"
 )
@@ -26,6 +28,8 @@ var (
 const (
 	PackBlobIDPrefixRegular blob.ID = "p"
 	PackBlobIDPrefixSpecial blob.ID = "q"
+
+	maxHashSize = 64
 )
 
 // PackBlobIDPrefixes contains all possible prefixes for pack blobs.
@@ -77,6 +81,7 @@ type Manager struct {
 	disableIndexFlushCount int
 	flushPackIndexesAfter  time.Time // time when those indexes should be flushed
 	closed                 chan struct{}
+	bufferPool             sync.Pool
 
 	lockFreeManager
 }
@@ -147,7 +152,7 @@ func (bm *Manager) deletePreexistingContent(ci Info) {
 func (bm *Manager) addToPackUnlocked(ctx context.Context, contentID ID, data []byte, isDeleted bool) error {
 	prefix := packPrefixForContentID(contentID)
 
-	data = cloneBytes(data)
+	data = bufcache.Clone(data)
 
 	bm.lock()
 
@@ -206,16 +211,6 @@ func (bm *Manager) addToPackUnlocked(ctx context.Context, contentID ID, data []b
 	}
 
 	return nil
-}
-
-// Stats returns statistics about content manager operations.
-func (bm *Manager) Stats() Stats {
-	return bm.stats
-}
-
-// ResetStats resets statistics to zero values.
-func (bm *Manager) ResetStats() {
-	bm.stats = Stats{}
 }
 
 // DisableIndexFlush increments the counter preventing automatic index flushes.
@@ -345,6 +340,11 @@ func (bm *Manager) writePackAndAddToIndex(ctx context.Context, pp *pendingPackIn
 			bm.packIndexBuilder.Add(*info)
 		}
 
+		// return all cloned memory back to the buffer so that it can be used again
+		for _, it := range pp.currentPackItems {
+			bufcache.Return(it.Payload)
+		}
+
 		return nil
 	}
 
@@ -362,7 +362,9 @@ func (bm *Manager) prepareAndWritePackInternal(ctx context.Context, pp *pendingP
 
 	packFile := blob.ID(fmt.Sprintf("%v%x", pp.prefix, contentID))
 
-	contentData, packFileIndex, err := bm.preparePackDataContent(ctx, pp, packFile)
+	estimated := bm.estimatePackBlobSize(pp)
+
+	contentData, packFileIndex, err := bm.preparePackDataContent(ctx, bufcache.EmptyBytesWithCapacity(estimated), pp, packFile)
 	if err != nil {
 		return nil, errors.Wrap(err, "error preparing data content")
 	}
@@ -373,9 +375,34 @@ func (bm *Manager) prepareAndWritePackInternal(ctx context.Context, pp *pendingP
 		}
 
 		formatLog(ctx).Debugf("wrote pack file: %v (%v bytes)", packFile, len(contentData))
+		bufcache.Return(contentData)
+	}
+
+	if estimated < len(contentData) {
+		log(ctx).Warningf("did not estimate content length: %v, predicted %v", len(contentData), estimated)
 	}
 
 	return packFileIndex, nil
+}
+
+// estimatePackBlobSize estimates the size of the buffer to hold the pack blob.
+// we use this to preallocate buffer and avoid wasteful reallocations.
+// this function can overshoot, but best not to overshoot by too much.
+func (bm *Manager) estimatePackBlobSize(pp *pendingPackInfo) int {
+	const (
+		estimatedPackIndexOverhead = 10000
+		estimatedPerItemOverhead   = 64
+	)
+
+	estimateCapacity := 0
+	for _, pp := range pp.currentPackItems {
+		estimateCapacity += int(pp.Length) + estimatedPerItemOverhead
+	}
+
+	estimateCapacity += len(bm.repositoryFormatBytes)
+	estimateCapacity += estimatedPackIndexOverhead
+
+	return estimateCapacity
 }
 
 func removePendingPack(slice []*pendingPackInfo, pp *pendingPackInfo) []*pendingPackInfo {
@@ -472,11 +499,16 @@ func (bm *Manager) getOrCreatePendingPackInfoLocked(prefix blob.ID) *pendingPack
 // WriteContent saves a given content of data to a pack group with a provided name and returns a contentID
 // that's based on the contents of data written.
 func (bm *Manager) WriteContent(ctx context.Context, data []byte, prefix ID) (ID, error) {
+	stats.Record(ctx, metricContentWriteContentCount.M(1))
+	stats.Record(ctx, metricContentWriteContentBytes.M(int64(len(data))))
+
 	if err := validatePrefix(prefix); err != nil {
 		return "", err
 	}
 
-	contentID := prefix + ID(hex.EncodeToString(bm.hashData(data)))
+	var hashOutput [maxHashSize]byte
+
+	contentID := prefix + ID(hex.EncodeToString(bm.hashData(hashOutput[:0], data)))
 
 	// content already tracked
 	if bi, err := bm.getContentInfo(contentID); err == nil {
@@ -491,7 +523,20 @@ func (bm *Manager) WriteContent(ctx context.Context, data []byte, prefix ID) (ID
 }
 
 // GetContent gets the contents of a given content. If the content is not found returns ErrContentNotFound.
-func (bm *Manager) GetContent(ctx context.Context, contentID ID) ([]byte, error) {
+func (bm *Manager) GetContent(ctx context.Context, contentID ID) (v []byte, err error) {
+	defer func() {
+		switch err {
+		case nil:
+			stats.Record(ctx,
+				metricContentGetCount.M(1),
+				metricContentGetBytes.M(int64(len(v))))
+		case ErrContentNotFound:
+			stats.Record(ctx, metricContentGetNotFoundCount.M(1))
+		default:
+			stats.Record(ctx, metricContentGetErrorCount.M(1))
+		}
+	}()
+
 	bi, err := bm.getContentInfo(contentID)
 	if err != nil {
 		return nil, err
@@ -568,17 +613,28 @@ func (bm *Manager) Refresh(ctx context.Context) (bool, error) {
 
 	log(ctx).Debugf("Refresh started")
 
-	t0 := time.Now()
+	t0 := time.Now() // allow:no-inject-time
 
 	_, updated, err := bm.loadPackIndexesUnlocked(ctx)
-	log(ctx).Debugf("Refresh completed in %v and updated=%v", time.Since(t0), updated)
+	log(ctx).Debugf("Refresh completed in %v and updated=%v", time.Since(t0), updated) // allow:no-inject-time
 
 	return updated, err
 }
 
+// ManagerOptions are the optional parameters for manager creation
+type ManagerOptions struct {
+	RepositoryFormatBytes []byte
+	TimeNow               func() time.Time // Time provider
+}
+
 // NewManager creates new content manager with given packing options and a formatter.
-func NewManager(ctx context.Context, st blob.Storage, f *FormattingOptions, caching CachingOptions, repositoryFormatBytes []byte) (*Manager, error) {
-	return newManagerWithOptions(ctx, st, f, caching, time.Now, repositoryFormatBytes)
+func NewManager(ctx context.Context, st blob.Storage, f *FormattingOptions, caching CachingOptions, options ManagerOptions) (*Manager, error) {
+	nowFn := options.TimeNow
+	if nowFn == nil {
+		nowFn = time.Now // allow:no-inject-time
+	}
+
+	return newManagerWithOptions(ctx, st, f, caching, nowFn, options.RepositoryFormatBytes)
 }
 
 func newManagerWithOptions(ctx context.Context, st blob.Storage, f *FormattingOptions, caching CachingOptions, timeNow func() time.Time, repositoryFormatBytes []byte) (*Manager, error) {
@@ -646,6 +702,11 @@ func newManagerWithOptions(ctx context.Context, st blob.Storage, f *FormattingOp
 		pendingPacks:          map[blob.ID]*pendingPackInfo{},
 		packIndexBuilder:      make(packIndexBuilder),
 		closed:                make(chan struct{}),
+		bufferPool: sync.Pool{
+			New: func() interface{} {
+				return &bytes.Buffer{}
+			},
+		},
 	}
 
 	if err := m.CompactIndexes(ctx, autoCompactionOptions); err != nil {
