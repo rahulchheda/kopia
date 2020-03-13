@@ -95,6 +95,8 @@ func (chk *WalkCompare) Compare(ctx context.Context, path string, data []byte, r
 		return errors.Wrap(err, "walk data unmarshal error")
 	}
 
+	clearHostname(beforeWalk)
+
 	afterWalk, err := performWalk(ctx, path)
 	if err != nil {
 		return errors.Wrap(err, "walk with hashing error during compare phase")
