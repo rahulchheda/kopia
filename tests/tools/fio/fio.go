@@ -199,12 +199,12 @@ func (fr *Runner) Cleanup() {
 
 // RunConfigs runs fio using the provided Configs
 func (fr *Runner) RunConfigs(cfgs ...Config) (stdout, stderr string, err error) {
-	args := argsFromConfigs(append([]Config{fr.Global}, cfgs...)...)
+	args := fr.argsFromConfigs(append([]Config{fr.Global}, cfgs...)...)
 
 	return fr.Run(args...)
 }
 
-func argsFromConfigs(cfgs ...Config) []string {
+func (fr *Runner) argsFromConfigs(cfgs ...Config) []string {
 	var args []string
 
 	// Apply global config before any other configs
