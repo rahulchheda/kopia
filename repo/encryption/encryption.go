@@ -10,20 +10,25 @@ import (
 	"golang.org/x/crypto/hkdf"
 )
 
+const minDerivedKeyLength = 32
+
 // Encryptor performs encryption and decryption of contents of data.
 type Encryptor interface {
-	// Encrypt returns encrypted bytes corresponding to the given plaintext.
+	// Encrypt appends the encrypted bytes corresponding to the given plaintext to a given slice.
 	// Must not clobber the input slice and return ciphertext with additional padding and checksum.
-	Encrypt(plainText, contentID []byte) ([]byte, error)
+	Encrypt(output, plainText, contentID []byte) ([]byte, error)
 
-	// Decrypt returns unencrypted bytes corresponding to the given ciphertext.
+	// Decrypt appends the unencrypted bytes corresponding to the given ciphertext to a given slice.
 	// Must not clobber the input slice. If IsAuthenticated() == true, Decrypt will perform
 	// authenticity check before decrypting.
-	Decrypt(cipherText, contentID []byte) ([]byte, error)
+	Decrypt(output, cipherText, contentID []byte) ([]byte, error)
 
 	// IsAuthenticated returns true if encryption is authenticated.
 	// In this case Decrypt() is expected to perform authenticity check.
 	IsAuthenticated() bool
+
+	// IsDeprecated returns true if encryption is not recommended for new repositories.
+	IsDeprecated() bool
 }
 
 // Parameters encapsulates all encryption parameters.
@@ -46,16 +51,21 @@ func CreateEncryptor(p Parameters) (Encryptor, error) {
 type EncryptorFactory func(p Parameters) (Encryptor, error)
 
 // DefaultAlgorithm is the name of the default encryption algorithm.
-const DefaultAlgorithm = "SALSA20-HMAC"
+const DefaultAlgorithm = "AES256-GCM-HMAC-SHA256"
 
 // NoneAlgorithm is the name of the algorithm that does not encrypt.
 const NoneAlgorithm = "NONE"
 
 // SupportedAlgorithms returns the names of the supported encryption
 // methods
-func SupportedAlgorithms() []string {
+func SupportedAlgorithms(includeDeprecated bool) []string {
 	var result []string
-	for k := range encryptors {
+
+	for k, e := range encryptors {
+		if e.deprecated && !includeDeprecated {
+			continue
+		}
+
 		result = append(result, k)
 	}
 
@@ -81,16 +91,36 @@ type encryptorInfo struct {
 
 var encryptors = map[string]*encryptorInfo{}
 
-func cloneBytes(b []byte) []byte {
-	return append([]byte{}, b...)
-}
-
 // deriveKey uses HKDF to derive a key of a given length and a given purpose from parameters.
 // nolint:unparam
-func deriveKey(p Parameters, purpose []byte, length int) []byte {
+func deriveKey(p Parameters, purpose []byte, length int) ([]byte, error) {
+	if length < minDerivedKeyLength {
+		return nil, errors.Errorf("derived key must be at least 32 bytes, was %v", length)
+	}
+
 	key := make([]byte, length)
 	k := hkdf.New(sha256.New, p.GetMasterKey(), purpose, nil)
 	io.ReadFull(k, key) //nolint:errcheck
 
-	return key
+	return key, nil
+}
+
+// sliceForAppend takes a slice and a requested number of bytes. It returns a
+// slice with the contents of the given slice followed by that many bytes and a
+// second slice that aliases into it and contains only the extra bytes. If the
+// original slice has sufficient capacity then no allocation is performed.
+//
+// From: https://golang.org/src/crypto/cipher/gcm.go
+// Copyright 2013 The Go Authors. All rights reserved.
+func sliceForAppend(in []byte, n int) (head, tail []byte) {
+	if total := len(in) + n; cap(in) >= total {
+		head = in[:total]
+	} else {
+		head = make([]byte, total)
+		copy(head, in)
+	}
+
+	tail = head[len(in):]
+
+	return
 }

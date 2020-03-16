@@ -116,6 +116,7 @@ func (chk *Checker) VerifySnapshotMetadata() error {
 			log.Printf("Metadata present for snapID %v but not found in list of repo snapshots", metaSnapID)
 			if chk.RecoveryMode {
 				chk.snapshotMetadataStore.Delete(metaSnapID)
+				chk.snapshotMetadataStore.RemoveFromIndex(metaSnapID, liveSnapshotsIdxName)
 			} else {
 				errCount++
 			}
@@ -125,7 +126,15 @@ func (chk *Checker) VerifySnapshotMetadata() error {
 	for _, liveSnapID := range liveSnapsInRepo {
 		if _, ok := metadataMap[liveSnapID]; !ok {
 			log.Printf("Live snapshot present for snapID %v but not found in known metadata", liveSnapID)
-			if !chk.RecoveryMode {
+			if chk.RecoveryMode {
+				// Might as well delete the snapshot since we don't have metadata for it
+				log.Printf("Deleting snapshot ID %s", liveSnapID)
+				err = chk.snapshotIssuer.DeleteSnapshot(liveSnapID)
+				if err != nil {
+					log.Printf("error deleting snapshot: %s", err)
+					errCount++
+				}
+			} else {
 				errCount++
 			}
 		}
@@ -250,6 +259,7 @@ func (chk *Checker) DeleteSnapshot(ctx context.Context, snapID string) error {
 	}
 
 	ssMeta.DeletionTime = time.Now()
+	ssMeta.ValidationData = nil
 
 	err = chk.saveSnapshotMetadata(ssMeta)
 	if err != nil {

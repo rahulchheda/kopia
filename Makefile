@@ -7,6 +7,12 @@ FIO_DOCKER_TAG=ljishen/fio
 
 all: test lint vet integration-tests
 
+retry=
+
+ifneq ($(TRAVIS_OS_NAME),)
+retry=$(CURDIR)/tools/retry.sh
+endif
+
 include tools/tools.mk
 
 -include ./Makefile.local.mk
@@ -38,7 +44,13 @@ lint: $(linter)
 lint-and-log: $(linter)
 	$(linter) --deadline 180s run $(linter_flags) | tee .linterr.txt
 
-vet:
+
+vet-time-inject:
+	! find repo snapshot -name '*.go' -not -path 'repo/blob/logging/*' -not -name '*_test.go' \
+	-exec grep -n -e time.Now -e time.Since -e time.Until {} + \
+	| grep -v -e allow:no-inject-time
+
+vet: vet-time-inject
 	go vet -all .
 
 travis-setup: travis-install-gpg-key travis-install-test-credentials all-tools
@@ -64,13 +76,15 @@ html-ui-bindata: html-ui $(go_bindata)
 html-ui-bindata-fallback: $(go_bindata)
 	(cd internal/server && $(go_bindata) -fs -tags !embedhtml -o "$(CURDIR)/internal/server/htmlui_fallback.go" -pkg server index.html)
 
-kopia-ui: goreleaser
+kopia-ui:
 	$(MAKE) -C app build-electron
 
 travis-release:
-	$(MAKE) goreleaser kopia-ui
-	$(MAKE) -j4 lint vet test-with-coverage html-ui-tests
-	$(MAKE) integration-tests
+	$(retry) $(MAKE) goreleaser
+	$(retry) $(MAKE) kopia-ui
+	$(MAKE) lint vet test-with-coverage html-ui-tests
+	$(retry) $(MAKE) layering-test
+	$(retry) $(MAKE) integration-tests
 ifeq ($(TRAVIS_OS_NAME),linux)
 	$(MAKE) robustness-tool-tests
 	$(MAKE) website
@@ -113,7 +127,6 @@ GORELEASER_OPTIONS+=--skip-publish
 endif
 
 goreleaser: $(goreleaser)
-	# print current git diff, pipe through cat to avoid blocking the build on pager
 	-git diff | cat
 	$(goreleaser) release $(GORELEASER_OPTIONS)
 
@@ -124,7 +137,7 @@ upload-coverage: $(GOVERALLS_TOOL)
 
 else
 
-uload-coverage:
+upload-coverage:
 	@echo Not uploading coverage during PR build.
 
 endif
@@ -192,6 +205,26 @@ robustness-tool-tests: dist-binary fio-docker-build
 stress-test:
 	KOPIA_LONG_STRESS_TEST=1 $(GO_TEST) -count=1 -timeout 200s github.com/kopia/kopia/tests/stress_test
 	$(GO_TEST) -count=1 -timeout 200s github.com/kopia/kopia/tests/repository_stress_test
+
+layering-test:
+ifneq ($(uname),Windows)
+	# verify that code under repo/ can only import code also under repo/ + some
+	# whitelisted internal packages.
+	find repo/ -name '*.go' | xargs grep "^\t\"github.com/kopia/kopia" \
+	   | grep -v -e github.com/kopia/kopia/repo \
+	             -e github.com/kopia/kopia/internal/retry \
+	             -e github.com/kopia/kopia/internal/throttle \
+	             -e github.com/kopia/kopia/internal/iocopy \
+	             -e github.com/kopia/kopia/internal/blobtesting \
+	             -e github.com/kopia/kopia/internal/repotesting \
+	             -e github.com/kopia/kopia/internal/testlogging \
+	             -e github.com/kopia/kopia/internal/bufcache \
+	             -e github.com/kopia/kopia/internal/hmac \
+	             -e github.com/kopia/kopia/internal/faketime \
+	             -e github.com/kopia/kopia/internal/testutil \
+	             -e github.com/kopia/kopia/internal/ctxutil \
+	             -e github.com/kopia/kopia/issues && exit 1 || echo repo/ layering ok
+endif
 
 godoc:
 	godoc -http=:33333

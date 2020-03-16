@@ -13,10 +13,11 @@ import (
 )
 
 var (
-	benchmarkCryptoCommand    = benchmarkCommands.Command("crypto", "Run hash and encryption benchmarks")
-	benchmarkCryptoBlockSize  = benchmarkCryptoCommand.Flag("block-size", "Size of a block to encrypt").Default("1MB").Bytes()
-	benchmarkCryptoEncryption = benchmarkCryptoCommand.Flag("encryption", "Test encrypted formats").Default("true").Bool()
-	benchmarkCryptoRepeat     = benchmarkCryptoCommand.Flag("repeat", "Number of repetitions").Default("100").Int()
+	benchmarkCryptoCommand              = benchmarkCommands.Command("crypto", "Run hash and encryption benchmarks")
+	benchmarkCryptoBlockSize            = benchmarkCryptoCommand.Flag("block-size", "Size of a block to encrypt").Default("1MB").Bytes()
+	benchmarkCryptoEncryption           = benchmarkCryptoCommand.Flag("encryption", "Test encrypted formats").Default("true").Bool()
+	benchmarkCryptoRepeat               = benchmarkCryptoCommand.Flag("repeat", "Number of repetitions").Default("100").Int()
+	benchmarkCryptoDeprecatedAlgorithms = benchmarkCryptoCommand.Flag("deprecated", "Include deprecated algorithms").Bool()
 )
 
 func runBenchmarkCryptoAction(ctx *kingpin.ParseContext) error {
@@ -30,8 +31,17 @@ func runBenchmarkCryptoAction(ctx *kingpin.ParseContext) error {
 
 	data := make([]byte, *benchmarkCryptoBlockSize)
 
+	const (
+		maxEncryptionOverhead = 1024
+		maxHashSize           = 64
+	)
+
+	var hashOutput [maxHashSize]byte
+
+	encryptOutput := make([]byte, len(data)+maxEncryptionOverhead)
+
 	for _, ha := range hashing.SupportedAlgorithms() {
-		for _, ea := range encryption.SupportedAlgorithms() {
+		for _, ea := range encryption.SupportedAlgorithms(*benchmarkCryptoDeprecatedAlgorithms) {
 			isEncrypted := ea != encryption.NoneAlgorithm
 			if *benchmarkCryptoEncryption != isEncrypted {
 				continue
@@ -52,9 +62,10 @@ func runBenchmarkCryptoAction(ctx *kingpin.ParseContext) error {
 			t0 := time.Now()
 
 			hashCount := *benchmarkCryptoRepeat
+
 			for i := 0; i < hashCount; i++ {
-				contentID := h(data)
-				if _, encerr := e.Encrypt(data, contentID); encerr != nil {
+				contentID := h(hashOutput[:0], data)
+				if _, encerr := e.Encrypt(encryptOutput[:0], data, contentID); encerr != nil {
 					printStderr("encryption failed: %v\n", encerr)
 					break
 				}

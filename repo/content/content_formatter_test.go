@@ -5,7 +5,6 @@ import (
 	"context"
 	cryptorand "crypto/rand"
 	"crypto/sha1"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -39,7 +38,7 @@ func TestFormatters(t *testing.T) {
 	for _, hashAlgo := range hashing.SupportedAlgorithms() {
 		hashAlgo := hashAlgo
 		t.Run(hashAlgo, func(t *testing.T) {
-			for _, encryptionAlgo := range encryption.SupportedAlgorithms() {
+			for _, encryptionAlgo := range encryption.SupportedAlgorithms(true) {
 				encryptionAlgo := encryptionAlgo
 				t.Run(encryptionAlgo, func(t *testing.T) {
 					ctx := testlogging.Context(t)
@@ -68,14 +67,14 @@ func TestFormatters(t *testing.T) {
 						return
 					}
 
-					contentID := h(data)
+					contentID := h(nil, data)
 
-					cipherText, err := e.Encrypt(data, contentID)
+					cipherText, err := e.Encrypt(nil, data, contentID)
 					if err != nil || cipherText == nil {
 						t.Errorf("invalid response from Encrypt: %v %v", cipherText, err)
 					}
 
-					plainText, err := e.Decrypt(cipherText, contentID)
+					plainText, err := e.Decrypt(nil, cipherText, contentID)
 					if err != nil || plainText == nil {
 						t.Errorf("invalid response from Decrypt: %v %v", plainText, err)
 					}
@@ -132,8 +131,8 @@ func verifyEndToEndFormatter(ctx context.Context, t *testing.T, hashAlgo, encryp
 			return
 		}
 
-		if got, want := b2, b; !reflect.DeepEqual(got, want) {
-			t.Errorf("content %q data mismatch: got %x (nil:%v), wanted %x (nil:%v)", contentID, got, got == nil, want, want == nil)
+		if got, want := b2, b; !bytes.Equal(got, want) {
+			t.Errorf("content %q data mismatch: got %x, wanted %x", contentID, got, want)
 			return
 		}
 	}

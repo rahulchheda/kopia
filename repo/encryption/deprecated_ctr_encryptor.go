@@ -12,19 +12,23 @@ type ctrEncryptor struct {
 	createCipher func() (cipher.Block, error)
 }
 
-func (fi ctrEncryptor) Encrypt(plainText, contentID []byte) ([]byte, error) {
-	return symmetricEncrypt(fi.createCipher, contentID, plainText)
+func (fi ctrEncryptor) Encrypt(output, plainText, contentID []byte) ([]byte, error) {
+	return symmetricEncrypt(output, fi.createCipher, contentID, plainText)
 }
 
-func (fi ctrEncryptor) Decrypt(cipherText, contentID []byte) ([]byte, error) {
-	return symmetricEncrypt(fi.createCipher, contentID, cipherText)
+func (fi ctrEncryptor) Decrypt(output, cipherText, contentID []byte) ([]byte, error) {
+	return symmetricEncrypt(output, fi.createCipher, contentID, cipherText)
 }
 
 func (fi ctrEncryptor) IsAuthenticated() bool {
 	return false
 }
 
-func symmetricEncrypt(createCipher func() (cipher.Block, error), iv, b []byte) ([]byte, error) {
+func (fi ctrEncryptor) IsDeprecated() bool {
+	return true
+}
+
+func symmetricEncrypt(output []byte, createCipher func() (cipher.Block, error), iv, b []byte) ([]byte, error) {
 	blockCipher, err := createCipher()
 	if err != nil {
 		return nil, err
@@ -35,8 +39,9 @@ func symmetricEncrypt(createCipher func() (cipher.Block, error), iv, b []byte) (
 	}
 
 	ctr := cipher.NewCTR(blockCipher, iv[0:blockCipher.BlockSize()])
-	result := make([]byte, len(b))
-	ctr.XORKeyStream(result, b)
+
+	result, out := sliceForAppend(output, len(b))
+	ctr.XORKeyStream(out, b)
 
 	return result, nil
 }
@@ -70,7 +75,7 @@ func newCTREncryptorFactory(keySize int, createCipherWithKey func(key []byte) (c
 }
 
 func init() {
-	Register("AES-128-CTR", "AES-128 in CTR mode", false, newCTREncryptorFactory(16, aes.NewCipher)) //nolint:gomnd
-	Register("AES-192-CTR", "AES-192 in CTR mode", false, newCTREncryptorFactory(24, aes.NewCipher)) //nolint:gomnd
-	Register("AES-256-CTR", "AES-256 in CTR mode", false, newCTREncryptorFactory(32, aes.NewCipher)) //nolint:gomnd
+	Register("AES-128-CTR", "DEPRECATED: AES-128 in CTR mode", true, newCTREncryptorFactory(16, aes.NewCipher)) //nolint:gomnd
+	Register("AES-192-CTR", "DEPRECATED: AES-192 in CTR mode", true, newCTREncryptorFactory(24, aes.NewCipher)) //nolint:gomnd
+	Register("AES-256-CTR", "DEPRECATED: AES-256 in CTR mode", true, newCTREncryptorFactory(32, aes.NewCipher)) //nolint:gomnd
 }

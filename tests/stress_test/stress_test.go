@@ -1,11 +1,11 @@
 package stress_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"math/rand"
 	"os"
-	"reflect"
 	"testing"
 	"time"
 
@@ -44,7 +44,7 @@ func stressTestWithStorage(t *testing.T, st blob.Storage, duration time.Duration
 			Encryption:  "AES-256-CTR",
 			MaxPackSize: 20000000,
 			MasterKey:   []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15},
-		}, content.CachingOptions{}, nil)
+		}, content.CachingOptions{}, content.ManagerOptions{})
 	}
 
 	seed0 := time.Now().Nanosecond()
@@ -127,7 +127,7 @@ func stressWorker(ctx context.Context, t *testing.T, deadline time.Time, openMgr
 				return
 			}
 
-			if !reflect.DeepEqual(previous.data, d2) {
+			if !bytes.Equal(previous.data, d2) {
 				t.Errorf("invalid previous data for %q %x %x", previous.contentID, d2, previous.data)
 				return
 			}

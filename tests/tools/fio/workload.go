@@ -1,7 +1,6 @@
 package fio
 
 import (
-	"fmt"
 	"io/ioutil"
 	"log"
 	"math/rand"
@@ -33,7 +32,7 @@ func (fr *Runner) writeFiles(fullPath string, opt Options) error {
 
 	_, _, err = fr.RunConfigs(Config{
 		{
-			Name: fmt.Sprintf("writeFiles"),
+			Name: "writeFiles",
 			Options: opt.Merge(
 				Options{
 					"readwrite":       RandWriteFio,
