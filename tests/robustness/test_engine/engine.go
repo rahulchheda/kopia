@@ -31,6 +31,8 @@ var (
 	// ErrCannotPerformIO is returned if the engine determines there is not enough space
 	// to write files
 	ErrCannotPerformIO = fmt.Errorf("cannot perform i/o")
+	// ErrReadOnlyMode throws to indicate a write-type action was trying to be executed in read-only mode
+	ErrReadOnlyMode = fmt.Errorf("cannot execute write-type action in read-only engine mode")
 	// ErrS3BucketNameEnvUnset is the error returned when the S3BucketNameEnvKey environment variable is not set
 	ErrS3BucketNameEnvUnset = fmt.Errorf("environment variable required: %v", S3BucketNameEnvKey)
 	noSpaceOnDeviceMatchStr = "no space left on device"
@@ -48,6 +50,7 @@ type Engine struct {
 	RunStats        Stats
 	CumulativeStats Stats
 	EngineLog       Log
+	ReadOnly        bool
 }
 
 // NewEngine instantiates a new Engine and returns its pointer. It is
@@ -124,7 +127,7 @@ func (e *Engine) Cleanup() error {
 	lastWriteEntry := e.EngineLog.FindLastThisRun(WriteRandomFilesActionKey)
 	lastSnapEntry := e.EngineLog.FindLastThisRun(SnapshotRootDirActionKey)
 	if lastWriteEntry != nil {
-		if lastSnapEntry == nil || lastSnapEntry.Idx < lastWriteEntry.Idx {
+		if e.ReadOnly == false && (lastSnapEntry == nil || lastSnapEntry.Idx < lastWriteEntry.Idx) {
 			// Only force a final snapshot if the data tree has been modified since the last snapshot
 			e.ExecAction(SnapshotRootDirActionKey, make(map[string]string)) //nolint:errcheck
 		}
@@ -141,7 +144,8 @@ func (e *Engine) Cleanup() error {
 
 	defer e.cleanup()
 
-	if e.MetaStore != nil {
+	if e.MetaStore != nil && !e.ReadOnly {
+		panic("How did we get here")
 		err := e.SaveLog()
 		if err != nil {
 			return err
@@ -268,10 +272,10 @@ func (e *Engine) init(ctx context.Context) error {
 		return err
 	}
 
-	_, err = e.ExecAction(RestoreIntoDataDirectoryActionKey, nil)
-	if err != nil && err == ErrNoOp {
-		err = nil
-	}
+	// _, err = e.ExecAction(RestoreIntoDataDirectoryActionKey, nil)
+	// if err != nil && err == ErrNoOp {
+	// 	err = nil
+	// }
 
 	return err
 }

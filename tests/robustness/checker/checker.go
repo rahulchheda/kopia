@@ -5,6 +5,7 @@ package checker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -23,8 +24,17 @@ type Checker struct {
 	snapshotIssuer        snap.Snapshotter
 	snapshotMetadataStore snapmeta.Store
 	validator             Comparer
-	RecoveryMode          bool
+	RecoveryMode          RecoveryMode
 }
+
+type RecoveryMode string
+
+// Recovery modes
+const (
+	ThrowSyncErrorsMode           RecoveryMode = "throw-sync-errors"
+	IgnoreErrorRecoveryMode       RecoveryMode = "ignore-error-recovery"
+	QuickMetadataSyncRecoveryMode RecoveryMode = "quick-metadata-sync-recovery"
+)
 
 // NewChecker instantiates a new Checker, returning its pointer. A temporary
 // directory is created to mount restored data
@@ -39,7 +49,7 @@ func NewChecker(snapIssuer snap.Snapshotter, snapmetaStore snapmeta.Store, valid
 		snapshotIssuer:        snapIssuer,
 		snapshotMetadataStore: snapmetaStore,
 		validator:             validator,
-		RecoveryMode:          true,
+		RecoveryMode:          QuickMetadataSyncRecoveryMode,
 	}, nil
 }
 
@@ -114,11 +124,14 @@ func (chk *Checker) VerifySnapshotMetadata() error {
 	for _, metaSnapID := range liveSnapsInMetadata {
 		if _, ok := liveMap[metaSnapID]; !ok {
 			log.Printf("Metadata present for snapID %v but not found in list of repo snapshots", metaSnapID)
-			if chk.RecoveryMode {
+			switch chk.RecoveryMode {
+			case ThrowSyncErrorsMode:
+				errCount++
+
+			default:
+				// Delete local metadata no matter what, we don't need it around
 				chk.snapshotMetadataStore.Delete(metaSnapID)
 				chk.snapshotMetadataStore.RemoveFromIndex(metaSnapID, liveSnapshotsIdxName)
-			} else {
-				errCount++
 			}
 		}
 	}
@@ -126,16 +139,23 @@ func (chk *Checker) VerifySnapshotMetadata() error {
 	for _, liveSnapID := range liveSnapsInRepo {
 		if _, ok := metadataMap[liveSnapID]; !ok {
 			log.Printf("Live snapshot present for snapID %v but not found in known metadata", liveSnapID)
-			if chk.RecoveryMode {
+
+			switch chk.RecoveryMode {
+			case QuickMetadataSyncRecoveryMode:
 				// Might as well delete the snapshot since we don't have metadata for it
 				log.Printf("Deleting snapshot ID %s", liveSnapID)
+
 				err = chk.snapshotIssuer.DeleteSnapshot(liveSnapID)
 				if err != nil {
 					log.Printf("error deleting snapshot: %s", err)
 					errCount++
 				}
-			} else {
+
+			case ThrowSyncErrorsMode:
 				errCount++
+
+			case IgnoreErrorRecoveryMode:
+				// Do Nothing
 			}
 		}
 	}
@@ -217,7 +237,12 @@ func (chk *Checker) RestoreVerifySnapshot(ctx context.Context, snapID, destPath 
 		return err
 	}
 
-	if ssMeta == nil && chk.RecoveryMode {
+	if ssMeta == nil {
+
+		if chk.RecoveryMode == ThrowSyncErrorsMode {
+			return errors.New("No metadata provided for restore comparison")
+		}
+
 		b, err := chk.validator.Gather(ctx, destPath)
 		if err != nil {
 			return err

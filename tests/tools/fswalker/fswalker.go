@@ -135,7 +135,7 @@ func (chk *WalkCompare) Compare(ctx context.Context, path string, data []byte, r
 		return errors.Wrap(err, "validation error")
 	}
 
-	return nil
+	return err
 }
 
 func printReportSummary(report *fswalker.Report, reportOut io.Writer) {

@@ -19,12 +19,17 @@ func (e *Engine) ExecAction(actionKey ActionKey, opts map[string]string) (map[st
 		opts = make(map[string]string)
 	}
 
+	action := actions[actionKey]
+
+	if e.ReadOnly && !action.ReadOnlyOkay {
+		return nil, ErrReadOnlyMode
+	}
+
+	st := time.Now()
+
 	e.RunStats.ActionCounter++
 	e.CumulativeStats.ActionCounter++
 	log.Printf("Engine executing ACTION: name=%q actionCount=%v totActCount=%v t=%vs (%vs)", actionKey, e.RunStats.ActionCounter, e.CumulativeStats.ActionCounter, e.RunStats.getLifetimeSeconds(), e.getRuntimeSeconds())
-
-	action := actions[actionKey]
-	st := time.Now()
 
 	logEntry := &LogEntry{
 		StartTime:       st,
@@ -167,7 +172,8 @@ func (actionOpts ActionOpts) getActionControlOpts() map[string]string {
 // Action is a unit of functionality that can be executed by
 // the engine
 type Action struct {
-	f func(eng *Engine, opts map[string]string, l *LogEntry) (out map[string]string, err error)
+	ReadOnlyOkay bool
+	f            func(eng *Engine, opts map[string]string, l *LogEntry) (out map[string]string, err error)
 }
 
 // ActionKey refers to an action that can be executed by the engine
@@ -175,6 +181,7 @@ type ActionKey string
 
 var actions = map[ActionKey]Action{
 	SnapshotRootDirActionKey: {
+		ReadOnlyOkay: false,
 		f: func(e *Engine, opts map[string]string, l *LogEntry) (out map[string]string, err error) {
 
 			log.Printf("Creating snapshot of root directory %s", e.FileWriter.LocalDataDir)
@@ -193,6 +200,7 @@ var actions = map[ActionKey]Action{
 		},
 	},
 	RestoreSnapshotActionKey: {
+		ReadOnlyOkay: true,
 		f: func(e *Engine, opts map[string]string, l *LogEntry) (out map[string]string, err error) {
 			snapID, err := e.getSnapIDOptOrRandLive(opts)
 			if err != nil {
@@ -209,6 +217,7 @@ var actions = map[ActionKey]Action{
 		},
 	},
 	DeleteRandomSnapshotActionKey: {
+		ReadOnlyOkay: false,
 		f: func(e *Engine, opts map[string]string, l *LogEntry) (out map[string]string, err error) {
 			snapID, err := e.getSnapIDOptOrRandLive(opts)
 			if err != nil {
@@ -225,6 +234,7 @@ var actions = map[ActionKey]Action{
 		},
 	},
 	WriteRandomFilesActionKey: {
+		ReadOnlyOkay: true,
 		f: func(e *Engine, opts map[string]string, l *LogEntry) (out map[string]string, err error) {
 
 			// Directory depth
@@ -297,6 +307,7 @@ var actions = map[ActionKey]Action{
 		},
 	},
 	DeleteRandomSubdirectoryActionKey: {
+		ReadOnlyOkay: true,
 		f: func(e *Engine, opts map[string]string, l *LogEntry) (out map[string]string, err error) {
 			maxDirDepth := getOptAsIntOrDefault(MaxDirDepthField, opts, defaultMaxDirDepth)
 			if maxDirDepth <= 0 {
@@ -318,6 +329,7 @@ var actions = map[ActionKey]Action{
 		},
 	},
 	DeleteDirectoryContentsActionKey: {
+		ReadOnlyOkay: true,
 		f: func(e *Engine, opts map[string]string, l *LogEntry) (out map[string]string, err error) {
 			maxDirDepth := getOptAsIntOrDefault(MaxDirDepthField, opts, defaultMaxDirDepth)
 			dirDepth := rand.Intn(maxDirDepth + 1)
@@ -337,6 +349,7 @@ var actions = map[ActionKey]Action{
 		},
 	},
 	RestoreIntoDataDirectoryActionKey: {
+		ReadOnlyOkay: true,
 		f: func(e *Engine, opts map[string]string, l *LogEntry) (out map[string]string, err error) {
 			snapIDs := e.Checker.GetLiveSnapIDs()
 			if len(snapIDs) == 0 {
