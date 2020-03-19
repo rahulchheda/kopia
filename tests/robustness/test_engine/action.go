@@ -344,19 +344,17 @@ var actions = map[ActionKey]Action{
 	},
 	RestoreIntoDataDirectoryActionKey: {
 		f: func(e *Engine, opts map[string]string, l *LogEntry) (out map[string]string, err error) {
-			snapIDs := e.Checker.GetLiveSnapIDs()
-			if len(snapIDs) == 0 {
-				return nil, ErrNoOp
+			snapID, err := e.getSnapIDOptOrRandLive(opts)
+			if err != nil {
+				return nil, err
 			}
 
-			randSnapID := snapIDs[rand.Intn(len(snapIDs))]
+			log.Printf("Restoring snap ID %v into data directory\n", snapID)
 
-			log.Printf("Restoring snap ID %v into data directory\n", randSnapID)
-
-			setLogEntryCmdOpts(l, map[string]string{"snapID": randSnapID})
+			setLogEntryCmdOpts(l, map[string]string{"snapID": snapID})
 
 			b := &bytes.Buffer{}
-			err = e.Checker.RestoreSnapshotToPath(context.Background(), randSnapID, e.FileWriter.LocalDataDir, b)
+			err = e.Checker.RestoreSnapshotToPath(context.Background(), snapID, e.FileWriter.LocalDataDir, b)
 			if err != nil {
 				log.Print(b.String())
 				return nil, err
@@ -490,6 +488,8 @@ var tempSnapIDBlacklist = map[string]struct{}{
 	"7c4b89f4bc95c6e35ad40cff2847cb7d": struct{}{},
 	"835da4a8ec20d91a3f9c3a5e0bccd140": struct{}{},
 	"c1ec030e169569ba288333d8a4086622": struct{}{},
+	"19629ec3aec2c60d0aa94e45fc9e7401": struct{}{},
+	"ff8446c46877b5c34f26607ebddaf460": struct{}{},
 }
 
 func isInBlacklist(snapID string) bool {
