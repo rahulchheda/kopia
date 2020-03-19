@@ -357,19 +357,17 @@ var actions = map[ActionKey]Action{
 	RestoreIntoDataDirectoryActionKey: {
 		ReadOnlyOkay: true,
 		f: func(e *Engine, opts map[string]string, l *LogEntry) (out map[string]string, err error) {
-			snapIDs := e.Checker.GetLiveSnapIDs()
-			if len(snapIDs) == 0 {
-				return nil, ErrNoOp
+			snapID, err := e.getSnapIDOptOrRandLive(opts)
+			if err != nil {
+				return nil, err
 			}
 
-			randSnapID := snapIDs[rand.Intn(len(snapIDs))]
+			log.Printf("Restoring snap ID %v into data directory\n", snapID)
 
-			log.Printf("Restoring snap ID %v into data directory\n", randSnapID)
-
-			setLogEntryCmdOpts(l, map[string]string{"snapID": randSnapID})
+			setLogEntryCmdOpts(l, map[string]string{"snapID": snapID})
 
 			b := &bytes.Buffer{}
-			err = e.Checker.RestoreSnapshotToPath(context.Background(), randSnapID, e.FileWriter.LocalDataDir, b)
+			err = e.Checker.RestoreSnapshotToPath(context.Background(), snapID, e.FileWriter.LocalDataDir, b)
 			if err != nil {
 				log.Print(b.String())
 				return nil, err
@@ -503,6 +501,21 @@ var tempSnapIDBlacklist = map[string]struct{}{
 	"7c4b89f4bc95c6e35ad40cff2847cb7d": struct{}{},
 	"835da4a8ec20d91a3f9c3a5e0bccd140": struct{}{},
 	"c1ec030e169569ba288333d8a4086622": struct{}{},
+	"19629ec3aec2c60d0aa94e45fc9e7401": struct{}{},
+	"ff8446c46877b5c34f26607ebddaf460": struct{}{},
+	"e88dd444d978533b3ad125b31eb13d20": struct{}{},
+	"47b4c5ded4163f5bbd5adf7a80503751": struct{}{},
+	"3c7412546cf93ec6c4c180c4976b1ed7": struct{}{},
+	"f5daa403ac5f4a20b39e773372cd5a3d": struct{}{},
+	"0e78e4546383f98f8a432625695f8f66": struct{}{},
+	"f2f076997068ed3cd87fda1ec188416e": struct{}{},
+	"b376859ab10d8d76a392c945c6131b06": struct{}{},
+	"2dd89bf90a8a70bfd0f6ec021326127c": struct{}{},
+	"4a7b8e8d72edd4176cf28362f1fd8a82": struct{}{},
+	"f58e054da630d2afbce79de6b2970f42": struct{}{},
+	"07fc1fc12bc9592b558eb9681dc7327e": struct{}{},
+	"37a0fe2a4b15059f1fa4689666ce45cb": struct{}{},
+	"22a367e1722873cb4f2e59ee20b9d20a": struct{}{},
 }
 
 func isInBlacklist(snapID string) bool {
