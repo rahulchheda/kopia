@@ -204,7 +204,13 @@ var actions = map[ActionKey]Action{
 			log.Printf("Restoring snapshot %s", snapID)
 
 			ctx := context.Background()
-			err = e.Checker.RestoreSnapshot(ctx, snapID, nil)
+			b := &bytes.Buffer{}
+
+			err = e.Checker.RestoreSnapshot(ctx, snapID, b)
+			if err != nil {
+				log.Print(b.String())
+			}
+
 			return nil, err
 		},
 	},
@@ -456,9 +462,48 @@ func errIsNotEnoughSpace(err error) bool {
 	return err == ErrCannotPerformIO || strings.Contains(err.Error(), noSpaceOnDeviceMatchStr)
 }
 
+// TODO: Remove this debug code
+// when a better blacklist solution
+// is designed and implemented
+
+// ============================
+// Previous method:
+
+// func (e *Engine) getSnapIDOptOrRandLive(opts map[string]string) (snapID string, err error) {
+// 	snapID = opts[SnapshotIDField]
+// 	if snapID != "" {
+// 		return snapID, nil
+// 	}
+
+// 	snapIDList := e.Checker.GetLiveSnapIDs()
+// 	if len(snapIDList) == 0 {
+// 		return "", ErrNoOp
+// 	}
+
+// 	return snapIDList[rand.Intn(len(snapIDList))], nil
+// }
+
+// ============================
+// New contrived method:
+
+var tempSnapIDBlacklist = map[string]struct{}{
+	"7c4b89f4bc95c6e35ad40cff2847cb7d": struct{}{},
+	"835da4a8ec20d91a3f9c3a5e0bccd140": struct{}{},
+	"c1ec030e169569ba288333d8a4086622": struct{}{},
+}
+
+func isInBlacklist(snapID string) bool {
+	_, ok := tempSnapIDBlacklist[snapID]
+	return ok
+}
+
 func (e *Engine) getSnapIDOptOrRandLive(opts map[string]string) (snapID string, err error) {
 	snapID = opts[SnapshotIDField]
 	if snapID != "" {
+		if isInBlacklist(snapID) {
+			return "", ErrNoOp
+		}
+
 		return snapID, nil
 	}
 
@@ -467,5 +512,10 @@ func (e *Engine) getSnapIDOptOrRandLive(opts map[string]string) (snapID string, 
 		return "", ErrNoOp
 	}
 
-	return snapIDList[rand.Intn(len(snapIDList))], nil
+	randSnapID := snapIDList[rand.Intn(len(snapIDList))]
+	if isInBlacklist(randSnapID) {
+		return "", ErrNoOp
+	}
+
+	return randSnapID, nil
 }
