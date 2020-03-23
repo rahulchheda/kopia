@@ -1,6 +1,6 @@
 //+build utils
 
-package robustness
+package utils
 
 import (
 	"encoding/json"
@@ -21,7 +21,7 @@ func TestRobustnessStatusLogJSON(t *testing.T) {
 	b, err := json.MarshalIndent(eng.EngineLog, "", "   ")
 	testenv.AssertNoError(t, err)
 
-	fmt.Println(b)
+	fmt.Println(string(b))
 }
 
 func TestRobustnessStatusStats(t *testing.T) {

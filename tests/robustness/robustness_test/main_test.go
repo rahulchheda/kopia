@@ -44,9 +44,20 @@ func TestMain(m *testing.M) {
 	dataRepoPath := path.Join(*repoPathPrefix, dataSubPath)
 	metadataRepoPath := path.Join(*repoPathPrefix, metadataSubPath)
 
+	// Try to reconcile metadata if it is out of sync with the repo state
+	eng.Checker.RecoveryMode = true
+
+	// Initialize the engine, connecting it to the repositories
 	err = eng.Init(context.Background(), dataRepoPath, metadataRepoPath)
 	if err != nil {
 		fmt.Printf("error initializing engine for S3: %s\n", err.Error())
+		os.Exit(1)
+	}
+
+	// Restore a random snapshot into the data directory
+	_, err = eng.ExecAction(engine.RestoreIntoDataDirectoryActionKey, nil)
+	if err != nil && err != engine.ErrNoOp {
+		fmt.Printf("error restoring into the data directory: %s\n", err.Error())
 		os.Exit(1)
 	}
 
