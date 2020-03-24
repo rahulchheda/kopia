@@ -45,8 +45,8 @@ func benchmarkCacheSize(contentCacheSizeMB, metadataCacheSizeMB, dedupPcnt int, 
 		b.Fatalf("error initializing engine for S3: %s\n", err)
 	}
 
-	fileSize := 4096
-	numFiles := 10000
+	fileSize := 4 * 1024 * 1024
+	numFiles := 1000
 
 	wrOpts := map[string]string{
 		engine.MaxDirDepthField:         strconv.Itoa(1),
@@ -79,5 +79,10 @@ func benchmarkCacheSize(contentCacheSizeMB, metadataCacheSizeMB, dedupPcnt int, 
 		if err != nil {
 			b.Fatalf("snapshot error: %s", err)
 		}
+	}
+
+	_, _, err = eng.TestRepo.Run("cache", "clear")
+	if err != nil {
+		b.Fatalf("error clearing cache: %s", err)
 	}
 }
