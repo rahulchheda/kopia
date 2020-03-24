@@ -34,9 +34,11 @@ func TestMain(m *testing.M) {
 	eng, err = engine.NewEngine("")
 	switch {
 	case err == kopiarunner.ErrExeVariableNotSet:
+		eng.Cleanup() //nolint:errcheck
 		fmt.Println("Skipping robustness tests if KOPIA_EXE is not set")
 		os.Exit(0)
 	case err != nil:
+		eng.Cleanup() //nolint:errcheck
 		fmt.Printf("error on engine creation: %s\n", err.Error())
 		os.Exit(1)
 	}
@@ -50,6 +52,7 @@ func TestMain(m *testing.M) {
 	// Initialize the engine, connecting it to the repositories
 	err = eng.Init(context.Background(), dataRepoPath, metadataRepoPath)
 	if err != nil {
+		eng.Cleanup() //nolint:errcheck
 		fmt.Printf("error initializing engine for S3: %s\n", err.Error())
 		os.Exit(1)
 	}
@@ -57,6 +60,7 @@ func TestMain(m *testing.M) {
 	// Restore a random snapshot into the data directory
 	_, err = eng.ExecAction(engine.RestoreIntoDataDirectoryActionKey, nil)
 	if err != nil && err != engine.ErrNoOp {
+		eng.Cleanup() //nolint:errcheck
 		fmt.Printf("error restoring into the data directory: %s\n", err.Error())
 		os.Exit(1)
 	}
