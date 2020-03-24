@@ -39,7 +39,7 @@ func NewChecker(snapIssuer snap.Snapshotter, snapmetaStore snapmeta.Store, valid
 		snapshotIssuer:        snapIssuer,
 		snapshotMetadataStore: snapmetaStore,
 		validator:             validator,
-		RecoveryMode:          true,
+		RecoveryMode:          false,
 	}, nil
 }
 

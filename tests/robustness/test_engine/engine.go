@@ -263,15 +263,5 @@ func (e *Engine) init(ctx context.Context) error {
 		return err
 	}
 
-	err = e.Checker.VerifySnapshotMetadata()
-	if err != nil {
-		return err
-	}
-
-	_, err = e.ExecAction(RestoreIntoDataDirectoryActionKey, nil)
-	if err != nil && err == ErrNoOp {
-		err = nil
-	}
-
-	return err
+	return e.Checker.VerifySnapshotMetadata()
 }

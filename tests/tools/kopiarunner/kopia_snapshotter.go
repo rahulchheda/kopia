@@ -104,6 +104,12 @@ func (ks *KopiaSnapshotter) DeleteSnapshot(snapID string) (err error) {
 	return err
 }
 
+// RunGC implements the Snapshotter interface, issues a gc command to the kopia repo
+func (ks *KopiaSnapshotter) RunGC() (err error) {
+	_, _, err = ks.Runner.Run("snapshot", "gc")
+	return err
+}
+
 // ListSnapshots implements the Snapshotter interface, issues a kopia snapshot
 // list and parses the snapshot IDs
 func (ks *KopiaSnapshotter) ListSnapshots() ([]string, error) {
