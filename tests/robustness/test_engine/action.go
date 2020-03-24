@@ -149,6 +149,7 @@ const (
 	DeleteRandomSubdirectoryActionKey ActionKey = "delete-random-subdirectory"
 	DeleteDirectoryContentsActionKey  ActionKey = "delete-files"
 	RestoreIntoDataDirectoryActionKey ActionKey = "restore-into-data-dir"
+	GCActionKey                       ActionKey = "run-gc"
 )
 
 // ActionOpts is a structure that designates the options for
@@ -228,6 +229,11 @@ var actions = map[ActionKey]Action{
 			ctx := context.Background()
 			err = e.Checker.DeleteSnapshot(ctx, snapID)
 			return nil, err
+		},
+	},
+	GCActionKey: {
+		f: func(e *Engine, opts map[string]string, l *LogEntry) (out map[string]string, err error) {
+			return nil, e.TestRepo.RunGC()
 		},
 	},
 	WriteRandomFilesActionKey: {
