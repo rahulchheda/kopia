@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	engine "github.com/kopia/kopia/tests/robustness/test_engine"
+	"github.com/kopia/kopia/tests/robustness/engine"
 	"github.com/kopia/kopia/tests/tools/kopiarunner"
 )
 
