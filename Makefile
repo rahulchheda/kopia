@@ -196,7 +196,7 @@ robustness-status:
 
 endif
 
-robustness-tool-tests: dist-binary fio-docker-build
+robustness-tool-tests: dist-binary
 	KOPIA_EXE=$(KOPIA_INTEGRATION_EXE) \
 	FIO_DOCKER_IMAGE=$(FIO_DOCKER_TAG) \
 	FIO_USE_DOCKER=1 \
