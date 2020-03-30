@@ -20,10 +20,10 @@ import (
 )
 
 var (
-	fsMetadataRepoPath = filepath.Join("/tmp", "metadata-repo")
-	s3MetadataRepoPath = filepath.Join("some/path", "metadata-repo")
-	fsDataRepoPath     = filepath.Join("/tmp", "data-repo")
-	s3DataRepoPath     = filepath.Join("some/path", "data-repo")
+	fsMetadataRepoPath = filepath.Join("/tmp/engine/unit-tests", "metadata-repo")
+	s3MetadataRepoPath = filepath.Join("engine/unit-tests", "metadata-repo")
+	fsDataRepoPath     = filepath.Join("/tmp/engine/unit-tests", "data-repo")
+	s3DataRepoPath     = filepath.Join("engine/unit-tests", "data-repo")
 )
 
 func TestEngineWritefilesBasicFS(t *testing.T) {

@@ -149,9 +149,16 @@ func TestDeleteFilesAtDepth(t *testing.T) {
 		expErr      bool
 	}{
 		{
-			name:        "Test write files at depth 1, delete a directory at depth 0",
+			name:        "Test write files at depth 1, delete a directory at depth 0 (expect error - can't delete root directory)",
 			wrDepth:     1,
 			delDepth:    0,
+			expDirCount: 1,
+			expErr:      true,
+		},
+		{
+			name:        "Test write files at depth 1, delete a directory at depth 1",
+			wrDepth:     1,
+			delDepth:    1,
 			expDirCount: 0,
 			expErr:      false,
 		},
@@ -159,15 +166,15 @@ func TestDeleteFilesAtDepth(t *testing.T) {
 			name:        "Test write files at depth 10, delete a directory at depth 9",
 			wrDepth:     10,
 			delDepth:    9,
-			expDirCount: 9,
+			expDirCount: 8,
 			expErr:      false,
 		},
 		{
-			name:        "Test write files at depth 10, delete a directory at depth 10 (expect error because only files are at depth 10)",
+			name:        "Test write files at depth 10, delete a directory at depth 10",
 			wrDepth:     10,
 			delDepth:    10,
-			expDirCount: 10,
-			expErr:      true,
+			expDirCount: 9,
+			expErr:      false,
 		},
 		{
 			name:        "Test write files at depth 1, delete a directory at depth 11 (expect error)",
