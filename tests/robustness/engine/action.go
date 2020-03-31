@@ -321,9 +321,9 @@ var actions = map[ActionKey]Action{
 			setLogEntryCmdOpts(l, map[string]string{"dirDepth": strconv.Itoa(dirDepth)})
 
 			err = e.FileWriter.DeleteDirAtDepth("", dirDepth)
-			if err != nil && err == fio.ErrNoDirFound {
+			if err == fio.ErrNoDirFound {
 				log.Print(err)
-				return nil, nil
+				return nil, ErrNoOp
 			}
 
 			return nil, err
@@ -344,6 +344,10 @@ var actions = map[ActionKey]Action{
 			})
 
 			err = e.FileWriter.DeleteContentsAtDepth("", dirDepth, pcnt)
+			if err == fio.ErrNoDirFound {
+				log.Print(err)
+				return nil, ErrNoOp
+			}
 
 			return nil, err
 		},

@@ -66,11 +66,11 @@ func TestKopiaRunner(t *testing.T) {
 			t.Fatalf("Expected NewRunner error: %v, got %v", tt.expNewRunnerErr, err)
 		}
 
-		defer runner.Cleanup()
-
 		if err != nil {
 			continue
 		}
+
+		defer runner.Cleanup()
 
 		_, _, err = runner.Run(tt.args...)
 		if (err != nil) != tt.expRunErr {
