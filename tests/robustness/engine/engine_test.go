@@ -3,7 +3,10 @@ package engine
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"math"
 	"os"
@@ -17,13 +20,22 @@ import (
 	"github.com/kopia/kopia/tests/tools/fio"
 	"github.com/kopia/kopia/tests/tools/fswalker"
 	"github.com/kopia/kopia/tests/tools/kopiarunner"
+	"github.com/minio/minio-go/v6"
+	"github.com/minio/minio-go/v6/pkg/credentials"
 )
 
 var (
-	fsMetadataRepoPath = filepath.Join("/tmp/engine/unit-tests", "metadata-repo")
-	s3MetadataRepoPath = filepath.Join("engine/unit-tests", "metadata-repo")
-	fsDataRepoPath     = filepath.Join("/tmp/engine/unit-tests", "data-repo")
-	s3DataRepoPath     = filepath.Join("engine/unit-tests", "data-repo")
+	repoBaseDirName    = "engine"
+	fsBasePath         = "/tmp"
+	s3BasePath         = ""
+	dataRepoPath       = "unit-tests/data-repo"
+	metadataRepoPath   = "unit-tests/metadata-repo"
+	fsRepoBaseDirPath  = filepath.Join(fsBasePath, repoBaseDirName)
+	s3RepoBaseDirPath  = filepath.Join(s3BasePath, repoBaseDirName)
+	fsMetadataRepoPath = filepath.Join(fsRepoBaseDirPath, metadataRepoPath)
+	s3MetadataRepoPath = filepath.Join(s3RepoBaseDirPath, metadataRepoPath)
+	fsDataRepoPath     = filepath.Join(fsRepoBaseDirPath, dataRepoPath)
+	s3DataRepoPath     = filepath.Join(s3RepoBaseDirPath, dataRepoPath)
 )
 
 func TestEngineWritefilesBasicFS(t *testing.T) {
@@ -37,13 +49,15 @@ func TestEngineWritefilesBasicFS(t *testing.T) {
 	defer func() {
 		cleanupErr := eng.Cleanup()
 		testenv.AssertNoError(t, cleanupErr)
+
+		os.RemoveAll(fsRepoBaseDirPath) //nolint:errcheck
 	}()
 
 	ctx := context.TODO()
 	err = eng.InitFilesystem(ctx, fsDataRepoPath, fsMetadataRepoPath)
 	testenv.AssertNoError(t, err)
 
-	fileSize := int64(256 * 1024 * 1024)
+	fileSize := int64(256 * 1024)
 	numFiles := 10
 
 	fioOpts := fio.Options{}.WithFileSize(fileSize).WithNumFiles(numFiles)
@@ -65,7 +79,66 @@ func TestEngineWritefilesBasicFS(t *testing.T) {
 	}
 }
 
+func randomString(n int) string {
+	b := make([]byte, n)
+	io.ReadFull(rand.Reader, b) //nolint:errcheck
+
+	return hex.EncodeToString(b)
+}
+
+func makeTempS3Bucket(t *testing.T) (bucketName string, cleanupCB func()) {
+	endpoint := "s3.amazonaws.com"
+	accessKeyID := os.Getenv("AWS_ACCESS_KEY_ID")
+	secretAccessKey := os.Getenv("AWS_SECRET_ACCESS_KEY")
+	sessionToken := os.Getenv("AWS_SESSION_TOKEN")
+	secure := true
+	region := ""
+	cli, err := minio.NewWithCredentials(endpoint, credentials.NewStaticV4(accessKeyID, secretAccessKey, sessionToken), secure, region)
+	testenv.AssertNoError(t, err)
+
+	bucketName = fmt.Sprintf("engine-unit-tests-%s", randomString(4))
+	err = cli.MakeBucket(bucketName, "")
+	testenv.AssertNoError(t, err)
+
+	return bucketName, func() {
+
+		objNameCh := make(chan string)
+		errCh := cli.RemoveObjects(bucketName, objNameCh)
+		go func() {
+			for removeErr := range errCh {
+				t.Errorf("error removing key %s from bucket: %s", removeErr.ObjectName, removeErr.Err)
+			}
+		}()
+
+		recursive := true
+		doneCh := make(chan struct{})
+		defer close(doneCh)
+
+		for obj := range cli.ListObjects(bucketName, "", recursive, doneCh) {
+			objNameCh <- obj.Key
+		}
+
+		close(objNameCh)
+
+		retries := 10
+		retryPeriod := 1 * time.Second
+		var err error
+
+		for retry := 0; retry < retries; retry++ {
+			time.Sleep(retryPeriod)
+			err = cli.RemoveBucket(bucketName)
+			if err == nil {
+				break
+			}
+		}
+		testenv.AssertNoError(t, err)
+	}
+}
+
 func TestWriteFilesBasicS3(t *testing.T) {
+	bucketName, cleanupCB := makeTempS3Bucket(t)
+	defer cleanupCB()
+
 	eng, err := NewEngine("")
 	if err == kopiarunner.ErrExeVariableNotSet {
 		t.Skip(err)
@@ -79,10 +152,10 @@ func TestWriteFilesBasicS3(t *testing.T) {
 	}()
 
 	ctx := context.TODO()
-	err = eng.InitS3(ctx, s3DataRepoPath, s3MetadataRepoPath)
+	err = eng.InitS3(ctx, bucketName, s3DataRepoPath, s3MetadataRepoPath)
 	testenv.AssertNoError(t, err)
 
-	fileSize := int64(256 * 1024 * 1024)
+	fileSize := int64(256 * 1024)
 	numFiles := 10
 
 	fioOpts := fio.Options{}.WithFileSize(fileSize).WithNumFiles(numFiles)
@@ -105,6 +178,9 @@ func TestWriteFilesBasicS3(t *testing.T) {
 }
 
 func TestDeleteSnapshotS3(t *testing.T) {
+	bucketName, cleanupCB := makeTempS3Bucket(t)
+	defer cleanupCB()
+
 	eng, err := NewEngine("")
 	if err == kopiarunner.ErrExeVariableNotSet {
 		t.Skip(err)
@@ -118,10 +194,10 @@ func TestDeleteSnapshotS3(t *testing.T) {
 	}()
 
 	ctx := context.TODO()
-	err = eng.InitS3(ctx, s3DataRepoPath, s3MetadataRepoPath)
+	err = eng.InitS3(ctx, bucketName, s3DataRepoPath, s3MetadataRepoPath)
 	testenv.AssertNoError(t, err)
 
-	fileSize := int64(256 * 1024 * 1024)
+	fileSize := int64(256 * 1024)
 	numFiles := 10
 
 	fioOpts := fio.Options{}.WithFileSize(fileSize).WithNumFiles(numFiles)
@@ -145,6 +221,9 @@ func TestDeleteSnapshotS3(t *testing.T) {
 }
 
 func TestSnapshotVerificationFail(t *testing.T) {
+	bucketName, cleanupCB := makeTempS3Bucket(t)
+	defer cleanupCB()
+
 	eng, err := NewEngine("")
 	if err == kopiarunner.ErrExeVariableNotSet {
 		t.Skip(err)
@@ -158,11 +237,11 @@ func TestSnapshotVerificationFail(t *testing.T) {
 	}()
 
 	ctx := context.TODO()
-	err = eng.InitS3(ctx, s3DataRepoPath, s3MetadataRepoPath)
+	err = eng.InitS3(ctx, bucketName, s3DataRepoPath, s3MetadataRepoPath)
 	testenv.AssertNoError(t, err)
 
 	// Perform writes
-	fileSize := int64(256 * 1024 * 1024)
+	fileSize := int64(256 * 1024)
 	numFiles := 10
 	fioOpt := fio.Options{}.WithFileSize(fileSize).WithNumFiles(numFiles)
 
@@ -178,7 +257,7 @@ func TestSnapshotVerificationFail(t *testing.T) {
 	testenv.AssertNoError(t, err)
 
 	// Do additional writes, writing 1 extra byte than before
-	err = eng.FileWriter.WriteFiles("", fioOpt.WithIOSize(fileSize+1))
+	err = eng.FileWriter.WriteFiles("", fioOpt.WithFileSize(fileSize+1))
 	testenv.AssertNoError(t, err)
 
 	// Take a second snapshot
@@ -230,7 +309,7 @@ func TestDataPersistency(t *testing.T) {
 	testenv.AssertNoError(t, err)
 
 	// Perform writes
-	fileSize := int64(256 * 1024 * 1024)
+	fileSize := int64(256 * 1024)
 	numFiles := 10
 
 	fioOpt := fio.Options{}.WithFileSize(fileSize).WithNumFiles(numFiles)
@@ -261,6 +340,9 @@ func TestDataPersistency(t *testing.T) {
 	// and the data will be chosen to be restored to this engine's DataDir
 	// as a starting point.
 	err = eng2.InitFilesystem(ctx, dataRepoPath, metadataRepoPath)
+	testenv.AssertNoError(t, err)
+
+	err = eng2.Checker.RestoreSnapshotToPath(ctx, snapID, eng2.FileWriter.LocalDataDir, os.Stdout)
 	testenv.AssertNoError(t, err)
 
 	// Compare the data directory of the second engine with the fingerprint
@@ -374,6 +456,8 @@ func TestActionsFilesystem(t *testing.T) {
 	defer func() {
 		cleanupErr := eng.Cleanup()
 		testenv.AssertNoError(t, cleanupErr)
+
+		os.RemoveAll(fsRepoBaseDirPath) //nolint:errcheck
 	}()
 
 	ctx := context.TODO()
@@ -397,11 +481,16 @@ func TestActionsFilesystem(t *testing.T) {
 	numActions := 10
 	for loop := 0; loop < numActions; loop++ {
 		err := eng.RandomAction(actionOpts)
-		testenv.AssertNoError(t, err)
+		if !(err == nil || err == ErrNoOp) {
+			t.Error("Hit error", err)
+		}
 	}
 }
 
 func TestActionsS3(t *testing.T) {
+	bucketName, cleanupCB := makeTempS3Bucket(t)
+	defer cleanupCB()
+
 	eng, err := NewEngine("")
 	if err == kopiarunner.ErrExeVariableNotSet {
 		t.Skip(err)
@@ -415,7 +504,7 @@ func TestActionsS3(t *testing.T) {
 	}()
 
 	ctx := context.TODO()
-	err = eng.InitS3(ctx, s3DataRepoPath, s3MetadataRepoPath)
+	err = eng.InitS3(ctx, bucketName, s3DataRepoPath, s3MetadataRepoPath)
 	testenv.AssertNoError(t, err)
 
 	actionOpts := ActionOpts{
@@ -435,7 +524,9 @@ func TestActionsS3(t *testing.T) {
 	numActions := 10
 	for loop := 0; loop < numActions; loop++ {
 		err := eng.RandomAction(actionOpts)
-		testenv.AssertNoError(t, err)
+		if !(err == nil || err == ErrNoOp) {
+			t.Error("Hit error", err)
+		}
 	}
 }
 
@@ -457,6 +548,8 @@ func TestIOLimitPerWriteAction(t *testing.T) {
 	defer func() {
 		cleanupErr := eng.Cleanup()
 		testenv.AssertNoError(t, cleanupErr)
+
+		os.RemoveAll(fsRepoBaseDirPath) //nolint:errcheck
 	}()
 
 	ctx := context.TODO()

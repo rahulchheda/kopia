@@ -193,7 +193,8 @@ func (e *Engine) cleanup() {
 func (e *Engine) Init(ctx context.Context, testRepoPath, metaRepoPath string) error {
 	switch {
 	case os.Getenv(S3BucketNameEnvKey) != "":
-		return e.InitS3(ctx, testRepoPath, metaRepoPath)
+		bucketName := os.Getenv(S3BucketNameEnvKey)
+		return e.InitS3(ctx, bucketName, testRepoPath, metaRepoPath)
 	default:
 		return e.InitFilesystem(ctx, testRepoPath, metaRepoPath)
 	}
@@ -203,12 +204,7 @@ func (e *Engine) Init(ctx context.Context, testRepoPath, metaRepoPath string) er
 // is successful, the engine is populated with the metadata associated with the
 // snapshot in that repo. A new repo will be created if one does not already
 // exist.
-func (e *Engine) InitS3(ctx context.Context, testRepoPath, metaRepoPath string) error {
-	bucketName := os.Getenv(S3BucketNameEnvKey)
-	if bucketName == "" {
-		return ErrS3BucketNameEnvUnset
-	}
-
+func (e *Engine) InitS3(ctx context.Context, bucketName string, testRepoPath, metaRepoPath string) error {
 	err := e.MetaStore.ConnectOrCreateS3(bucketName, metaRepoPath)
 	if err != nil {
 		return err
