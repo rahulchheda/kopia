@@ -20,7 +20,7 @@ func (e *Engine) Stats() string {
 	b := &strings.Builder{}
 
 	fmt.Fprintln(b, "==================================")
-	fmt.Fprintln(b, "Repo info")
+	fmt.Fprintln(b, "Build Info")
 	fmt.Fprintln(b, "==================================")
 	fmt.Fprintf(b, "  Repo build time:      %25v\n", repoBuildTime)
 	fmt.Fprintf(b, "  Repo git revision:    %25v\n", repoGitRevision)
