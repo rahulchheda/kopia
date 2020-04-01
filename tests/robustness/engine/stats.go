@@ -6,10 +6,30 @@ import (
 	"time"
 )
 
+var (
+	repoBuildTime   string
+	repoGitRevision string
+	repoGitBranch   string
+	testBuildTime   string
+	testGitRevision string
+	testGitBranch   string
+)
+
 // Stats prints the engine stats, cumulative and from the current run
 func (e *Engine) Stats() string {
 	b := &strings.Builder{}
 
+	fmt.Fprintln(b, "==================================")
+	fmt.Fprintln(b, "Repo info")
+	fmt.Fprintln(b, "==================================")
+	fmt.Fprintf(b, "  Repo build time:      %10vs\n", repoBuildTime)
+	fmt.Fprintf(b, "  Repo git revision:    %10vs\n", repoGitRevision)
+	fmt.Fprintf(b, "  Repo git branch:      %10vs\n", repoGitBranch)
+	fmt.Fprintln(b, "")
+	fmt.Fprintf(b, "  Engine build time:    %10vs\n", testBuildTime)
+	fmt.Fprintf(b, "  Engine git revision:  %10vs\n", testGitRevision)
+	fmt.Fprintf(b, "  Engine git branch:    %10vs\n", testGitBranch)
+	fmt.Fprintln(b, "")
 	fmt.Fprintln(b, "==================================")
 	fmt.Fprintln(b, "Engine Action Summary (Cumulative)")
 	fmt.Fprintln(b, "==================================")
