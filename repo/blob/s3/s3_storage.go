@@ -4,10 +4,12 @@ package s3
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
+	"strings"
 
 	"github.com/efarrer/iothrottler"
 	minio "github.com/minio/minio-go/v6"
@@ -89,6 +91,11 @@ func isRetriableError(err error) bool {
 		return me.StatusCode >= 500
 	}
 
+	if strings.Contains(strings.ToLower(err.Error()), "http") {
+		// retry http transport errors, unfortunately no other way to detect them
+		return true
+	}
+
 	return false
 }
 
@@ -106,31 +113,35 @@ func translateError(err error) error {
 	return err
 }
 
-func (s *s3Storage) PutBlob(ctx context.Context, b blob.ID, data []byte) error {
-	throttled, err := s.uploadThrottler.AddReader(ioutil.NopCloser(bytes.NewReader(data)))
-	if err != nil {
-		return err
-	}
+func (s *s3Storage) PutBlob(ctx context.Context, b blob.ID, data blob.Bytes) error {
+	return translateError(retry.WithExponentialBackoffNoValue(ctx, fmt.Sprintf("PutBlob(%v)", b), func() error {
+		throttled, err := s.uploadThrottler.AddReader(ioutil.NopCloser(data.Reader()))
+		if err != nil {
+			return err
+		}
 
-	progressCallback := blob.ProgressCallback(ctx)
-	if progressCallback != nil {
-		progressCallback(string(b), 0, int64(len(data)))
-		defer progressCallback(string(b), int64(len(data)), int64(len(data)))
-	}
+		combinedLength := data.Length()
 
-	n, err := s.cli.PutObject(s.BucketName, s.getObjectNameString(b), throttled, -1, minio.PutObjectOptions{
-		ContentType: "application/x-kopia",
-		Progress:    newProgressReader(progressCallback, string(b), int64(len(data))),
-	})
+		progressCallback := blob.ProgressCallback(ctx)
+		if progressCallback != nil {
+			progressCallback(string(b), 0, int64(combinedLength))
+			defer progressCallback(string(b), int64(combinedLength), int64(combinedLength))
+		}
 
-	if err == io.EOF && n == 0 {
-		// special case empty stream
-		_, err = s.cli.PutObject(s.BucketName, s.getObjectNameString(b), bytes.NewBuffer(nil), 0, minio.PutObjectOptions{
+		n, err := s.cli.PutObject(s.BucketName, s.getObjectNameString(b), throttled, int64(combinedLength), minio.PutObjectOptions{
 			ContentType: "application/x-kopia",
+			Progress:    newProgressReader(progressCallback, string(b), int64(combinedLength)),
 		})
-	}
 
-	return translateError(err)
+		if err == io.EOF && n == 0 {
+			// special case empty stream
+			_, err = s.cli.PutObject(s.BucketName, s.getObjectNameString(b), bytes.NewBuffer(nil), 0, minio.PutObjectOptions{
+				ContentType: "application/x-kopia",
+			})
+		}
+
+		return err
+	}, isRetriableError))
 }
 
 func (s *s3Storage) DeleteBlob(ctx context.Context, b blob.ID) error {
@@ -217,6 +228,12 @@ func toBandwidth(bytesPerSecond int) iothrottler.Bandwidth {
 	return iothrottler.Bandwidth(bytesPerSecond) * iothrottler.BytesPerSecond
 }
 
+func getCustomTransport(insecureSkipVerify bool) (transport *http.Transport) {
+	// nolint:gosec
+	customTransport := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: insecureSkipVerify}}
+	return customTransport
+}
+
 // New creates new S3-backed storage with specified options:
 //
 // - the 'BucketName' field is required and all other parameters are optional.
@@ -228,6 +245,10 @@ func New(ctx context.Context, opt *Options) (blob.Storage, error) {
 	cli, err := minio.NewWithCredentials(opt.Endpoint, credentials.NewStaticV4(opt.AccessKeyID, opt.SecretAccessKey, opt.SessionToken), !opt.DoNotUseTLS, opt.Region)
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to create client")
+	}
+
+	if opt.DoNotVerifyTLS {
+		cli.SetCustomTransport(getCustomTransport(true))
 	}
 
 	downloadThrottler := iothrottler.NewIOThrottlerPool(toBandwidth(opt.MaxDownloadSpeedBytesPerSecond))

@@ -29,6 +29,9 @@ type Encryptor interface {
 
 	// IsDeprecated returns true if encryption is not recommended for new repositories.
 	IsDeprecated() bool
+
+	// MaxOverhead is the maximum number of bytes of overhead added by Encrypt()
+	MaxOverhead() int
 }
 
 // Parameters encapsulates all encryption parameters.
@@ -53,8 +56,8 @@ type EncryptorFactory func(p Parameters) (Encryptor, error)
 // DefaultAlgorithm is the name of the default encryption algorithm.
 const DefaultAlgorithm = "AES256-GCM-HMAC-SHA256"
 
-// NoneAlgorithm is the name of the algorithm that does not encrypt.
-const NoneAlgorithm = "NONE"
+// DeprecatedNoneAlgorithm is the name of the algorithm that does not encrypt.
+const DeprecatedNoneAlgorithm = "NONE"
 
 // SupportedAlgorithms returns the names of the supported encryption
 // methods

@@ -2,12 +2,19 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/kopia/kopia/internal/units"
 	"github.com/kopia/kopia/snapshot/snapshotfs"
+)
+
+var (
+	enableProgress         = app.Flag("progress", "Enable progress bar").Hidden().Default("true").Bool()
+	progressUpdateInterval = app.Flag("progress-update-interval", "How ofter to update progress information").Hidden().Default("300ms").Duration()
 )
 
 const spinner = `|/-\`
@@ -22,9 +29,11 @@ type cliProgress struct {
 	hashedBytes            int64
 	nextOutputTimeUnixNano int64
 
-	cachedFiles   int32
-	hashedFiles   int32
-	uploadedFiles int32
+	cachedFiles       int32
+	inProgressHashing int32
+	hashedFiles       int32
+	uploadedFiles     int32
+	errorCount        int32
 
 	uploading      int32
 	uploadFinished int32
@@ -38,10 +47,17 @@ type cliProgress struct {
 
 	// indicates shared instance that does not reset counters at the beginning of upload.
 	shared bool
+
+	outputMutex sync.Mutex
+}
+
+func (p *cliProgress) HashingFile(fname string) {
+	atomic.AddInt32(&p.inProgressHashing, 1)
 }
 
 func (p *cliProgress) FinishedHashingFile(fname string, totalSize int64) {
 	atomic.AddInt32(&p.hashedFiles, 1)
+	atomic.AddInt32(&p.inProgressHashing, -1)
 	p.maybeOutput()
 }
 
@@ -55,6 +71,11 @@ func (p *cliProgress) UploadedBytes(numBytes int64) {
 func (p *cliProgress) HashedBytes(numBytes int64) {
 	atomic.AddInt64(&p.hashedBytes, numBytes)
 	p.maybeOutput()
+}
+
+func (p *cliProgress) IgnoredError(path string, err error) {
+	atomic.AddInt32(&p.errorCount, 1)
+	p.output(path, err)
 }
 
 func (p *cliProgress) CachedFile(fname string, numBytes int64) {
@@ -72,29 +93,34 @@ func (p *cliProgress) maybeOutput() {
 
 	nextOutputTimeUnixNano := atomic.LoadInt64(&p.nextOutputTimeUnixNano)
 	if nowNano := time.Now().UnixNano(); nowNano > nextOutputTimeUnixNano {
-		const interval = 300 * time.Millisecond
-
-		if atomic.CompareAndSwapInt64(&p.nextOutputTimeUnixNano, nextOutputTimeUnixNano, nowNano+interval.Nanoseconds()) {
+		if atomic.CompareAndSwapInt64(&p.nextOutputTimeUnixNano, nextOutputTimeUnixNano, nowNano+progressUpdateInterval.Nanoseconds()) {
 			shouldOutput = true
 		}
 	}
 
 	if shouldOutput {
-		p.output()
+		p.output("", nil)
 	}
 }
 
-func (p *cliProgress) output() {
+func (p *cliProgress) output(errPath string, err error) {
+	p.outputMutex.Lock()
+	defer p.outputMutex.Unlock()
+
 	hashedBytes := atomic.LoadInt64(&p.hashedBytes)
 	cachedBytes := atomic.LoadInt64(&p.cachedBytes)
 	uploadedBytes := atomic.LoadInt64(&p.uploadedBytes)
 	cachedFiles := atomic.LoadInt32(&p.cachedFiles)
+	inProgressHashing := atomic.LoadInt32(&p.inProgressHashing)
 	hashedFiles := atomic.LoadInt32(&p.hashedFiles)
 	uploadedFiles := atomic.LoadInt32(&p.uploadedFiles)
+	errorCount := atomic.LoadInt32(&p.errorCount)
 
 	line := fmt.Sprintf(
-		" %v %v hashed (%v), %v cached (%v), %v uploaded (%v)",
+		" %v %v hashing, %v hashed (%v), %v cached (%v), %v uploaded (%v), %v errors",
 		p.spinnerCharacter(),
+
+		inProgressHashing,
 
 		hashedFiles,
 		units.BytesStringBase10(hashedBytes),
@@ -104,7 +130,22 @@ func (p *cliProgress) output() {
 
 		uploadedFiles,
 		units.BytesStringBase10(uploadedBytes),
+
+		errorCount,
 	)
+
+	if err != nil {
+		prefix := "\n ! "
+		if !*enableProgress {
+			prefix = ""
+		}
+
+		warningColor.Fprintf(os.Stderr, "%vIgnored error when processing \"%v\": %v\n", prefix, errPath, err) //nolint:errcheck
+	}
+
+	if !*enableProgress {
+		return
+	}
 
 	if p.previousTotalSize > 0 {
 		percent := (float64(hashedBytes+cachedBytes) * hundredPercent / float64(p.previousTotalSize))
@@ -148,7 +189,7 @@ func (p *cliProgress) StartShared() {
 
 func (p *cliProgress) FinishShared() {
 	atomic.StoreInt32(&p.uploadFinished, 1)
-	p.output()
+	p.output("", nil)
 }
 
 func (p *cliProgress) UploadStarted(previousFileCount int, previousTotalSize int64) {
@@ -176,7 +217,7 @@ func (p *cliProgress) Finish() {
 	}
 
 	atomic.StoreInt32(&p.uploadFinished, 1)
-	p.output()
+	p.output("", nil)
 }
 
 var progress = &cliProgress{}

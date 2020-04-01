@@ -2,6 +2,7 @@ package manifest
 
 import (
 	"context"
+	"encoding/json"
 	"reflect"
 	"sort"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/kopia/kopia/internal/testlogging"
 	"github.com/kopia/kopia/repo/content"
 	"github.com/kopia/kopia/repo/encryption"
+	"github.com/kopia/kopia/repo/hashing"
 )
 
 //nolint:funlen
@@ -139,8 +141,8 @@ func TestManifestInitCorruptedBlock(t *testing.T) {
 	st := blobtesting.NewMapStorage(data, nil, nil)
 
 	f := &content.FormattingOptions{
-		Hash:        "HMAC-SHA256-128",
-		Encryption:  encryption.NoneAlgorithm,
+		Hash:        hashing.DefaultAlgorithm,
+		Encryption:  encryption.DefaultAlgorithm,
 		MaxPackSize: 100000,
 		Version:     1,
 	}
@@ -186,9 +188,16 @@ func TestManifestInitCorruptedBlock(t *testing.T) {
 		desc string
 		f    func() error
 	}{
-		{"GetRaw", func() error { _, err := mgr.GetRaw(ctx, "anything"); return err }},
+		{"GetRaw", func() error {
+			var raw json.RawMessage
+			_, err := mgr.Get(ctx, "anything", &raw)
+			return err
+		}},
 		{"GetMetadata", func() error { _, err := mgr.GetMetadata(ctx, "anything"); return err }},
-		{"Get", func() error { return mgr.Get(ctx, "anything", nil) }},
+		{"Get", func() error {
+			_, err := mgr.Get(ctx, "anything", nil)
+			return err
+		}},
 		{"Delete", func() error { return mgr.Delete(ctx, "anything") }},
 		{"Find", func() error { _, err := mgr.Find(ctx, nil); return err }},
 		{"Put", func() error {
@@ -240,7 +249,7 @@ func verifyItem(ctx context.Context, t *testing.T, mgr *Manager, id ID, labels m
 	}
 
 	var d2 map[string]int
-	if err := mgr.Get(ctx, id, &d2); err != nil {
+	if _, err := mgr.Get(ctx, id, &d2); err != nil {
 		t.Errorf("Get failed: %v", err)
 	}
 
@@ -292,8 +301,8 @@ func newManagerForTesting(ctx context.Context, t *testing.T, data blobtesting.Da
 	st := blobtesting.NewMapStorage(data, nil, nil)
 
 	bm, err := content.NewManager(ctx, st, &content.FormattingOptions{
-		Hash:        "HMAC-SHA256-128",
-		Encryption:  encryption.NoneAlgorithm,
+		Hash:        hashing.DefaultAlgorithm,
+		Encryption:  encryption.DefaultAlgorithm,
 		MaxPackSize: 100000,
 		Version:     1,
 	}, content.CachingOptions{}, content.ManagerOptions{})

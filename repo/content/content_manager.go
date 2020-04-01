@@ -7,6 +7,7 @@ import (
 	cryptorand "crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"math/rand"
 	"os"
 	"sync"
 	"time"
@@ -14,7 +15,8 @@ import (
 	"github.com/pkg/errors"
 	"go.opencensus.io/stats"
 
-	"github.com/kopia/kopia/internal/bufcache"
+	"github.com/kopia/kopia/internal/buf"
+	"github.com/kopia/kopia/internal/gather"
 	"github.com/kopia/kopia/repo/blob"
 	"github.com/kopia/kopia/repo/logging"
 )
@@ -29,7 +31,8 @@ const (
 	PackBlobIDPrefixRegular blob.ID = "p"
 	PackBlobIDPrefixSpecial blob.ID = "q"
 
-	maxHashSize = 64
+	maxHashSize                            = 64
+	defaultEncryptionBufferPoolSegmentSize = 8 << 20 // 8 MB
 )
 
 // PackBlobIDPrefixes contains all possible prefixes for pack blobs.
@@ -81,15 +84,16 @@ type Manager struct {
 	disableIndexFlushCount int
 	flushPackIndexesAfter  time.Time // time when those indexes should be flushed
 	closed                 chan struct{}
-	bufferPool             sync.Pool
 
 	lockFreeManager
 }
 
 type pendingPackInfo struct {
-	prefix                blob.ID
-	currentPackItems      map[ID]Info // contents that are in the pack content currently being built (all inline)
-	currentPackDataLength int         // total length of all items in the current pack content
+	prefix           blob.ID
+	packBlobID       blob.ID
+	currentPackItems map[ID]Info         // contents that are in the pack content currently being built (all inline)
+	currentPackData  *gather.WriteBuffer // total length of all items in the current pack content
+	finalized        bool                // indicates whether currentPackData has local index appended to it
 }
 
 // DeleteContent marks the given contentID as deleted.
@@ -114,15 +118,13 @@ func (bm *Manager) DeleteContent(ctx context.Context, contentID ID) error {
 	// remove from all packs that are being written, since they will be committed to index soon
 	for _, pp := range bm.writingPacks {
 		if bi, ok := pp.currentPackItems[contentID]; ok && !bi.Deleted {
-			bm.deletePreexistingContent(bi)
-			return nil
+			return bm.deletePreexistingContent(bi)
 		}
 	}
 
 	// if found in committed index, add another entry that's marked for deletion
 	if bi, ok := bm.packIndexBuilder[contentID]; ok {
-		bm.deletePreexistingContent(*bi)
-		return nil
+		return bm.deletePreexistingContent(*bi)
 	}
 
 	// see if the block existed before
@@ -131,28 +133,30 @@ func (bm *Manager) DeleteContent(ctx context.Context, contentID ID) error {
 		return err
 	}
 
-	bm.deletePreexistingContent(bi)
-
-	return nil
+	return bm.deletePreexistingContent(bi)
 }
 
 // Intentionally passing bi by value.
 // nolint:gocritic
-func (bm *Manager) deletePreexistingContent(ci Info) {
+func (bm *Manager) deletePreexistingContent(ci Info) error {
 	if ci.Deleted {
-		return
+		return nil
 	}
 
-	pp := bm.getOrCreatePendingPackInfoLocked(packPrefixForContentID(ci.ID))
+	pp, err := bm.getOrCreatePendingPackInfoLocked(packPrefixForContentID(ci.ID))
+	if err != nil {
+		return errors.Wrap(err, "unable to create pack")
+	}
+
 	ci.Deleted = true
 	ci.TimestampSeconds = bm.timeNow().Unix()
 	pp.currentPackItems[ci.ID] = ci
+
+	return nil
 }
 
 func (bm *Manager) addToPackUnlocked(ctx context.Context, contentID ID, data []byte, isDeleted bool) error {
 	prefix := packPrefixForContentID(contentID)
-
-	data = bufcache.Clone(data)
 
 	bm.lock()
 
@@ -182,17 +186,29 @@ func (bm *Manager) addToPackUnlocked(ctx context.Context, contentID ID, data []b
 		}
 	}
 
-	pp := bm.getOrCreatePendingPackInfoLocked(prefix)
-	pp.currentPackDataLength += len(data)
-	pp.currentPackItems[contentID] = Info{
-		Deleted:          isDeleted,
-		ID:               contentID,
-		Payload:          data,
-		Length:           uint32(len(data)),
-		TimestampSeconds: bm.timeNow().Unix(),
+	pp, err := bm.getOrCreatePendingPackInfoLocked(prefix)
+	if err != nil {
+		return errors.Wrap(err, "unable to create pending pack")
 	}
 
-	shouldWrite := pp.currentPackDataLength >= bm.maxPackSize
+	info := Info{
+		Deleted:          isDeleted,
+		ID:               contentID,
+		PackBlobID:       pp.packBlobID,
+		PackOffset:       uint32(pp.currentPackData.Length()),
+		TimestampSeconds: bm.timeNow().Unix(),
+		FormatVersion:    byte(bm.writeFormatVersion),
+	}
+
+	if err := bm.maybeEncryptContentDataForPacking(pp.currentPackData, data, contentID); err != nil {
+		return errors.Wrapf(err, "unable to encrypt %q", contentID)
+	}
+
+	info.Length = uint32(pp.currentPackData.Length()) - info.PackOffset
+
+	pp.currentPackItems[contentID] = info
+
+	shouldWrite := pp.currentPackData.Length() >= bm.maxPackSize
 	if shouldWrite {
 		// we're about to write to storage without holding a lock
 		// remove from pendingPacks so other goroutine tries to mess with this pending pack.
@@ -239,7 +255,11 @@ func (bm *Manager) verifyCurrentPackItemsLocked() {
 	for _, pp := range bm.pendingPacks {
 		for k, cpi := range pp.currentPackItems {
 			bm.assertInvariant(cpi.ID == k, "content ID entry has invalid key: %v %v", cpi.ID, k)
-			bm.assertInvariant(cpi.Deleted || cpi.PackBlobID == "", "content ID entry has unexpected pack content ID %v: %v", cpi.ID, cpi.PackBlobID)
+
+			if !cpi.Deleted {
+				bm.assertInvariant(cpi.PackBlobID == pp.packBlobID, "non-deleted pending pack item %q must be from the pending pack %q, was %q", cpi.ID, pp.packBlobID, cpi.PackBlobID)
+			}
+
 			bm.assertInvariant(cpi.TimestampSeconds != 0, "content has no timestamp: %v", cpi.ID)
 		}
 	}
@@ -279,13 +299,13 @@ func (bm *Manager) flushPackIndexesLocked(ctx context.Context) error {
 	}
 
 	if len(bm.packIndexBuilder) > 0 {
-		var buf bytes.Buffer
+		var b bytes.Buffer
 
-		if err := bm.packIndexBuilder.Build(&buf); err != nil {
+		if err := bm.packIndexBuilder.Build(&b); err != nil {
 			return errors.Wrap(err, "unable to build pack index")
 		}
 
-		data := buf.Bytes()
+		data := b.Bytes()
 		dataCopy := append([]byte(nil), data...)
 
 		indexBlobID, err := bm.writePackIndexesNew(ctx, data)
@@ -340,10 +360,7 @@ func (bm *Manager) writePackAndAddToIndex(ctx context.Context, pp *pendingPackIn
 			bm.packIndexBuilder.Add(*info)
 		}
 
-		// return all cloned memory back to the buffer so that it can be used again
-		for _, it := range pp.currentPackItems {
-			bufcache.Return(it.Payload)
-		}
+		pp.currentPackData.Close()
 
 		return nil
 	}
@@ -355,54 +372,20 @@ func (bm *Manager) writePackAndAddToIndex(ctx context.Context, pp *pendingPackIn
 }
 
 func (bm *Manager) prepareAndWritePackInternal(ctx context.Context, pp *pendingPackInfo) (packIndexBuilder, error) {
-	contentID := make([]byte, 16)
-	if _, err := cryptorand.Read(contentID); err != nil {
-		return nil, errors.Wrap(err, "unable to read crypto bytes")
-	}
-
-	packFile := blob.ID(fmt.Sprintf("%v%x", pp.prefix, contentID))
-
-	estimated := bm.estimatePackBlobSize(pp)
-
-	contentData, packFileIndex, err := bm.preparePackDataContent(ctx, bufcache.EmptyBytesWithCapacity(estimated), pp, packFile)
+	packFileIndex, err := bm.preparePackDataContent(ctx, pp)
 	if err != nil {
 		return nil, errors.Wrap(err, "error preparing data content")
 	}
 
-	if len(contentData) > 0 {
-		if err := bm.writePackFileNotLocked(ctx, packFile, contentData); err != nil {
+	if pp.currentPackData.Length() > 0 {
+		if err := bm.writePackFileNotLocked(ctx, pp.packBlobID, pp.currentPackData.Bytes); err != nil {
 			return nil, errors.Wrap(err, "can't save pack data content")
 		}
 
-		formatLog(ctx).Debugf("wrote pack file: %v (%v bytes)", packFile, len(contentData))
-		bufcache.Return(contentData)
-	}
-
-	if estimated < len(contentData) {
-		log(ctx).Warningf("did not estimate content length: %v, predicted %v", len(contentData), estimated)
+		formatLog(ctx).Debugf("wrote pack file: %v (%v bytes)", pp.packBlobID, pp.currentPackData.Length())
 	}
 
 	return packFileIndex, nil
-}
-
-// estimatePackBlobSize estimates the size of the buffer to hold the pack blob.
-// we use this to preallocate buffer and avoid wasteful reallocations.
-// this function can overshoot, but best not to overshoot by too much.
-func (bm *Manager) estimatePackBlobSize(pp *pendingPackInfo) int {
-	const (
-		estimatedPackIndexOverhead = 10000
-		estimatedPerItemOverhead   = 64
-	)
-
-	estimateCapacity := 0
-	for _, pp := range pp.currentPackItems {
-		estimateCapacity += int(pp.Length) + estimatedPerItemOverhead
-	}
-
-	estimateCapacity += len(bm.repositoryFormatBytes)
-	estimateCapacity += estimatedPackIndexOverhead
-
-	return estimateCapacity
 }
 
 func removePendingPack(slice []*pendingPackInfo, pp *pendingPackInfo) []*pendingPackInfo {
@@ -426,6 +409,7 @@ func (bm *Manager) Close(ctx context.Context) error {
 	bm.contentCache.close()
 	bm.metadataCache.close()
 	close(bm.closed)
+	bm.encryptionBufferPool.Close()
 
 	return nil
 }
@@ -441,6 +425,9 @@ func (bm *Manager) Flush(ctx context.Context) error {
 
 	defer func() {
 		bm.flushing = false
+
+		// we finished flushing, notify goroutines that were waiting for it.
+		bm.cond.Broadcast()
 	}()
 
 	for len(bm.writingPacks) > 0 {
@@ -464,12 +451,14 @@ func (bm *Manager) Flush(ctx context.Context) error {
 
 // RewriteContent causes reads and re-writes a given content using the most recent format.
 func (bm *Manager) RewriteContent(ctx context.Context, contentID ID) error {
-	bi, err := bm.getContentInfo(contentID)
+	log(ctx).Debugf("RewriteContent(%q)", contentID)
+
+	pp, bi, err := bm.getContentInfo(contentID)
 	if err != nil {
 		return err
 	}
 
-	data, err := bm.getContentDataUnlocked(ctx, &bi)
+	data, err := bm.getContentDataUnlocked(ctx, pp, &bi)
 	if err != nil {
 		return err
 	}
@@ -485,15 +474,30 @@ func packPrefixForContentID(contentID ID) blob.ID {
 	return PackBlobIDPrefixRegular
 }
 
-func (bm *Manager) getOrCreatePendingPackInfoLocked(prefix blob.ID) *pendingPackInfo {
+func (bm *Manager) getOrCreatePendingPackInfoLocked(prefix blob.ID) (*pendingPackInfo, error) {
 	if bm.pendingPacks[prefix] == nil {
+		b := gather.NewWriteBuffer()
+
+		contentID := make([]byte, 16)
+		if _, err := cryptorand.Read(contentID); err != nil {
+			return nil, errors.Wrap(err, "unable to read crypto bytes")
+		}
+
+		b.Append(bm.repositoryFormatBytes)
+
+		if err := writeRandomBytesToBuffer(b, rand.Intn(bm.maxPreambleLength-bm.minPreambleLength+1)+bm.minPreambleLength); err != nil {
+			return nil, errors.Wrap(err, "unable to prepare content preamble")
+		}
+
 		bm.pendingPacks[prefix] = &pendingPackInfo{
 			prefix:           prefix,
+			packBlobID:       blob.ID(fmt.Sprintf("%v%x", prefix, contentID)),
 			currentPackItems: map[ID]Info{},
+			currentPackData:  b,
 		}
 	}
 
-	return bm.pendingPacks[prefix]
+	return bm.pendingPacks[prefix], nil
 }
 
 // WriteContent saves a given content of data to a pack group with a provided name and returns a contentID
@@ -511,7 +515,7 @@ func (bm *Manager) WriteContent(ctx context.Context, data []byte, prefix ID) (ID
 	contentID := prefix + ID(hex.EncodeToString(bm.hashData(hashOutput[:0], data)))
 
 	// content already tracked
-	if bi, err := bm.getContentInfo(contentID); err == nil {
+	if _, bi, err := bm.getContentInfo(contentID); err == nil {
 		if !bi.Deleted {
 			return contentID, nil
 		}
@@ -537,7 +541,7 @@ func (bm *Manager) GetContent(ctx context.Context, contentID ID) (v []byte, err 
 		}
 	}()
 
-	bi, err := bm.getContentInfo(contentID)
+	pp, bi, err := bm.getContentInfo(contentID)
 	if err != nil {
 		return nil, err
 	}
@@ -546,46 +550,48 @@ func (bm *Manager) GetContent(ctx context.Context, contentID ID) (v []byte, err 
 		return nil, ErrContentNotFound
 	}
 
-	return bm.getContentDataUnlocked(ctx, &bi)
+	return bm.getContentDataUnlocked(ctx, pp, &bi)
 }
 
-func (bm *Manager) getOverlayContentInfo(contentID ID) (Info, bool) {
+func (bm *Manager) getOverlayContentInfo(contentID ID) (*pendingPackInfo, Info, bool) {
 	bm.mu.RLock()
 	defer bm.mu.RUnlock()
 
 	// check added contents, not written to any packs yet.
 	for _, pp := range bm.pendingPacks {
 		if ci, ok := pp.currentPackItems[contentID]; ok {
-			return ci, true
+			return pp, ci, true
 		}
 	}
 
 	// check contents being written to packs right now.
 	for _, pp := range bm.writingPacks {
 		if ci, ok := pp.currentPackItems[contentID]; ok {
-			return ci, true
+			return pp, ci, true
 		}
 	}
 
 	// added contents, written to packs but not yet added to indexes
 	if ci, ok := bm.packIndexBuilder[contentID]; ok {
-		return *ci, true
+		return nil, *ci, true
 	}
 
-	return Info{}, false
+	return nil, Info{}, false
 }
 
-func (bm *Manager) getContentInfo(contentID ID) (Info, error) {
-	if ci, ok := bm.getOverlayContentInfo(contentID); ok {
-		return ci, nil
+func (bm *Manager) getContentInfo(contentID ID) (*pendingPackInfo, Info, error) {
+	if pp, ci, ok := bm.getOverlayContentInfo(contentID); ok {
+		return pp, ci, nil
 	}
 
-	return bm.committedContents.getContent(contentID)
+	info, err := bm.committedContents.getContent(contentID)
+
+	return nil, info, err
 }
 
 // ContentInfo returns information about a single content.
 func (bm *Manager) ContentInfo(ctx context.Context, contentID ID) (Info, error) {
-	bi, err := bm.getContentInfo(contentID)
+	_, bi, err := bm.getContentInfo(contentID)
 	if err != nil {
 		log(ctx).Debugf("ContentInfo(%q) - error %v", err)
 		return Info{}, err
@@ -693,6 +699,7 @@ func newManagerWithOptions(ctx context.Context, st blob.Storage, f *FormattingOp
 			checkInvariantsOnUnlock: os.Getenv("KOPIA_VERIFY_INVARIANTS") != "",
 			writeFormatVersion:      int32(f.Version),
 			committedContents:       contentIndex,
+			encryptionBufferPool:    buf.NewPool(ctx, defaultEncryptionBufferPoolSegmentSize+encryptor.MaxOverhead(), "content-manager-encryption"),
 		},
 
 		mu:   mu,
@@ -702,11 +709,6 @@ func newManagerWithOptions(ctx context.Context, st blob.Storage, f *FormattingOp
 		pendingPacks:          map[blob.ID]*pendingPackInfo{},
 		packIndexBuilder:      make(packIndexBuilder),
 		closed:                make(chan struct{}),
-		bufferPool: sync.Pool{
-			New: func() interface{} {
-				return &bytes.Buffer{}
-			},
-		},
 	}
 
 	if err := m.CompactIndexes(ctx, autoCompactionOptions); err != nil {

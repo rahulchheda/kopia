@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -16,6 +17,7 @@ import (
 
 const (
 	maxSnapshotDescriptionLength = 1024
+	timeFormat                   = "2006-01-02 15:04:05 MST"
 )
 
 var (
@@ -29,9 +31,11 @@ var (
 	snapshotCreateParallelUploads         = snapshotCreateCommand.Flag("parallel", "Upload N files in parallel").PlaceHolder("N").Default("0").Int()
 	snapshotCreateHostname                = snapshotCreateCommand.Flag("hostname", "Override local hostname.").String()
 	snapshotCreateUsername                = snapshotCreateCommand.Flag("username", "Override local username.").String()
+	snapshotCreateStartTime               = snapshotCreateCommand.Flag("start-time", "Override snapshot start timestamp.").String()
+	snapshotCreateEndTime                 = snapshotCreateCommand.Flag("end-time", "Override snapshot end timestamp.").String()
 )
 
-func runBackupCommand(ctx context.Context, rep *repo.Repository) error {
+func runBackupCommand(ctx context.Context, rep repo.Repository) error {
 	sources := *snapshotCreateSources
 
 	if *snapshotCreateAll {
@@ -55,6 +59,20 @@ func runBackupCommand(ctx context.Context, rep *repo.Repository) error {
 
 	u.Progress = progress
 
+	startTime, err := parseTimestamp(*snapshotCreateStartTime)
+	if err != nil {
+		return errors.Wrap(err, "could not parse start-time")
+	}
+
+	endTime, err := parseTimestamp(*snapshotCreateEndTime)
+	if err != nil {
+		return errors.Wrap(err, "could not parse end-time")
+	}
+
+	if startTimeAfterEndTime(startTime, endTime) {
+		return errors.New("start time override cannot be after the end time override")
+	}
+
 	if len(*snapshotCreateDescription) > maxSnapshotDescriptionLength {
 		return errors.New("description too long")
 	}
@@ -74,8 +92,8 @@ func runBackupCommand(ctx context.Context, rep *repo.Repository) error {
 
 		sourceInfo := snapshot.SourceInfo{
 			Path:     filepath.Clean(dir),
-			Host:     rep.Hostname,
-			UserName: rep.Username,
+			Host:     rep.Hostname(),
+			UserName: rep.Username(),
 		}
 
 		if h := *snapshotCreateHostname; h != "" {
@@ -98,12 +116,24 @@ func runBackupCommand(ctx context.Context, rep *repo.Repository) error {
 	return errors.Errorf("encountered %v errors:\n%v", len(finalErrors), strings.Join(finalErrors, "\n"))
 }
 
-func snapshotSingleSource(ctx context.Context, rep *repo.Repository, u *snapshotfs.Uploader, sourceInfo snapshot.SourceInfo) error {
+func parseTimestamp(timestamp string) (time.Time, error) {
+	if timestamp == "" {
+		return time.Time{}, nil
+	}
+
+	return time.Parse(timeFormat, timestamp)
+}
+
+func startTimeAfterEndTime(startTime, endTime time.Time) bool {
+	return !startTime.IsZero() &&
+		!endTime.IsZero() &&
+		startTime.After(endTime)
+}
+
+func snapshotSingleSource(ctx context.Context, rep repo.Repository, u *snapshotfs.Uploader, sourceInfo snapshot.SourceInfo) error {
 	printStderr("Snapshotting %v ...\n", sourceInfo)
 
 	t0 := time.Now()
-
-	rep.Content.Stats.Reset()
 
 	localEntry, err := getLocalFSEntry(ctx, sourceInfo.Path)
 	if err != nil {
@@ -128,6 +158,27 @@ func snapshotSingleSource(ctx context.Context, rep *repo.Repository, u *snapshot
 	}
 
 	manifest.Description = *snapshotCreateDescription
+	startTimeOverride, _ := parseTimestamp(*snapshotCreateStartTime)
+	endTimeOverride, _ := parseTimestamp(*snapshotCreateEndTime)
+
+	if !startTimeOverride.IsZero() {
+		if endTimeOverride.IsZero() {
+			// Calculate the correct end time based on current duration if they're not specified
+			duration := manifest.EndTime.Sub(manifest.StartTime)
+			manifest.EndTime = startTimeOverride.Add(duration)
+		}
+
+		manifest.StartTime = startTimeOverride
+	}
+
+	if !endTimeOverride.IsZero() {
+		if startTimeOverride.IsZero() {
+			inverseDuration := manifest.StartTime.Sub(manifest.EndTime)
+			manifest.StartTime = endTimeOverride.Add(inverseDuration)
+		}
+
+		manifest.EndTime = endTimeOverride
+	}
 
 	snapID, err := snapshot.SaveSnapshot(ctx, rep, manifest)
 	if err != nil {
@@ -149,6 +200,12 @@ func snapshotSingleSource(ctx context.Context, rep *repo.Repository, u *snapshot
 		maybePartial = " partial"
 	}
 
+	if ds := manifest.RootEntry.DirSummary; ds != nil {
+		if ds.NumFailed > 0 {
+			errorColor.Fprintf(os.Stderr, "\nIgnored %v errors while snapshotting.", ds.NumFailed) //nolint:errcheck
+		}
+	}
+
 	printStderr("\nCreated%v snapshot with root %v and ID %v in %v\n", maybePartial, manifest.RootObjectID(), snapID, time.Since(t0).Truncate(time.Second))
 
 	return err
@@ -156,7 +213,7 @@ func snapshotSingleSource(ctx context.Context, rep *repo.Repository, u *snapshot
 
 // findPreviousSnapshotManifest returns the list of previous snapshots for a given source, including
 // last complete snapshot and possibly some number of incomplete snapshots following it.
-func findPreviousSnapshotManifest(ctx context.Context, rep *repo.Repository, sourceInfo snapshot.SourceInfo, noLaterThan *time.Time) ([]*snapshot.Manifest, error) {
+func findPreviousSnapshotManifest(ctx context.Context, rep repo.Repository, sourceInfo snapshot.SourceInfo, noLaterThan *time.Time) ([]*snapshot.Manifest, error) {
 	man, err := snapshot.ListSnapshots(ctx, rep, sourceInfo)
 	if err != nil {
 		return nil, errors.Wrap(err, "error listing previous snapshots")
@@ -198,8 +255,8 @@ func findPreviousSnapshotManifest(ctx context.Context, rep *repo.Repository, sou
 	return result, nil
 }
 
-func getLocalBackupPaths(ctx context.Context, rep *repo.Repository) ([]string, error) {
-	log(ctx).Debugf("Looking for previous backups of '%v@%v'...", rep.Hostname, rep.Username)
+func getLocalBackupPaths(ctx context.Context, rep repo.Repository) ([]string, error) {
+	log(ctx).Debugf("Looking for previous backups of '%v@%v'...", rep.Hostname(), rep.Username())
 
 	sources, err := snapshot.ListSources(ctx, rep)
 	if err != nil {
@@ -209,7 +266,7 @@ func getLocalBackupPaths(ctx context.Context, rep *repo.Repository) ([]string, e
 	var result []string
 
 	for _, src := range sources {
-		if src.Host == rep.Hostname && src.UserName == rep.Username {
+		if src.Host == rep.Hostname() && src.UserName == rep.Username() {
 			result = append(result, src.Path)
 		}
 	}
