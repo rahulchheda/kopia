@@ -74,16 +74,16 @@ func (s *Simple) AddToIndex(key, indexName string) {
 
 // RemoveFromIndex implements the Indexer interface RemoveFromIndex method
 func (s *Simple) RemoveFromIndex(key, indexName string) {
-	s.l.Lock()
-	defer s.l.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	s.Idx.RemoveFromIndex(key, indexName)
 }
 
 // GetKeys implements the Indexer interface GetKeys method
 func (s *Simple) GetKeys(indexName string) []string {
-	s.l.Lock()
-	defer s.l.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	return s.Idx.GetKeys(indexName)
 }
