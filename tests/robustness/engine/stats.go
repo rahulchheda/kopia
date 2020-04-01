@@ -7,12 +7,12 @@ import (
 )
 
 var (
-	repoBuildTime   string
-	repoGitRevision string
-	repoGitBranch   string
-	testBuildTime   string
-	testGitRevision string
-	testGitBranch   string
+	repoBuildTime   = "unknown"
+	repoGitRevision = "unknown"
+	repoGitBranch   = "unknown"
+	testBuildTime   = "unknown"
+	testGitRevision = "unknown"
+	testGitBranch   = "unknown"
 )
 
 // Stats prints the engine stats, cumulative and from the current run
