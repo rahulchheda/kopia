@@ -20,7 +20,7 @@ var (
 	lsCommandPath      = lsCommand.Arg("object-path", "Path").Required().String()
 )
 
-func runLSCommand(ctx context.Context, rep *repo.Repository) error {
+func runLSCommand(ctx context.Context, rep repo.Repository) error {
 	oid, err := parseObjectID(ctx, rep, *lsCommandPath)
 	if err != nil {
 		return err
@@ -41,7 +41,7 @@ func init() {
 	lsCommand.Action(repositoryAction(runLSCommand))
 }
 
-func listDirectory(ctx context.Context, rep *repo.Repository, prefix string, oid object.ID, indent string) error {
+func listDirectory(ctx context.Context, rep repo.Repository, prefix string, oid object.ID, indent string) error {
 	d := snapshotfs.DirectoryEntry(rep, oid, nil)
 
 	entries, err := d.Readdir(ctx)
@@ -50,31 +50,41 @@ func listDirectory(ctx context.Context, rep *repo.Repository, prefix string, oid
 	}
 
 	for _, e := range entries {
-		var info string
-
 		objectID := e.(object.HasObjectID).ObjectID()
 		oid := objectID.String()
+		col := defaultColor
+
+		var (
+			errorSummary string
+			info         string
+		)
+
+		if dir, ok := e.(fs.Directory); ok {
+			if ds := dir.Summary(); ds != nil && ds.NumFailed > 0 {
+				errorSummary = fmt.Sprintf(" (%v errors)", ds.NumFailed)
+				col = errorColor
+			}
+		}
 
 		switch {
 		case *lsCommandLong:
 			info = fmt.Sprintf(
-				"%v %12d %v %-34v %v",
+				"%v %12d %v %-34v %v%v",
 				e.Mode(),
 				e.Size(),
 				formatTimestamp(e.ModTime().Local()),
 				oid,
 				nameToDisplay(prefix, e),
+				errorSummary,
 			)
 		case *lsCommandShowOID:
-			info = fmt.Sprintf(
-				"%-34v %v",
-				oid,
-				nameToDisplay(prefix, e))
+			info = fmt.Sprintf("%-34v %v%v", oid, nameToDisplay(prefix, e), errorSummary)
+
 		default:
-			info = nameToDisplay(prefix, e)
+			info = fmt.Sprintf("%v%v", nameToDisplay(prefix, e), errorSummary)
 		}
 
-		fmt.Println(info)
+		col.Println(info) //nolint:errcheck
 
 		if *lsCommandRecursive && e.Mode().IsDir() {
 			if listerr := listDirectory(ctx, rep, prefix+e.Name()+"/", objectID, indent+"  "); listerr != nil {

@@ -24,12 +24,12 @@ var log = logging.GetContextLoggerFunc("kopia/snapshot/policy")
 // GetEffectivePolicy calculates effective snapshot policy for a given source by combining the source-specifc policy (if any)
 // with parent policies. The source must contain a path.
 // Returns the effective policies and all source policies that contributed to that (most specific first).
-func GetEffectivePolicy(ctx context.Context, rep *repo.Repository, si snapshot.SourceInfo) (effective *Policy, sources []*Policy, e error) {
+func GetEffectivePolicy(ctx context.Context, rep repo.Repository, si snapshot.SourceInfo) (effective *Policy, sources []*Policy, e error) {
 	var md []*manifest.EntryMetadata
 
 	// Find policies applying to paths all the way up to the root.
 	for tmp := si; len(si.Path) > 0; {
-		manifests, err := rep.Manifests.Find(ctx, labelsForSource(tmp))
+		manifests, err := rep.FindManifests(ctx, labelsForSource(tmp))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -45,7 +45,7 @@ func GetEffectivePolicy(ctx context.Context, rep *repo.Repository, si snapshot.S
 	}
 
 	// Try user@host policy
-	userHostManifests, err := rep.Manifests.Find(ctx, labelsForSource(snapshot.SourceInfo{Host: si.Host, UserName: si.UserName}))
+	userHostManifests, err := rep.FindManifests(ctx, labelsForSource(snapshot.SourceInfo{Host: si.Host, UserName: si.UserName}))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -53,7 +53,7 @@ func GetEffectivePolicy(ctx context.Context, rep *repo.Repository, si snapshot.S
 	md = append(md, userHostManifests...)
 
 	// Try host-level policy.
-	hostManifests, err := rep.Manifests.Find(ctx, labelsForSource(snapshot.SourceInfo{Host: si.Host}))
+	hostManifests, err := rep.FindManifests(ctx, labelsForSource(snapshot.SourceInfo{Host: si.Host}))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -61,7 +61,7 @@ func GetEffectivePolicy(ctx context.Context, rep *repo.Repository, si snapshot.S
 	md = append(md, hostManifests...)
 
 	// Global policy.
-	globalManifests, err := rep.Manifests.Find(ctx, labelsForSource(GlobalPolicySourceInfo))
+	globalManifests, err := rep.FindManifests(ctx, labelsForSource(GlobalPolicySourceInfo))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -72,7 +72,7 @@ func GetEffectivePolicy(ctx context.Context, rep *repo.Repository, si snapshot.S
 
 	for _, em := range md {
 		p := &Policy{}
-		if err := rep.Manifests.Get(ctx, em.ID, &p); err != nil {
+		if _, err := rep.GetManifest(ctx, em.ID, &p); err != nil {
 			return nil, nil, errors.Wrapf(err, "got unexpected error when loading policy item %v", em.ID)
 		}
 
@@ -88,8 +88,8 @@ func GetEffectivePolicy(ctx context.Context, rep *repo.Repository, si snapshot.S
 }
 
 // GetDefinedPolicy returns the policy defined on the provided snapshot.SourceInfo or ErrPolicyNotFound if not present.
-func GetDefinedPolicy(ctx context.Context, rep *repo.Repository, si snapshot.SourceInfo) (*Policy, error) {
-	md, err := rep.Manifests.Find(ctx, labelsForSource(si))
+func GetDefinedPolicy(ctx context.Context, rep repo.Repository, si snapshot.SourceInfo) (*Policy, error) {
+	md, err := rep.FindManifests(ctx, labelsForSource(si))
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to find policy for source")
 	}
@@ -98,44 +98,42 @@ func GetDefinedPolicy(ctx context.Context, rep *repo.Repository, si snapshot.Sou
 		return nil, ErrPolicyNotFound
 	}
 
-	if len(md) == 1 {
-		p := &Policy{}
+	// arbitrality pick first pick ID to return in case there's more than one
+	// this is possible when two repository clients independently create manifests at approximately the same time
+	// so it should not really matter which one we pick.
+	// see https://github.com/kopia/kopia/issues/391
+	manifestID := md[0].ID
 
-		err := rep.Manifests.Get(ctx, md[0].ID, p)
+	p := &Policy{}
+
+	em, err := rep.GetManifest(ctx, manifestID, p)
+
+	if err != nil {
 		if err == manifest.ErrNotFound {
 			return nil, ErrPolicyNotFound
 		}
 
-		if err != nil {
-			return nil, err
-		}
-
-		em, err := rep.Manifests.GetMetadata(ctx, md[0].ID)
-		if err != nil {
-			return nil, ErrPolicyNotFound
-		}
-
-		p.Labels = em.Labels
-
-		return p, nil
+		return nil, err
 	}
 
-	return nil, errors.New("ambiguous policy")
+	p.Labels = em.Labels
+
+	return p, nil
 }
 
 // SetPolicy sets the policy on a given source.
-func SetPolicy(ctx context.Context, rep *repo.Repository, si snapshot.SourceInfo, pol *Policy) error {
-	md, err := rep.Manifests.Find(ctx, labelsForSource(si))
+func SetPolicy(ctx context.Context, rep repo.Repository, si snapshot.SourceInfo, pol *Policy) error {
+	md, err := rep.FindManifests(ctx, labelsForSource(si))
 	if err != nil {
 		return errors.Wrapf(err, "unable to load manifests for %v", si)
 	}
 
-	if _, err := rep.Manifests.Put(ctx, labelsForSource(si), pol); err != nil {
+	if _, err := rep.PutManifest(ctx, labelsForSource(si), pol); err != nil {
 		return err
 	}
 
 	for _, em := range md {
-		if err := rep.Manifests.Delete(ctx, em.ID); err != nil {
+		if err := rep.DeleteManifest(ctx, em.ID); err != nil {
 			return errors.Wrap(err, "unable to delete previous policy manifest")
 		}
 	}
@@ -144,14 +142,14 @@ func SetPolicy(ctx context.Context, rep *repo.Repository, si snapshot.SourceInfo
 }
 
 // RemovePolicy removes the policy for a given source.
-func RemovePolicy(ctx context.Context, rep *repo.Repository, si snapshot.SourceInfo) error {
-	md, err := rep.Manifests.Find(ctx, labelsForSource(si))
+func RemovePolicy(ctx context.Context, rep repo.Repository, si snapshot.SourceInfo) error {
+	md, err := rep.FindManifests(ctx, labelsForSource(si))
 	if err != nil {
 		return errors.Wrapf(err, "unable to load manifests for %v", si)
 	}
 
 	for _, em := range md {
-		if err := rep.Manifests.Delete(ctx, em.ID); err != nil {
+		if err := rep.DeleteManifest(ctx, em.ID); err != nil {
 			return errors.Wrap(err, "unable to delete previous manifest")
 		}
 	}
@@ -160,9 +158,9 @@ func RemovePolicy(ctx context.Context, rep *repo.Repository, si snapshot.SourceI
 }
 
 // GetPolicyByID gets the policy for a given unique ID or ErrPolicyNotFound if not found.
-func GetPolicyByID(ctx context.Context, rep *repo.Repository, id manifest.ID) (*Policy, error) {
+func GetPolicyByID(ctx context.Context, rep repo.Repository, id manifest.ID) (*Policy, error) {
 	p := &Policy{}
-	if err := rep.Manifests.Get(ctx, id, &p); err != nil {
+	if _, err := rep.GetManifest(ctx, id, &p); err != nil {
 		if err == manifest.ErrNotFound {
 			return nil, ErrPolicyNotFound
 		}
@@ -172,8 +170,8 @@ func GetPolicyByID(ctx context.Context, rep *repo.Repository, id manifest.ID) (*
 }
 
 // ListPolicies returns a list of all policies.
-func ListPolicies(ctx context.Context, rep *repo.Repository) ([]*Policy, error) {
-	ids, err := rep.Manifests.Find(ctx, map[string]string{
+func ListPolicies(ctx context.Context, rep repo.Repository) ([]*Policy, error) {
+	ids, err := rep.FindManifests(ctx, map[string]string{
 		typeKey: "policy",
 	})
 	if err != nil {
@@ -185,11 +183,7 @@ func ListPolicies(ctx context.Context, rep *repo.Repository) ([]*Policy, error) 
 	for _, id := range ids {
 		pol := &Policy{}
 
-		if err := rep.Manifests.Get(ctx, id.ID, pol); err != nil {
-			return nil, err
-		}
-
-		md, err := rep.Manifests.GetMetadata(ctx, id.ID)
+		md, err := rep.GetManifest(ctx, id.ID, pol)
 		if err != nil {
 			return nil, err
 		}
@@ -211,7 +205,7 @@ func (m SubdirectoryPolicyMap) GetPolicyForPath(relativePath string) (*Policy, e
 }
 
 // TreeForSource returns policy Tree for a given source.
-func TreeForSource(ctx context.Context, rep *repo.Repository, si snapshot.SourceInfo) (*Tree, error) {
+func TreeForSource(ctx context.Context, rep repo.Repository, si snapshot.SourceInfo) (*Tree, error) {
 	result := map[string]*Policy{}
 
 	pol, _, err := GetEffectivePolicy(ctx, rep, si)
@@ -222,7 +216,7 @@ func TreeForSource(ctx context.Context, rep *repo.Repository, si snapshot.Source
 	result["."] = pol
 
 	// Find all policies for this host and user
-	policies, err := rep.Manifests.Find(ctx, map[string]string{
+	policies, err := rep.FindManifests(ctx, map[string]string{
 		typeKey:      "policy",
 		"policyType": "path",
 		"username":   si.UserName,
@@ -235,7 +229,9 @@ func TreeForSource(ctx context.Context, rep *repo.Repository, si snapshot.Source
 	log(ctx).Debugf("found %v policies for %v@%v", si.UserName, si.Host)
 
 	for _, id := range policies {
-		em, err := rep.Manifests.GetMetadata(ctx, id.ID)
+		pol := &Policy{}
+
+		em, err := rep.GetManifest(ctx, id.ID, pol)
 		if err != nil {
 			return nil, err
 		}
@@ -253,11 +249,6 @@ func TreeForSource(ctx context.Context, rep *repo.Repository, si snapshot.Source
 
 		rel = "./" + rel
 		log(ctx).Debugf("loading policy for %v (%v)", policyPath, rel)
-
-		pol := &Policy{}
-		if err := rep.Manifests.Get(ctx, id.ID, pol); err != nil {
-			return nil, errors.Wrapf(err, "unable to load policy %v", id.ID)
-		}
 
 		result[rel] = pol
 	}

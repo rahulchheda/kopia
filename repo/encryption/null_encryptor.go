@@ -20,8 +20,12 @@ func (fi nullEncryptor) IsDeprecated() bool {
 	return false
 }
 
+func (fi nullEncryptor) MaxOverhead() int {
+	return 0
+}
+
 func init() {
-	Register(NoneAlgorithm, "No encryption", false, func(p Parameters) (Encryptor, error) {
+	Register(DeprecatedNoneAlgorithm, "No encryption", true, func(p Parameters) (Encryptor, error) {
 		return nullEncryptor{}, nil
 	})
 }

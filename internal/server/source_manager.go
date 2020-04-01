@@ -55,14 +55,7 @@ func (s *sourceManager) Status() *serverapi.SourceStatus {
 		Status:           s.state,
 		NextSnapshotTime: s.nextSnapshotTime,
 		SchedulingPolicy: s.pol,
-	}
-
-	if ls := s.lastSnapshot; ls != nil {
-		st.LastSnapshotTime = &ls.StartTime
-	}
-
-	if ls := s.lastCompleteSnapshot; ls != nil {
-		st.LastSnapshotSize = &ls.Stats.TotalFileSize
+		LastSnapshot:     s.lastSnapshot,
 	}
 
 	if st.Status == "UPLOADING" {
@@ -101,7 +94,7 @@ func (s *sourceManager) run(ctx context.Context) {
 	s.wg.Add(1)
 	defer s.wg.Done()
 
-	if s.server.rep.Hostname == s.src.Host {
+	if s.server.rep.Hostname() == s.src.Host {
 		log(ctx).Debugf("starting local source manager for %v", s.src)
 		s.runLocal(ctx)
 	} else {
