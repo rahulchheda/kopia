@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/fatih/color"
 	"github.com/pkg/errors"
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
 
@@ -17,6 +18,12 @@ import (
 )
 
 var log = logging.GetContextLoggerFunc("kopia/cli")
+
+var (
+	defaultColor = color.New()
+	warningColor = color.New(color.FgYellow)
+	errorColor   = color.New(color.FgHiRed)
+)
 
 var (
 	app = kingpin.New("kopia", "Kopia - Online Backup").Author("http://kopia.github.io/")
@@ -65,12 +72,33 @@ func serverAction(act func(ctx context.Context, cli *serverapi.Client) error) fu
 	}
 }
 
-func repositoryAction(act func(ctx context.Context, rep *repo.Repository) error) func(ctx *kingpin.ParseContext) error {
-	return maybeRepositoryAction(act, true)
+func assertDirectRepository(act func(ctx context.Context, rep *repo.DirectRepository) error) func(ctx context.Context, rep repo.Repository) error {
+	return func(ctx context.Context, rep repo.Repository) error {
+		if rep == nil {
+			return act(ctx, nil)
+		}
+
+		// right now this assertion never fails,
+		// but will fail in the future when we have remote repository implementation
+		lr, ok := rep.(*repo.DirectRepository)
+		if !ok {
+			return errors.Errorf("operation supported only on direct repository")
+		}
+
+		return act(ctx, lr)
+	}
 }
 
-func optionalRepositoryAction(act func(ctx context.Context, rep *repo.Repository) error) func(ctx *kingpin.ParseContext) error {
+func directRepositoryAction(act func(ctx context.Context, rep *repo.DirectRepository) error) func(ctx *kingpin.ParseContext) error {
+	return maybeRepositoryAction(assertDirectRepository(act), true)
+}
+
+func optionalRepositoryAction(act func(ctx context.Context, rep repo.Repository) error) func(ctx *kingpin.ParseContext) error {
 	return maybeRepositoryAction(act, false)
+}
+
+func repositoryAction(act func(ctx context.Context, rep repo.Repository) error) func(ctx *kingpin.ParseContext) error {
+	return maybeRepositoryAction(act, true)
 }
 
 func rootContext() context.Context {
@@ -87,7 +115,7 @@ func rootContext() context.Context {
 	return ctx
 }
 
-func maybeRepositoryAction(act func(ctx context.Context, rep *repo.Repository) error, required bool) func(ctx *kingpin.ParseContext) error {
+func maybeRepositoryAction(act func(ctx context.Context, rep repo.Repository) error, required bool) func(ctx *kingpin.ParseContext) error {
 	return func(kpc *kingpin.ParseContext) error {
 		return withProfiling(func() error {
 			ctx := rootContext()

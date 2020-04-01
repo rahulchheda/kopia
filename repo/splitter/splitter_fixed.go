@@ -5,6 +5,13 @@ type fixedSplitter struct {
 	chunkLength int
 }
 
+func (s *fixedSplitter) Close() {
+}
+
+func (s *fixedSplitter) Reset() {
+	s.cur = 0
+}
+
 func (s *fixedSplitter) ShouldSplit(b byte) bool {
 	s.cur++
 
@@ -14,6 +21,10 @@ func (s *fixedSplitter) ShouldSplit(b byte) bool {
 	}
 
 	return false
+}
+
+func (s *fixedSplitter) MaxSegmentSize() int {
+	return s.chunkLength
 }
 
 // Fixed returns a factory that creates splitters with fixed chunk length.
