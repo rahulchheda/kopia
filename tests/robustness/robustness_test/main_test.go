@@ -34,11 +34,9 @@ func TestMain(m *testing.M) {
 	eng, err = engine.NewEngine("")
 	switch {
 	case err == kopiarunner.ErrExeVariableNotSet:
-		eng.Cleanup() //nolint:errcheck
 		fmt.Println("Skipping robustness tests if KOPIA_EXE is not set")
 		os.Exit(0)
 	case err != nil:
-		eng.Cleanup() //nolint:errcheck
 		fmt.Printf("error on engine creation: %s\n", err.Error())
 		os.Exit(1)
 	}
