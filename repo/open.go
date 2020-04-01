@@ -1,12 +1,14 @@
 package repo
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io/ioutil"
 	"path/filepath"
 	"time"
 
+	"github.com/natefinch/atomic"
 	"github.com/pkg/errors"
 
 	"github.com/kopia/kopia/repo/blob"
@@ -30,7 +32,7 @@ type Options struct {
 var ErrInvalidPassword = errors.Errorf("invalid repository password")
 
 // Open opens a Repository specified in the configuration file.
-func Open(ctx context.Context, configFile, password string, options *Options) (rep *Repository, err error) {
+func Open(ctx context.Context, configFile, password string, options *Options) (rep *DirectRepository, err error) {
 	defer func() {
 		if err != nil {
 			log(ctx).Errorf("failed to open repository: %v", err)
@@ -51,6 +53,10 @@ func Open(ctx context.Context, configFile, password string, options *Options) (r
 		return nil, err
 	}
 
+	if lc.Caching.CacheDirectory != "" && !filepath.IsAbs(lc.Caching.CacheDirectory) {
+		lc.Caching.CacheDirectory = filepath.Join(filepath.Dir(configFile), lc.Caching.CacheDirectory)
+	}
+
 	st, err := blob.NewStorage(ctx, lc.Storage)
 	if err != nil {
 		return nil, errors.Wrap(err, "cannot open storage")
@@ -66,15 +72,15 @@ func Open(ctx context.Context, configFile, password string, options *Options) (r
 		return nil, err
 	}
 
-	r.Hostname = lc.Hostname
-	r.Username = lc.Username
+	r.hostname = lc.Hostname
+	r.username = lc.Username
 
-	if r.Hostname == "" {
-		r.Hostname = getDefaultHostName(ctx)
+	if r.hostname == "" {
+		r.hostname = getDefaultHostName(ctx)
 	}
 
-	if r.Username == "" {
-		r.Username = getDefaultUserName(ctx)
+	if r.username == "" {
+		r.username = getDefaultUserName(ctx)
 	}
 
 	r.ConfigFile = configFile
@@ -83,7 +89,7 @@ func Open(ctx context.Context, configFile, password string, options *Options) (r
 }
 
 // OpenWithConfig opens the repository with a given configuration, avoiding the need for a config file.
-func OpenWithConfig(ctx context.Context, st blob.Storage, lc *LocalConfig, password string, options *Options, caching content.CachingOptions) (*Repository, error) {
+func OpenWithConfig(ctx context.Context, st blob.Storage, lc *LocalConfig, password string, options *Options, caching content.CachingOptions) (*DirectRepository, error) {
 	// Read format blob, potentially from cache.
 	fb, err := readAndCacheFormatBlobBytes(ctx, st, caching.CacheDirectory)
 	if err != nil {
@@ -139,7 +145,7 @@ func OpenWithConfig(ctx context.Context, st blob.Storage, lc *LocalConfig, passw
 		return nil, errors.Wrap(err, "unable to open manifests")
 	}
 
-	return &Repository{
+	return &DirectRepository{
 		Content:   cm,
 		Objects:   om,
 		Blobs:     st,
@@ -153,7 +159,7 @@ func OpenWithConfig(ctx context.Context, st blob.Storage, lc *LocalConfig, passw
 }
 
 // SetCachingConfig changes caching configuration for a given repository.
-func (r *Repository) SetCachingConfig(ctx context.Context, opt content.CachingOptions) error {
+func (r *DirectRepository) SetCachingConfig(ctx context.Context, opt content.CachingOptions) error {
 	lc, err := loadConfigFromFile(r.ConfigFile)
 	if err != nil {
 		return err
@@ -192,7 +198,7 @@ func readAndCacheFormatBlobBytes(ctx context.Context, st blob.Storage, cacheDire
 	}
 
 	if cacheDirectory != "" {
-		if err := ioutil.WriteFile(cachedFile, b, 0600); err != nil {
+		if err := atomic.WriteFile(cachedFile, bytes.NewReader(b)); err != nil {
 			log(ctx).Warningf("warning: unable to write cache: %v", err)
 		}
 	}

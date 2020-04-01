@@ -12,6 +12,7 @@ import (
 	"go.opencensus.io/stats"
 
 	"github.com/kopia/kopia/internal/ctxutil"
+	"github.com/kopia/kopia/internal/gather"
 	"github.com/kopia/kopia/internal/hmac"
 	"github.com/kopia/kopia/repo/blob"
 	"github.com/kopia/kopia/repo/blob/filesystem"
@@ -35,7 +36,8 @@ type contentCache struct {
 	mu                 sync.Mutex
 	lastTotalSizeBytes int64
 
-	closed chan struct{}
+	asyncWG sync.WaitGroup
+	closed  chan struct{}
 }
 
 type contentToucher interface {
@@ -86,7 +88,7 @@ func (c *contentCache) getContent(ctx context.Context, cacheKey cacheKey, blobID
 		if puterr := c.cacheStorage.PutBlob(
 			blob.WithUploadProgressCallback(ctx, nil),
 			blob.ID(cacheKey),
-			hmac.Append(b, c.hmacSecret),
+			gather.FromSlice(hmac.Append(b, c.hmacSecret)),
 		); puterr != nil {
 			stats.Record(ctx, metricContentCacheStoreErrors.M(1))
 			log(ctx).Warningf("unable to write cache item %v: %v", cacheKey, puterr)
@@ -94,21 +96,6 @@ func (c *contentCache) getContent(ctx context.Context, cacheKey cacheKey, blobID
 	}
 
 	return b, err
-}
-
-func (c *contentCache) put(ctx context.Context, cacheKey cacheKey, data []byte) {
-	cacheKey = adjustCacheKey(cacheKey)
-
-	useCache := shouldUseContentCache(ctx) && c.cacheStorage != nil
-	if useCache {
-		if puterr := c.cacheStorage.PutBlob(
-			blob.WithUploadProgressCallback(ctx, nil),
-			blob.ID(cacheKey),
-			hmac.Append(data, c.hmacSecret),
-		); puterr != nil {
-			log(ctx).Warningf("unable to write cache item %v: %v", cacheKey, puterr)
-		}
-	}
 }
 
 func (c *contentCache) readAndVerifyCacheContent(ctx context.Context, cacheKey cacheKey) []byte {
@@ -139,9 +126,12 @@ func (c *contentCache) readAndVerifyCacheContent(ctx context.Context, cacheKey c
 
 func (c *contentCache) close() {
 	close(c.closed)
+	c.asyncWG.Wait()
 }
 
 func (c *contentCache) sweepDirectoryPeriodically(ctx context.Context) {
+	defer c.asyncWG.Done()
+
 	for {
 		select {
 		case <-c.closed:
@@ -260,6 +250,8 @@ func newContentCacheWithCacheStorage(ctx context.Context, st, cacheStorage blob.
 	if err := c.sweepDirectory(ctx); err != nil {
 		return nil, err
 	}
+
+	c.asyncWG.Add(1)
 
 	go c.sweepDirectoryPeriodically(ctx)
 

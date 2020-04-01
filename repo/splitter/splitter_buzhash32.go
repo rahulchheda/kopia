@@ -14,6 +14,14 @@ type buzhash32Splitter struct {
 	maxSize int
 }
 
+func (rs *buzhash32Splitter) Close() {
+}
+
+func (rs *buzhash32Splitter) Reset() {
+	rs.rh.Reset()
+	rs.rh.Write(make([]byte, splitterSlidingWindowSize)) //nolint:errcheck
+}
+
 func (rs *buzhash32Splitter) ShouldSplit(b byte) bool {
 	rs.rh.Roll(b)
 	rs.count++
@@ -29,6 +37,10 @@ func (rs *buzhash32Splitter) ShouldSplit(b byte) bool {
 	}
 
 	return false
+}
+
+func (rs *buzhash32Splitter) MaxSegmentSize() int {
+	return rs.maxSize
 }
 
 func newBuzHash32SplitterFactory(avgSize int) Factory {
