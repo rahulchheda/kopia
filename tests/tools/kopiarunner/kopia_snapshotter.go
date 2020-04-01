@@ -3,12 +3,28 @@ package kopiarunner
 import (
 	"errors"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/kopia/kopia/tests/robustness/snap"
 )
 
 var _ snap.Snapshotter = &KopiaSnapshotter{}
+
+const (
+	contentCacheSizeMBFlag  = "--content-cache-size-mb"
+	metadataCacheSizeMBFlag = "--metadata-cache-size-mb"
+	noCheckForUpdatesFlag   = "--no-check-for-updates"
+	noProgressFlag          = "--no-progress"
+	parallelFlag            = "--parallel"
+)
+
+// Flag value settings
+var (
+	contentCacheSizeSettingMB  = strconv.Itoa(500)
+	metadataCacheSizeSettingMB = strconv.Itoa(500)
+	parallelSetting            = strconv.Itoa(8)
+)
 
 // KopiaSnapshotter implements the Snapshotter interface using Kopia commands
 type KopiaSnapshotter struct {
@@ -34,20 +50,28 @@ func (ks *KopiaSnapshotter) Cleanup() {
 	}
 }
 
-// CreateRepo creates a kopia repository with the provided arguments
-func (ks *KopiaSnapshotter) CreateRepo(args ...string) (err error) {
-	args = append([]string{"repo", "create"}, args...)
-	_, _, err = ks.Runner.Run(args...)
+func (ks *KopiaSnapshotter) repoConnectCreate(op string, args ...string) error {
+	args = append([]string{"repo", op}, args...)
+
+	args = append(args,
+		contentCacheSizeMBFlag, contentCacheSizeSettingMB,
+		metadataCacheSizeMBFlag, metadataCacheSizeSettingMB,
+		noCheckForUpdatesFlag,
+	)
+
+	_, _, err := ks.Runner.Run(args...)
 
 	return err
 }
 
+// CreateRepo creates a kopia repository with the provided arguments
+func (ks *KopiaSnapshotter) CreateRepo(args ...string) (err error) {
+	return ks.repoConnectCreate("create", args...)
+}
+
 // ConnectRepo connects to the repository described by the provided arguments
 func (ks *KopiaSnapshotter) ConnectRepo(args ...string) (err error) {
-	args = append([]string{"repo", "connect"}, args...)
-	_, _, err = ks.Runner.Run(args...)
-
-	return err
+	return ks.repoConnectCreate("connect", args...)
 }
 
 // ConnectOrCreateRepo attempts to connect to a repo described by the provided
@@ -82,7 +106,7 @@ func (ks *KopiaSnapshotter) ConnectOrCreateFilesystem(repoPath string) error {
 // CreateSnapshot implements the Snapshotter interface, issues a kopia snapshot
 // create command on the provided source path.
 func (ks *KopiaSnapshotter) CreateSnapshot(source string) (snapID string, err error) {
-	_, errOut, err := ks.Runner.Run("snapshot", "create", source)
+	_, errOut, err := ks.Runner.Run("snapshot", "create", parallelFlag, parallelSetting, noProgressFlag, source)
 	if err != nil {
 		return "", err
 	}
