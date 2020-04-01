@@ -213,12 +213,13 @@ ifneq ($(uname),Windows)
 	find repo/ -name '*.go' | xargs grep "^\t\"github.com/kopia/kopia" \
 	   | grep -v -e github.com/kopia/kopia/repo \
 	             -e github.com/kopia/kopia/internal/retry \
+	             -e github.com/kopia/kopia/internal/buf \
 	             -e github.com/kopia/kopia/internal/throttle \
 	             -e github.com/kopia/kopia/internal/iocopy \
+	             -e github.com/kopia/kopia/internal/gather \
 	             -e github.com/kopia/kopia/internal/blobtesting \
 	             -e github.com/kopia/kopia/internal/repotesting \
 	             -e github.com/kopia/kopia/internal/testlogging \
-	             -e github.com/kopia/kopia/internal/bufcache \
 	             -e github.com/kopia/kopia/internal/hmac \
 	             -e github.com/kopia/kopia/internal/faketime \
 	             -e github.com/kopia/kopia/internal/testutil \

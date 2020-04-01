@@ -74,7 +74,7 @@ func init() {
 	policySetCommand.Action(repositoryAction(setPolicy))
 }
 
-func setPolicy(ctx context.Context, rep *repo.Repository) error {
+func setPolicy(ctx context.Context, rep repo.Repository) error {
 	targets, err := policyTargets(ctx, rep, policySetGlobal, policySetTargets)
 	if err != nil {
 		return err
@@ -82,8 +82,12 @@ func setPolicy(ctx context.Context, rep *repo.Repository) error {
 
 	for _, target := range targets {
 		p, err := policy.GetDefinedPolicy(ctx, rep, target)
-		if err == policy.ErrPolicyNotFound {
+
+		switch {
+		case err == policy.ErrPolicyNotFound:
 			p = &policy.Policy{}
+		case err != nil:
+			return errors.Wrap(err, "could not get defined policy")
 		}
 
 		printStderr("Setting policy for %v\n", target)
