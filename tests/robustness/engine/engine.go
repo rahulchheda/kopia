@@ -179,6 +179,7 @@ func (e *Engine) formatLogName() string {
 	return fmt.Sprintf("Log_%s", st.Format("2006_01_02_15_04_05"))
 }
 
+// CleanComponents cleans up each component part of the test engine
 func (e *Engine) CleanComponents() {
 	for _, f := range e.cleanupRoutines {
 		f()
