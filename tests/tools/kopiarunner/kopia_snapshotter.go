@@ -1,12 +1,12 @@
 package kopiarunner
 
 import (
-	"errors"
 	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/kopia/kopia/tests/robustness/snap"
+	"github.com/pkg/errors"
 )
 
 var _ snap.Snapshotter = &KopiaSnapshotter{}
@@ -137,12 +137,41 @@ func (ks *KopiaSnapshotter) RunGC() (err error) {
 // ListSnapshots implements the Snapshotter interface, issues a kopia snapshot
 // list and parses the snapshot IDs
 func (ks *KopiaSnapshotter) ListSnapshots() ([]string, error) {
-	stdout, _, err := ks.Runner.Run("manifest", "list")
+	snapIDListMan, err := ks.snapIDsFromManifestList()
 	if err != nil {
 		return nil, err
 	}
 
-	return parseListForSnapshotIDs(stdout), nil
+	// Validate the list against kopia snapshot list --all
+	snapIDListSnap, err := ks.snapIDsFromSnapListAll()
+	if err != nil {
+		return nil, err
+	}
+
+	if got, want := len(snapIDListMan), len(snapIDListSnap); got != want {
+		return nil, errors.Errorf("Snapshot list len (%d) does not match manifest list len (%d)", got, want)
+	}
+
+	return snapIDListMan, nil
+}
+
+func (ks *KopiaSnapshotter) snapIDsFromManifestList() ([]string, error) {
+	stdout, _, err := ks.Runner.Run("manifest", "list")
+	if err != nil {
+		return nil, errors.Wrap(err, "failure during kopia manifest list")
+	}
+
+	return parseManifestListForSnapshotIDs(stdout), nil
+}
+
+func (ks *KopiaSnapshotter) snapIDsFromSnapListAll() ([]string, error) {
+	// Validate the list against kopia snapshot list --all
+	stdout, _, err := ks.Runner.Run("snapshot", "list", "--all", "--manifest-id", "--show-identical")
+	if err != nil {
+		return nil, errors.Wrap(err, "failure during kopia snapshot list")
+	}
+
+	return parseSnapshotListForSnapshotIDs(stdout), nil
 }
 
 // Run implements the Snapshotter interface, issues an arbitrary kopia command and returns
@@ -164,7 +193,25 @@ func parseSnapID(lines []string) (string, error) {
 	return "", errors.New("snap ID could not be parsed")
 }
 
-func parseListForSnapshotIDs(output string) []string {
+func parseSnapshotListForSnapshotIDs(output string) []string {
+	var ret []string
+
+	lines := strings.Split(output, "\n")
+	for _, l := range lines {
+		fields := strings.Fields(l)
+
+		for _, f := range fields {
+			spl := strings.Split(f, "manifest:")
+			if len(spl) == 2 {
+				ret = append(ret, spl[1])
+			}
+		}
+	}
+
+	return ret
+}
+
+func parseManifestListForSnapshotIDs(output string) []string {
 	var ret []string
 
 	lines := strings.Split(output, "\n")
