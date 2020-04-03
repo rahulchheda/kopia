@@ -74,7 +74,7 @@ func NewEngine(workingDir string) (*Engine, error) {
 	// Fill the file writer
 	e.FileWriter, err = fio.NewRunner()
 	if err != nil {
-		e.cleanup() //nolint:errcheck
+		e.CleanComponents() //nolint:errcheck
 		return nil, err
 	}
 
@@ -83,7 +83,7 @@ func NewEngine(workingDir string) (*Engine, error) {
 	// Fill Snapshotter interface
 	kopiaSnapper, err := kopiarunner.NewKopiaSnapshotter(baseDirPath)
 	if err != nil {
-		e.cleanup() //nolint:errcheck
+		e.CleanComponents() //nolint:errcheck
 		return nil, err
 	}
 
@@ -93,7 +93,7 @@ func NewEngine(workingDir string) (*Engine, error) {
 	// Fill the snapshot store interface
 	snapStore, err := snapmeta.New(baseDirPath)
 	if err != nil {
-		e.cleanup() //nolint:errcheck
+		e.CleanComponents() //nolint:errcheck
 		return nil, err
 	}
 
@@ -108,7 +108,7 @@ func NewEngine(workingDir string) (*Engine, error) {
 	e.cleanupRoutines = append(e.cleanupRoutines, chk.Cleanup)
 
 	if err != nil {
-		e.cleanup() //nolint:errcheck
+		e.CleanComponents() //nolint:errcheck
 		return nil, err
 	}
 
@@ -139,7 +139,7 @@ func (e *Engine) Cleanup() error {
 	e.RunStats.RunTime = time.Since(e.RunStats.CreationTime)
 	e.CumulativeStats.RunTime += e.RunStats.RunTime
 
-	defer e.cleanup()
+	defer e.CleanComponents()
 
 	if e.MetaStore != nil {
 		err := e.SaveLog()
@@ -179,7 +179,8 @@ func (e *Engine) formatLogName() string {
 	return fmt.Sprintf("Log_%s", st.Format("2006_01_02_15_04_05"))
 }
 
-func (e *Engine) cleanup() {
+// CleanComponents cleans up each component part of the test engine
+func (e *Engine) CleanComponents() {
 	for _, f := range e.cleanupRoutines {
 		f()
 	}

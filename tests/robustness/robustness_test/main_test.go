@@ -50,7 +50,9 @@ func TestMain(m *testing.M) {
 	// Initialize the engine, connecting it to the repositories
 	err = eng.Init(context.Background(), dataRepoPath, metadataRepoPath)
 	if err != nil {
-		eng.Cleanup() //nolint:errcheck
+		// Clean the temporary dirs from the file system, don't write out the
+		// metadata, in case there was an issue loading it
+		eng.CleanComponents()
 		fmt.Printf("error initializing engine for S3: %s\n", err.Error())
 		os.Exit(1)
 	}

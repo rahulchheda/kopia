@@ -333,7 +333,7 @@ func TestDataPersistency(t *testing.T) {
 	eng2, err := NewEngine("")
 	testenv.AssertNoError(t, err)
 
-	defer eng2.cleanup()
+	defer eng2.CleanComponents()
 
 	// Connect this engine to the same data and metadata repositories -
 	// expect that the snapshot taken above will be found in metadata,
