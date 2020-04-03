@@ -10,10 +10,16 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/kopia/kopia/tests/robustness/snap"
 	"github.com/kopia/kopia/tests/robustness/snapmeta"
+)
+
+const (
+	deleteLimitEnvKey  = "LIVE_SNAP_DELETE_LIMIT"
+	defaultDeleteLimit = 10
 )
 
 // Checker is an object that can take snapshots and restore them, performing
@@ -24,6 +30,7 @@ type Checker struct {
 	snapshotMetadataStore snapmeta.Store
 	validator             Comparer
 	RecoveryMode          bool
+	DeleteLimit           int
 }
 
 // NewChecker instantiates a new Checker, returning its pointer. A temporary
@@ -34,12 +41,20 @@ func NewChecker(snapIssuer snap.Snapshotter, snapmetaStore snapmeta.Store, valid
 		return nil, err
 	}
 
+	delLimitStr := os.Getenv(deleteLimitEnvKey)
+	delLimit, err := strconv.Atoi(delLimitStr)
+	if err != nil {
+		log.Printf("using default delete limit %d", defaultDeleteLimit)
+		delLimit = defaultDeleteLimit
+	}
+
 	return &Checker{
 		RestoreDir:            restoreDir,
 		snapshotIssuer:        snapIssuer,
 		snapshotMetadataStore: snapmetaStore,
 		validator:             validator,
 		RecoveryMode:          false,
+		DeleteLimit:           delLimit,
 	}, nil
 }
 
@@ -123,10 +138,17 @@ func (chk *Checker) VerifySnapshotMetadata() error {
 		}
 	}
 
+	var liveSnapsDeleted int
+
 	for _, liveSnapID := range liveSnapsInRepo {
 		if _, ok := metadataMap[liveSnapID]; !ok {
 			log.Printf("Live snapshot present for snapID %v but not found in known metadata", liveSnapID)
 			if chk.RecoveryMode {
+				if liveSnapsDeleted >= chk.DeleteLimit {
+					log.Printf("delete limit (%v) reached", chk.DeleteLimit)
+					errCount++
+				}
+
 				// Might as well delete the snapshot since we don't have metadata for it
 				log.Printf("Deleting snapshot ID %s", liveSnapID)
 				err = chk.snapshotIssuer.DeleteSnapshot(liveSnapID)
@@ -134,6 +156,8 @@ func (chk *Checker) VerifySnapshotMetadata() error {
 					log.Printf("error deleting snapshot: %s", err)
 					errCount++
 				}
+
+				liveSnapsDeleted++
 			} else {
 				errCount++
 			}
