@@ -9,7 +9,7 @@ import (
 	"github.com/kopia/kopia/tests/testenv"
 )
 
-func TestParseSnapListAllKopTest(t *testing.T) {
+func TestParseSnapListAllExeTest(t *testing.T) {
 	baseDir, err := ioutil.TempDir("", t.Name())
 	testenv.AssertNoError(t, err)
 
