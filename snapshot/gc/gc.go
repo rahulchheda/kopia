@@ -79,7 +79,7 @@ func Run(ctx context.Context, rep *repo.DirectRepository, params maintenance.Sna
 		return Stats{}, errors.Wrap(err, "unable to list snapshot manifest IDs")
 	}
 
-	st, err := markUnusedContent(ctx, rep, snapIDs, minContentAge, gcDelete)
+	st, err := markUnusedContent(ctx, rep, snapIDs, params.MinContentAge, gcDelete)
 	if err != nil {
 		return st, err
 	}
