@@ -148,7 +148,7 @@ func (ks *KopiaSnapshotter) ListSnapshots() ([]string, error) {
 		return nil, err
 	}
 
-	if got, want := len(snapIDListMan), len(snapIDListSnap); got != want {
+	if got, want := len(snapIDListSnap), len(snapIDListMan); got != want {
 		return nil, errors.Errorf("Snapshot list len (%d) does not match manifest list len (%d)", got, want)
 	}
 
