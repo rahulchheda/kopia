@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"io/ioutil"
 	"text/template"
@@ -163,8 +164,10 @@ func (rp *ReaderProfile) GetBlock(ctx context.Context, blockAddr int64) (io.Read
 		fill := bytes.Repeat(buf.Bytes(), copies+1)
 		fill = fill[:256]
 		nFill := int(rp.blockSize) / 256
-		log(ctx).Debugf("get block %012x: filled [%d]", blockAddr, nFill*len(fill))
-		return ioutil.NopCloser(bytes.NewBuffer(bytes.Repeat(fill, nFill))), nil
+		fBuf := bytes.NewBuffer(bytes.Repeat(fill, nFill))
+		ckSum3 := crc32.ChecksumIEEE(fBuf.Bytes())
+		log(ctx).Debugf("get block %012x: filled [%d] cksum-o3:%d", blockAddr, nFill*len(fill), ckSum3)
+		return ioutil.NopCloser(fBuf), nil
 	}
 	log(ctx).Debugf("get block %012x: empty [0]", blockAddr)
 	return ioutil.NopCloser(&buf), nil
