@@ -73,6 +73,6 @@ func (e *fileEntry) Owner() fs.OwnerInfo {
 }
 
 func (e *fileEntry) Open(ctx context.Context) (fs.Reader, error) {
-	log(ctx).Debugf("Open(%s)", e.m.name)
+	e.f.logger.Debugf("Open(%s)", e.m.name)
 	return newFileReader(ctx, e)
 }

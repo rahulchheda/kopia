@@ -24,6 +24,7 @@ import (
 func (f *Filesystem) InitializeForBackup(ctx context.Context, previousSnapshotID, previousVolumeSnapshotID string) (fs.Directory, error) {
 	var err error
 	f.epoch = time.Now()
+	f.logger = log(ctx)
 
 	// load the previous snapshot if any
 	if previousSnapshotID != "" {
@@ -68,7 +69,11 @@ func (f *Filesystem) scanPreviousSnapshot(ctx context.Context, prevSnapID string
 	if rootOID, err = object.ParseID(prevSnapID); err == nil {
 		if man, err = f.scanGetSnapshotManifest(ctx, rootOID); err == nil {
 			if rootEntry, err = snapshotfs.SnapshotRoot(f.Repo, man); err == nil {
-				return f.scanSnapshotDir(ctx, nil, rootEntry)
+				if !rootEntry.IsDir() {
+					return nil, fmt.Errorf("expected rootEntry to be a directory")
+				}
+				f.previousRootEntry = rootEntry.(fs.Directory)
+				return f.scanSnapshotDir(ctx, nil, f.previousRootEntry)
 			}
 		}
 	}
@@ -88,17 +93,14 @@ func (f *Filesystem) scanGetSnapshotManifest(ctx context.Context, oid object.ID)
 		}
 	}
 	if latest != nil {
+		log(ctx).Debugf("found manifest %s modTime:%s", latest.ID, latest.RootEntry.ModTime)
 		return latest, nil
 	}
 	return nil, fmt.Errorf("manifest not found")
 }
 
 // scanSnapshotDir recursively descends a snapshot directory hierarchy and builds the corresponding in-memory tree.
-func (f *Filesystem) scanSnapshotDir(ctx context.Context, ppp parsedPath, fse fs.Entry) (*dirMeta, error) {
-	if !fse.IsDir() {
-		return nil, fmt.Errorf("expected IsDir %s", ppp)
-	}
-	dir := fse.(fs.Directory)
+func (f *Filesystem) scanSnapshotDir(ctx context.Context, ppp parsedPath, dir fs.Directory) (*dirMeta, error) {
 	dm := &dirMeta{
 		name:  dir.Name(),
 		mTime: dir.ModTime(),
@@ -106,6 +108,8 @@ func (f *Filesystem) scanSnapshotDir(ctx context.Context, ppp parsedPath, fse fs
 	pp := parsedPath{}
 	if ppp != nil {
 		pp = append(ppp, dm.name)
+	} else {
+		dm.mTime = f.previousRootEntry.ModTime() // default is to put previous StartTime
 	}
 	entries, err := dir.Readdir(ctx)
 	if err != nil {

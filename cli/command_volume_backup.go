@@ -32,8 +32,6 @@ func init() {
 }
 
 func runVolBackupCommand(ctx context.Context, rep repo.Repository) error {
-	fmt.Printf("*** vol backup [%s, %s, %s, %s]\n", *volBackupCommandVolID, *volBackupCommandVolSnapID, *volBackupCommandPrevVolSnapID, *volBackupCommandPrevSnapID)
-
 	if (*volBackupCommandPrevVolSnapID != "" && *volBackupCommandPrevSnapID == "") ||
 		(*volBackupCommandPrevVolSnapID == "" && *volBackupCommandPrevSnapID != "") {
 		return fmt.Errorf("previous values for the volume and repository must be specified together")
@@ -61,7 +59,6 @@ func runVolBackupCommand(ctx context.Context, rep repo.Repository) error {
 	if root, err = f.InitializeForBackup(ctx, *volBackupCommandPrevSnapID, *volBackupCommandPrevVolSnapID); err != nil {
 		return err
 	}
-	fmt.Printf("*** root: %p %s", root, root.ModTime())
 
 	u := setupUploader(rep)
 

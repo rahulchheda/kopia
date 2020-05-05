@@ -117,6 +117,7 @@ func (e *dirEntry) Owner() fs.OwnerInfo {
 }
 
 func (e *dirEntry) Summary() *fs.DirectorySummary {
+	e.f.logger.Debugf("*** Summary()")
 	return nil
 }
 
@@ -134,6 +135,6 @@ func (e *dirEntry) Readdir(ctx context.Context) (fs.Entries, error) {
 		ret = append(ret, fm.fsEntry(e.f))
 	}
 	ret.Sort()
-	log(ctx).Debugf("Readdir(%s): %dd+%df=%d", e.m.name, len(e.m.subdirs), len(e.m.files), len(ret))
+	e.f.logger.Debugf("Readdir(%s): %dd+%df=%d", e.m.name, len(e.m.subdirs), len(e.m.files), len(ret))
 	return ret, nil
 }

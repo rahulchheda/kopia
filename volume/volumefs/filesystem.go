@@ -5,6 +5,7 @@ import (
 	"path"
 	"time"
 
+	"github.com/kopia/kopia/fs"
 	"github.com/kopia/kopia/repo"
 	"github.com/kopia/kopia/repo/logging"
 	"github.com/kopia/kopia/snapshot"
@@ -69,6 +70,8 @@ type Filesystem struct {
 	blockReader          volume.BlockReader
 	epoch                time.Time // all changes stamped with this time
 	rootDir              *dirMeta
+	previousRootEntry    fs.Directory
+	logger               logging.Logger
 }
 
 // New returns a new volume filesystem
