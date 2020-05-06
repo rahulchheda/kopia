@@ -1,4 +1,4 @@
-package volumefs
+package volumefs // nolint
 
 import (
 	"fmt"
@@ -7,11 +7,14 @@ import (
 
 	"github.com/kopia/kopia/snapshot"
 	vmgr "github.com/kopia/kopia/volume/fake"
+
 	"github.com/stretchr/testify/assert"
 )
 
+// nolint:wsl,gocritic
 func TestInitializeForBackupNoPreviousSnapshot(t *testing.T) {
 	assert := assert.New(t)
+
 	var err error
 
 	ctx, th := newVolFsTestHarness(t)
@@ -29,7 +32,7 @@ func TestInitializeForBackupNoPreviousSnapshot(t *testing.T) {
 	f := th.filesystem(profile)
 	f.blockSzB = 512 // HACK
 
-	// First backup
+	// Case: first backup
 	tB := time.Now()
 	root, err := f.InitializeForBackup(ctx, "", "")
 	tA := time.Now()
@@ -62,28 +65,29 @@ func TestInitializeForBackupNoPreviousSnapshot(t *testing.T) {
 	for _, ba := range expAddresses {
 		pp, err := f.addrToPath(ba)
 		assert.NoError(err, "addr[%s] parsed", ba)
+
 		fm := f.lookupFile(ctx, pp)
 		assert.NotNil(fm, "file[%s] exists", pp)
 	}
+
 	fn := fmt.Sprintf(metaFmtX, metaBlockSzB, f.blockSzB)
 	fm := f.lookupFile(ctx, parsedPath{fn})
 	assert.NotNil(fm, "meta %s", fn)
 
 	th.compareInternalAndExternalTrees(ctx, f, root)
 
-	// failure case
+	// Case: failure
 	fm = f.lookupFile(ctx, parsedPath{"000", "123", "foo"})
 	assert.Nil(fm)
 }
 
 // adapted from snapshot_test.go
+// nolint:gocritic
 func TestScanGetSnapshotManifest(t *testing.T) {
 	assert := assert.New(t)
 
 	ctx, th := newVolFsTestHarness(t)
 	defer th.cleanup()
-
-	// prime
 
 	// t0: snapshot of source 1
 	snap1_0 := th.addSnapshot(ctx, []int64{0, 1024, 2048})
@@ -121,57 +125,60 @@ func TestScanGetSnapshotManifest(t *testing.T) {
 	f = th.filesystem(&vmgr.ReaderProfile{}) // Reset
 	items, err := snapshot.ListSnapshots(ctx, th.repo, f.SourceInfo())
 	assert.Len(items, 2)
+	assert.NoError(err)
 
+	// Case: success
 	man, err := f.scanGetSnapshotManifest(ctx, snap1_0.RootObjectID())
 	assert.NoError(err)
 	assert.NotNil(man)
 	assert.Equal(snap1_1.ID, man.ID)
 
-	// error case: not found
+	// Case: not found
 	man, err = f.scanGetSnapshotManifest(ctx, snap1_0.RootObjectID()+"foo")
 	assert.Error(err)
 	assert.Nil(man)
 }
 
+// nolint:wsl,gocritic
 func TestInitializeForBackupWithPreviousSnapshot(t *testing.T) {
 	assert := assert.New(t)
+
 	var err error
 
 	ctx, th := newVolFsTestHarness(t)
 	defer th.cleanup()
 
-	// changed blocks (3)
 	profile := &vmgr.ReaderProfile{
-		Ranges: []vmgr.BlockAddrRange{
+		Ranges: []vmgr.BlockAddrRange{ // 3 changed blocks
 			{Start: 0, Count: 1},
 			{Start: 0x100, Count: 1},
 			{Start: 0x111ff, Count: 1},
 		},
 	}
 	changedAddresses := []int64{0, 0x100, 0x111ff}
-
 	f := th.filesystem(profile)
 	defaultBlockSize := f.GetBlockSize()
 	f.blockSzB = defaultBlockSize * 2 // make a change that should be rolled back
 
-	// fake a previous snapshot with some partially overlapping addresses
-	prevAddresses := []int64{0, 1, 2, 0x1000, 0x50000}
+	prevAddresses := []int64{0, 1, 2, 0x1000, 0x50000} // fake a previous snapshot with some partially overlapping addresses
 	snap := th.addSnapshot(ctx, prevAddresses)
 	t.Log(string(snap.RootObjectID()))
 
-	// trivial failure case
+	// Case: trivial failure
 	root, err := f.InitializeForBackup(ctx, string(snap.RootObjectID())+"foo", "volSnapID0")
 	assert.Error(err)
 	assert.Nil(root)
 
-	// Subsequent backup
+	// Case: subsequent backup
 	tB := time.Now()
 	root, err = f.InitializeForBackup(ctx, string(snap.RootObjectID()), "volSnapID0")
 	tA := time.Now()
+
 	assert.NoError(err)
 	assert.WithinDuration(tA, f.epoch, tA.Sub(tB))
 	assert.NotNil(root)
 	assert.NotNil(f.rootDir)
+
 	de, ok := root.(*dirEntry)
 	assert.True(ok)
 	assert.Equal(f.rootDir, de.m)
@@ -214,17 +221,21 @@ func TestInitializeForBackupWithPreviousSnapshot(t *testing.T) {
 	th.compareInternalAndExternalTrees(ctx, f, root)
 }
 
-func analyseAddresses(t *testing.T, f *Filesystem, prefix string, bal []int64, prev map[string]struct{}) map[string]struct{} {
+// nolint:wsl,gocritic
+func analyseAddresses(t *testing.T, f *Filesystem, prefix string, bal []int64, prev map[string]struct{}) map[string]struct{} { // nolint:unparam
 	assert := assert.New(t)
 	updated := map[string]struct{}{}
+
 	for _, ba := range bal {
 		pp, err := f.addrToPath(ba)
 		assert.NoError(err)
+
 		for i := 0; i < len(pp)-1; i++ { // don't consider the file in this loop
 			dir := pp[0 : i+1].String()
 			if _, ok := updated[dir]; ok {
 				continue
 			}
+
 			if prev != nil { // don't count if present in prev
 				if _, ok := prev[dir]; ok {
 					// t.Logf("%s: Dir in previous [%s]", prefix, dir)
@@ -235,9 +246,11 @@ func analyseAddresses(t *testing.T, f *Filesystem, prefix string, bal []int64, p
 				// t.Logf("%s: dir pDir updated [%s]", prefix, pDir)
 				updated[pDir] = struct{}{}
 			}
-			updated[dir] = struct{}{}
+
 			// t.Logf("%s: Dir updated [%s]", prefix, dir)
+			updated[dir] = struct{}{}
 		}
+
 		fn := pp.String()
 		if prev != nil { // if file not in prev then parent must be modified too
 			if _, ok := prev[fn]; !ok {
@@ -246,8 +259,10 @@ func analyseAddresses(t *testing.T, f *Filesystem, prefix string, bal []int64, p
 				updated[pDir] = struct{}{}
 			}
 		}
-		updated[fn] = struct{}{}
+
 		// t.Logf("%s: File updated [%s]", prefix, fn)
+		updated[fn] = struct{}{}
 	}
+
 	return updated
 }

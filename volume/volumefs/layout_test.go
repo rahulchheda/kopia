@@ -1,4 +1,4 @@
-package volumefs
+package volumefs // nolint
 
 import (
 	"testing"
@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// nolint:gocritic
 func TestLayout(t *testing.T) {
 	assert := assert.New(t)
 
@@ -87,11 +88,13 @@ func TestLayout(t *testing.T) {
 		pp, err := f.addrToPath(tc.addr)
 		assert.NoError(err, "case %d", i)
 		assert.Equal(tc.pp, pp, "case %d", i)
+
 		fm := &fileMeta{
 			name: pp[len(pp)-1],
 		}
 		assert.Equal(tc.addr, fm.blockAddr(), "case %d", i)
 	}
+
 	_, err := f.addrToPath(f.maxBlocks)
 	assert.Error(err)
 	assert.Regexp("out of range", err.Error())

@@ -29,7 +29,9 @@ func (fm *fileMeta) fsEntry(f *Filesystem) fs.File {
 
 func (fm *fileMeta) blockAddr() int64 {
 	var addr int64
+
 	fmt.Sscanf(fm.name, "%x", &addr)
+
 	return addr
 }
 
@@ -50,13 +52,14 @@ func (e *fileEntry) Name() string {
 }
 
 func (e *fileEntry) Mode() os.FileMode {
-	return 0555
+	return 0555 // nolint:gomnd
 }
 
 func (e *fileEntry) Size() int64 {
 	if e.m.isMeta(e.f) {
 		return 0
 	}
+
 	return e.f.blockSzB
 }
 

@@ -1,4 +1,4 @@
-package volumefs
+package volumefs // nolint
 
 import (
 	"context"
@@ -27,6 +27,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// nolint:wsl,gocritic
 func TestFilesystemArgs(t *testing.T) {
 	assert := assert.New(t)
 
@@ -45,7 +46,7 @@ func TestFilesystemArgs(t *testing.T) {
 	}
 	for i, tc := range tcs {
 		assert.Error(tc.Validate(), "case %d", i)
-		f, err := New(tc)
+		f, err := New(&tc) // nolint:scopelint
 		assert.Error(err)
 		assert.Nil(f)
 	}
@@ -79,6 +80,7 @@ type volFsTestHarness struct {
 	retFS   *Filesystem
 }
 
+// nolint:wsl,gocritic
 func newVolFsTestHarness(t *testing.T) (context.Context, *volFsTestHarness) {
 	ctx := testlogging.Context(t)
 
@@ -128,9 +130,9 @@ func (th *volFsTestHarness) cleanup() {
 	os.RemoveAll(th.repoDir)
 }
 
+// nolint:wsl,gocritic
 func (th *volFsTestHarness) addSnapshot(ctx context.Context, bal []int64) *snapshot.Manifest {
 	assert := assert.New(th.t)
-
 	sourceDir := mockfs.NewDirectory()
 
 	f := th.filesystem(nil) // for utility methods
@@ -180,14 +182,17 @@ func (th *volFsTestHarness) addSnapshot(ctx context.Context, bal []int64) *snaps
 
 func (th *volFsTestHarness) mustSaveSnapshot(snapManifest *snapshot.Manifest) manifest.ID {
 	th.t.Helper()
+
 	manID, err := snapshot.SaveSnapshot(testlogging.Context(th.t), th.repo, snapManifest)
 	if err != nil {
 		th.t.Fatalf("error saving snapshot: %v", err)
 	}
+
 	return manID
 }
 
 // newFilesystem helper
+// nolint:wsl,gocritic
 func (th *volFsTestHarness) filesystem(profile interface{}) *Filesystem {
 	if th.retFS != nil {
 		return th.retFS
@@ -202,7 +207,7 @@ func (th *volFsTestHarness) filesystem(profile interface{}) *Filesystem {
 		profile = &mgr
 	}
 
-	fa := FilesystemArgs{
+	fa := &FilesystemArgs{
 		Repo:                th.repo,
 		VolumeManager:       mgr,
 		VolumeID:            "volID",
@@ -219,9 +224,12 @@ func (th *volFsTestHarness) filesystem(profile interface{}) *Filesystem {
 	return f
 }
 
+// nolint:wsl,gocritic
 func (th *volFsTestHarness) compareInternalAndExternalTrees(ctx context.Context, f *Filesystem, rootEntry fs.Directory) {
 	assert := assert.New(th.t)
+
 	var checkNode func(dir fs.Directory, ppp parsedPath)
+
 	checkNode = func(dir fs.Directory, ppp parsedPath) {
 		msg := fmt.Sprintf("node [%s]", ppp)
 		th.t.Logf("Entered dir [%s]", ppp)
@@ -248,7 +256,7 @@ func (th *volFsTestHarness) compareInternalAndExternalTrees(ctx context.Context,
 		cnt := 0
 		for _, entry := range entries {
 			epp := append(ppp, entry.Name())
-			msg := fmt.Sprintf("node [%s]", epp)
+			msg := fmt.Sprintf("node [%s]", epp) // nolint:govet
 			if fsd, ok := entry.(fs.Directory); ok {
 				cnt++
 				assert.True(entry.IsDir(), msg)
@@ -259,7 +267,7 @@ func (th *volFsTestHarness) compareInternalAndExternalTrees(ctx context.Context,
 		}
 		for _, entry := range entries {
 			epp := append(ppp, entry.Name())
-			msg := fmt.Sprintf("node %s", epp)
+			msg := fmt.Sprintf("node %s", epp) // nolint:govet
 			if fsf, ok := entry.(fs.File); ok {
 				cnt++
 				assert.NotNil(fsf, msg)
@@ -279,9 +287,11 @@ func (th *volFsTestHarness) compareInternalAndExternalTrees(ctx context.Context,
 				}
 				assert.Equal(os.FileMode(0555), fsf.Mode(), msg)
 				assert.Equal(fe.m.mTime, fsf.ModTime(), msg)
+
 				fsr, err := fsf.Open(ctx)
 				assert.NoError(err, msg)
 				defer fsr.Close()
+
 				assert.NotNil(fsr, msg)
 				fr, ok := fsr.(*fileReader)
 				assert.True(ok, msg)

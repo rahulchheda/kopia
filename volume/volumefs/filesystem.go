@@ -1,18 +1,4 @@
-package volumefs
-
-import (
-	"fmt"
-	"path"
-	"time"
-
-	"github.com/kopia/kopia/fs"
-	"github.com/kopia/kopia/repo"
-	"github.com/kopia/kopia/repo/logging"
-	"github.com/kopia/kopia/snapshot"
-	"github.com/kopia/kopia/volume"
-)
-
-// This filesystem presents a representation of a volume's block address space and is
+// Package volumefs presents a representation of a volume's block address space and is
 // intended to support snapshots over block devices in a manner that works within the
 // existing snapshot management paradigm, including its garbage collection mechanism.
 //
@@ -27,8 +13,27 @@ import (
 // with underlying support for change-block-tracking: only the snapshot blocks changed
 // since the previous volume snapshot need be considered, as the filesystem recovers
 // its previous state from the repository.
+package volumefs
+
+import (
+	"fmt"
+	"path"
+	"time"
+
+	"github.com/kopia/kopia/fs"
+	"github.com/kopia/kopia/repo"
+	"github.com/kopia/kopia/repo/logging"
+	"github.com/kopia/kopia/snapshot"
+	"github.com/kopia/kopia/volume"
+)
 
 var log = logging.GetContextLoggerFunc("volume/filesystem")
+
+// package errors.
+var (
+	ErrOutOfRange  = fmt.Errorf("block address out of range")
+	ErrInvalidArgs = fmt.Errorf("invalid arguments")
+)
 
 // FilesystemArgs contains arguments to create a filesystem
 type FilesystemArgs struct {
@@ -45,15 +50,16 @@ type FilesystemArgs struct {
 }
 
 // Validate checks for required fields
-func (a FilesystemArgs) Validate() error {
+func (a *FilesystemArgs) Validate() error {
 	if a.Repo == nil || a.VolumeManager == nil || a.VolumeID == "" || a.VolumeSnapshotID == "" || a.VolumeAccessProfile == nil {
-		return fmt.Errorf("invalid FilesystemArgs")
+		return ErrInvalidArgs
 	}
+
 	return nil
 }
 
 // SourceInfo generates a snapshotSourceInfo
-func (a FilesystemArgs) SourceInfo() snapshot.SourceInfo {
+func (a *FilesystemArgs) SourceInfo() snapshot.SourceInfo {
 	return snapshot.SourceInfo{
 		Path:     path.Join("/volumefs", a.VolumeManager.Type(), a.VolumeID),
 		Host:     a.Repo.Hostname(),
@@ -66,21 +72,22 @@ func (a FilesystemArgs) SourceInfo() snapshot.SourceInfo {
 type Filesystem struct {
 	FilesystemArgs
 	layoutProperties
-	lastCompleteSnapshot *snapshot.Manifest
-	blockReader          volume.BlockReader
-	epoch                time.Time // all changes stamped with this time
-	rootDir              *dirMeta
-	previousRootEntry    fs.Directory
-	logger               logging.Logger
+	blockReader       volume.BlockReader
+	epoch             time.Time // all changes stamped with this time
+	rootDir           *dirMeta
+	previousRootEntry fs.Directory
+	logger            logging.Logger
 }
 
 // New returns a new volume filesystem
-func New(args FilesystemArgs) (*Filesystem, error) {
+func New(args *FilesystemArgs) (*Filesystem, error) {
 	if err := args.Validate(); err != nil {
 		return nil, err
 	}
+
 	f := &Filesystem{}
-	f.FilesystemArgs = args
+	f.FilesystemArgs = *args
 	f.setDefaultLayoutProperties() // block size may be reset from previous repo snapshot
+
 	return f, nil
 }

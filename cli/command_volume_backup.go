@@ -14,6 +14,7 @@ import (
 	"github.com/kopia/kopia/volume"
 	fmgr "github.com/kopia/kopia/volume/fake" // register the fake manager
 	"github.com/kopia/kopia/volume/volumefs"
+
 	"github.com/pkg/errors"
 )
 
@@ -31,42 +32,52 @@ func init() {
 	volBackupCommand.Action(repositoryAction(runVolBackupCommand))
 }
 
+// runVolBackupCommand is a simplified adaptation of runSnapshotCommand
 func runVolBackupCommand(ctx context.Context, rep repo.Repository) error {
 	if (*volBackupCommandPrevVolSnapID != "" && *volBackupCommandPrevSnapID == "") ||
 		(*volBackupCommandPrevVolSnapID == "" && *volBackupCommandPrevSnapID != "") {
 		return fmt.Errorf("previous values for the volume and repository must be specified together")
 	}
 
-	fsArgs := volumefs.FilesystemArgs{
+	fsArgs := &volumefs.FilesystemArgs{
 		Repo:             rep,
 		VolumeID:         *volBackupCommandVolID,
 		VolumeSnapshotID: *volBackupCommandVolSnapID,
 	}
+
 	fsArgs.VolumeManager = volume.FindManager(*volBackupCommandType)
 	if fsArgs.VolumeManager == nil {
 		return fmt.Errorf("volume type not supported")
 	}
-	switch fsArgs.VolumeManager.Type() {
+
+	switch fsArgs.VolumeManager.Type() { // setup manager type specific profiles
 	case fmgr.VolumeType:
 		fsArgs.VolumeAccessProfile = *volBackupCommandFakeProfile
+	default:
+		break
 	}
+
 	f, err := volumefs.New(fsArgs)
 	if err != nil {
 		return err
 	}
 
-	var root fs.Directory
-	if root, err = f.InitializeForBackup(ctx, *volBackupCommandPrevSnapID, *volBackupCommandPrevVolSnapID); err != nil {
+	root, err := f.InitializeForBackup(ctx, *volBackupCommandPrevSnapID, *volBackupCommandPrevVolSnapID)
+	if err != nil {
 		return err
 	}
 
-	u := setupUploader(rep)
+	u := setupUploader(rep) // defined in command_snapshot_create
 
 	sourceInfo := f.SourceInfo()
 
 	return snapshotSingleVolumeSource(ctx, rep, u, sourceInfo, root)
 }
 
+// snapshotSingleVolumeSource is identical to snapshotSingleSource with the exception of:
+// - removed getLocalFSEntry
+// - added source info and rootDir
+// Note there are still references to snapshot command variables that are unused here.
 func snapshotSingleVolumeSource(ctx context.Context, rep repo.Repository, u *snapshotfs.Uploader, sourceInfo snapshot.SourceInfo, rootDir fs.Entry) error {
 	printStderr("Snapshotting %v ...\n", sourceInfo)
 

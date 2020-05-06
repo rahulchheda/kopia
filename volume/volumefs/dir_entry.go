@@ -22,6 +22,7 @@ func (dm *dirMeta) findSubdir(name string) *dirMeta {
 			return sdm
 		}
 	}
+
 	return nil
 }
 
@@ -29,6 +30,7 @@ func (dm *dirMeta) insertSubdir(sdm *dirMeta) {
 	if dm.subdirs == nil {
 		dm.subdirs = make([]*dirMeta, 0)
 	}
+
 	dm.subdirs = append(dm.subdirs, sdm)
 	dm.mTime = sdm.mTime
 }
@@ -39,6 +41,7 @@ func (dm *dirMeta) findFile(name string) *fileMeta {
 			return fm
 		}
 	}
+
 	return nil
 }
 
@@ -46,6 +49,7 @@ func (dm *dirMeta) insertFile(fm *fileMeta) {
 	if dm.files == nil {
 		dm.files = make([]*fileMeta, 0)
 	}
+
 	dm.files = append(dm.files, fm)
 	dm.mTime = fm.mTime
 }
@@ -58,17 +62,21 @@ func (dm *dirMeta) descend(cb func(*dirMeta, parsedPath, interface{})) {
 func (dm *dirMeta) postOrderWalk(ppp parsedPath, cb func(*dirMeta, parsedPath, interface{})) {
 	pp := parsedPath{}
 	if ppp != nil {
-		pp = append(ppp, dm.name)
+		pp = append(ppp, dm.name) // nolint:gocritic
 	}
+
 	cb(dm, pp, true)
+
 	for _, sdm := range dm.subdirs {
 		sdm.postOrderWalk(pp, cb)
 	}
+
 	for _, fm := range dm.files {
 		pp = append(pp, fm.name)
 		cb(dm, pp, fm)
 		pp = pp[:len(pp)-1]
 	}
+
 	cb(dm, pp, false)
 }
 
@@ -127,14 +135,17 @@ func (e *dirEntry) Child(ctx context.Context, name string) (fs.Entry, error) {
 
 func (e *dirEntry) Readdir(ctx context.Context) (fs.Entries, error) {
 	// Mixed entries only found in the top directory where meta files exist; no name conflicts.
-	ret := make(fs.Entries, 0, int(len(e.m.subdirs)+len(e.m.files)))
+	ret := make(fs.Entries, 0, len(e.m.subdirs)+len(e.m.files))
 	for _, dm := range e.m.subdirs {
 		ret = append(ret, dm.fsEntry(e.f))
 	}
+
 	for _, fm := range e.m.files {
 		ret = append(ret, fm.fsEntry(e.f))
 	}
+
 	ret.Sort()
 	e.f.logger.Debugf("Readdir(%s): %dd+%df=%d", e.m.name, len(e.m.subdirs), len(e.m.files), len(ret))
+
 	return ret, nil
 }

@@ -23,6 +23,7 @@ import (
 // If not set then then a complete backup is performed.
 func (f *Filesystem) InitializeForBackup(ctx context.Context, previousSnapshotID, previousVolumeSnapshotID string) (fs.Directory, error) {
 	var err error
+
 	f.epoch = time.Now()
 	f.logger = log(ctx)
 
@@ -31,12 +32,14 @@ func (f *Filesystem) InitializeForBackup(ctx context.Context, previousSnapshotID
 		if f.rootDir, err = f.scanPreviousSnapshot(ctx, previousSnapshotID); err != nil {
 			return nil, err
 		}
+
 		f.recoverMetadata(ctx)
 	} else {
 		f.rootDir = &dirMeta{
 			name:  "/",
 			mTime: f.epoch,
 		}
+
 		f.setMetadata(ctx)
 	}
 
@@ -48,35 +51,42 @@ func (f *Filesystem) InitializeForBackup(ctx context.Context, previousSnapshotID
 		BlockSizeBytes:     f.GetBlockSize(),
 		Profile:            f.VolumeAccessProfile,
 	}
+
 	f.blockReader, err = f.VolumeManager.GetBlockReader(gbrArgs)
 	if err != nil {
 		return nil, err
 	}
 
 	// update/synthesize the filesystem
-	if err = f.generateOrUpdateMetadata(ctx); err != nil {
+	err = f.generateOrUpdateMetadata(ctx)
+	if err != nil {
 		return nil, err
 	}
+
 	return f.rootDir.fsEntry(f), nil
 }
 
 // scanPreviousSnapshot imports a previous snapshot and returns the in-memory metadata hierarchy.
 func (f *Filesystem) scanPreviousSnapshot(ctx context.Context, prevSnapID string) (*dirMeta, error) {
-	var err error
-	var man *snapshot.Manifest
-	var rootEntry fs.Entry
-	var rootOID object.ID
+	var err error              // nolint:wsl
+	var man *snapshot.Manifest // nolint:wsl
+	var rootEntry fs.Entry     // nolint:wsl
+	var rootOID object.ID      // nolint:wsl
+
 	if rootOID, err = object.ParseID(prevSnapID); err == nil {
 		if man, err = f.scanGetSnapshotManifest(ctx, rootOID); err == nil {
 			if rootEntry, err = snapshotfs.SnapshotRoot(f.Repo, man); err == nil {
 				if !rootEntry.IsDir() {
-					return nil, fmt.Errorf("expected rootEntry to be a directory")
+					return nil, fmt.Errorf("expected rootEntry to be a directory") // nolint
 				}
+
 				f.previousRootEntry = rootEntry.(fs.Directory)
+
 				return f.scanSnapshotDir(ctx, nil, f.previousRootEntry)
 			}
 		}
 	}
+
 	return nil, err
 }
 
@@ -86,16 +96,20 @@ func (f *Filesystem) scanGetSnapshotManifest(ctx context.Context, oid object.ID)
 	if err != nil {
 		return nil, err
 	}
+
 	var latest *snapshot.Manifest
+
 	for _, m := range man {
 		if m.RootObjectID() == oid && m.IncompleteReason == "" && (latest == nil || m.StartTime.After(latest.StartTime)) {
 			latest = m
 		}
 	}
+
 	if latest != nil {
 		log(ctx).Debugf("found manifest %s modTime:%s", latest.ID, latest.RootEntry.ModTime)
 		return latest, nil
 	}
+
 	return nil, fmt.Errorf("manifest not found")
 }
 
@@ -106,43 +120,58 @@ func (f *Filesystem) scanSnapshotDir(ctx context.Context, ppp parsedPath, dir fs
 		mTime: dir.ModTime(),
 	}
 	pp := parsedPath{}
+
 	if ppp != nil {
-		pp = append(ppp, dm.name)
+		pp = append(ppp, dm.name) // nolint:gocritic
 	} else {
 		dm.mTime = f.previousRootEntry.ModTime() // default is to put previous StartTime
 	}
+
 	entries, err := dir.Readdir(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, fmt.Sprintf("error reading %s", pp))
 	}
+
 	log(ctx).Debugf("scanDir [%s] => %s #%d", pp, dm.mTime.UTC().Round(0), len(entries))
+
 	for _, entry := range entries {
-		if de, ok := entry.(fs.Directory); ok {
-			if dm.subdirs == nil {
-				dm.subdirs = make([]*dirMeta, 0, len(entries))
-			}
-			sdm, err := f.scanSnapshotDir(ctx, pp, de)
-			if err != nil {
-				return nil, err
-			}
-			dm.insertSubdir(sdm)
+		de, ok := entry.(fs.Directory)
+		if !ok {
 			continue
 		}
-	}
-	for _, entry := range entries {
-		if fe, ok := entry.(fs.File); ok {
-			if dm.files == nil {
-				dm.files = make([]*fileMeta, 0, len(entries))
-			}
-			fm := &fileMeta{
-				name:  fe.Name(),
-				mTime: fe.ModTime(),
-			}
-			dm.insertFile(fm)
-			fpp := append(pp, fm.name)
-			log(ctx).Debugf("scanDir [%s] => %s", fpp, fm.mTime.UTC().Round(0))
+
+		if dm.subdirs == nil {
+			dm.subdirs = make([]*dirMeta, 0, len(entries))
 		}
+
+		sdm, err := f.scanSnapshotDir(ctx, pp, de)
+		if err != nil {
+			return nil, err
+		}
+
+		dm.insertSubdir(sdm)
 	}
+
+	for _, entry := range entries {
+		fe, ok := entry.(fs.File)
+		if !ok {
+			continue
+		}
+
+		if dm.files == nil {
+			dm.files = make([]*fileMeta, 0, len(entries))
+		}
+
+		fm := &fileMeta{
+			name:  fe.Name(),
+			mTime: fe.ModTime(),
+		}
+
+		dm.insertFile(fm)
+		fpp := append(pp, fm.name)
+		log(ctx).Debugf("scanDir [%s] => %s", fpp, fm.mTime.UTC().Round(0))
+	}
+
 	return dm, nil
 }
 
@@ -152,15 +181,19 @@ func (f *Filesystem) generateOrUpdateMetadata(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
 	log(ctx).Debugf("got %d changed blocks", len(bal))
+
 	for _, ba := range bal {
 		pp, err := f.addrToPath(ba)
 		if err != nil {
 			log(ctx).Errorf("address(%08x): %s", ba, err.Error())
 			return err
 		}
+
 		f.ensureFile(ctx, pp)
 	}
+
 	return nil
 }
 
@@ -172,11 +205,12 @@ const (
 	metaBlockSzB = "blockSzB"
 )
 
-func (f *Filesystem) isMetaFile(name string) (bool, string, string) {
+func (f *Filesystem) isMetaFile(name string) (isMeta bool, metaName, metaValue string) {
 	matches := reMetaFile.FindStringSubmatch(name)
-	if len(matches) != 3 {
+	if len(matches) != 3 { // nolint:gomnd
 		return false, "", ""
 	}
+
 	return true, matches[1], matches[2]
 }
 
@@ -187,10 +221,11 @@ func (f *Filesystem) recoverMetadata(ctx context.Context) {
 		if !isMeta {
 			continue
 		}
-		switch name {
-		case metaBlockSzB:
+
+		if name == metaBlockSzB {
 			sz := int64(0)
 			fmt.Sscanf(value, "%x", &sz)
+
 			if sz > 0 {
 				log(ctx).Debugf("recovered blockSzB=%d", sz)
 				f.blockSzB = sz

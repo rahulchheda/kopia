@@ -22,11 +22,12 @@ import (
 // depth maxTreeDepth.  See the unit test for illustration.
 
 const (
-	maxDirEntries     = int64(256) // must be a power of 2
+	maxDirEntries     = int64(256) // nolint:gomnd // must be a power of 2
 	maxTreeDepth      = 3
-	snapshotBlockSize = int64(1024 * 1024)
+	snapshotBlockSize = int64(1024 * 1024) // nolint:gomnd
 	extraTopHexFmtLen = 1
 	fileHexFmtLen     = 12 // counts up to 2^48
+	hexBits           = 4
 )
 
 type layoutProperties struct {
@@ -55,7 +56,7 @@ func (l *layoutProperties) initLayoutProperties(snapshotBlockSize, maxDirEntries
 	l.dirSzMask = maxDirEntries - 1
 	l.maxBlocks = 1 << (maxTreeDepth * l.dirSzL2)
 	l.maxVolSzB = l.maxBlocks * l.blockSzB
-	l.dirHexFmtLen = int(l.dirSzL2)/4 + (l.dirSzL2%4+3)/4
+	l.dirHexFmtLen = l.dirSzL2/hexBits + (l.dirSzL2%4+3)/hexBits
 	l.dirTopHexFmtLen = l.dirHexFmtLen + extraTopHexFmtLen
 	l.fileHexFmtLen = fileHexFmtLen // fixed
 }
@@ -77,29 +78,36 @@ func (f *Filesystem) addrToPath(blockAddr int64) (parsedPath, error) {
 		// @TODO: future special case blockAddr > f.maxBlocks with reserved hex digit in top dir
 		// Can choose to add additional trees of depth maxTreeDepth-1 or add indirect blocks for
 		// additional trees of depth maxTreeDepth.
-		return nil, fmt.Errorf("block address out of range")
+		return nil, ErrOutOfRange
 	}
+
 	pp := make(parsedPath, 0, maxTreeDepth)
+
 	for i, dirHexFmtLen := maxTreeDepth-1, f.dirTopHexFmtLen; i > 0; i, dirHexFmtLen = i-1, f.dirHexFmtLen {
 		idx := (blockAddr >> (f.dirSzL2 * i)) & f.dirSzMask
 		el := fmt.Sprintf("%0*x", dirHexFmtLen, idx)
 		pp = append(pp, el)
 	}
+
 	pp = append(pp, fmt.Sprintf("%0*x", f.fileHexFmtLen, blockAddr))
+
 	return pp, nil
 }
 
 // lookupDir searches for a directory in the directory hierarchy
 func (f *Filesystem) lookupDir(ctx context.Context, pp parsedPath) *dirMeta {
 	pDir := f.rootDir
+
 	for i := 0; i < len(pp); i++ {
 		sdm := pDir.findSubdir(pp[i])
 		if sdm == nil {
 			log(ctx).Debugf("dir not found [%s]", pp[:i])
 			return nil
 		}
+
 		pDir = sdm
 	}
+
 	return pDir
 }
 
@@ -110,8 +118,10 @@ func (f *Filesystem) lookupFile(ctx context.Context, pp parsedPath) *fileMeta {
 		if fm := pDir.findFile(pp[fileIdx]); fm != nil {
 			return fm
 		}
+
 		log(ctx).Debugf("file not found [%s]", pp)
 	}
+
 	return nil
 }
 
@@ -119,6 +129,7 @@ func (f *Filesystem) lookupFile(ctx context.Context, pp parsedPath) *fileMeta {
 func (f *Filesystem) ensureFile(ctx context.Context, pp parsedPath) {
 	fileIdx := len(pp) - 1
 	pDir := f.rootDir
+
 	for i := 0; i < fileIdx; i++ {
 		sdm := pDir.findSubdir(pp[i])
 		if sdm == nil {
@@ -126,22 +137,28 @@ func (f *Filesystem) ensureFile(ctx context.Context, pp parsedPath) {
 				name:  pp[i],
 				mTime: f.epoch,
 			}
+
 			pDir.insertSubdir(sdm)
 			log(ctx).Debugf("inserted directory(%s)", pp[:i+1])
 		}
+
 		pDir = sdm
 	}
+
 	fm := pDir.findFile(pp[fileIdx])
 	if fm == nil {
 		fm = &fileMeta{
 			name:  pp[fileIdx],
 			mTime: f.epoch,
 		}
+
 		pDir.insertFile(fm)
 		log(ctx).Debugf("inserted file(%s)", pp)
+
 		return
 	}
+
 	fm.mTime = f.epoch
+
 	log(ctx).Debugf("updated file(%s)", pp)
-	return
 }

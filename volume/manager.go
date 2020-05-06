@@ -1,3 +1,4 @@
+// Package volume enables snapshots of volumes that support change-block-tracking.
 package volume
 
 import (
@@ -11,6 +12,11 @@ import (
 
 var log = logging.GetContextLoggerFunc("volume")
 
+// Package errors.
+var (
+	ErrInvalidArgs = fmt.Errorf("invalid arguments")
+)
+
 // Manager offers methods to operate on volumes of some type.
 type Manager interface {
 	// Type returns the volume type.
@@ -20,7 +26,7 @@ type Manager interface {
 	// TBD: GetBlockWriter optional
 }
 
-// GetBlockReaderArgs contains the arguments for GetBlockReader
+// GetBlockReaderArgs contains the arguments for GetBlockReader.
 type GetBlockReaderArgs struct {
 	// The ID of the volume concerned.
 	VolumeID string
@@ -35,11 +41,12 @@ type GetBlockReaderArgs struct {
 	Profile interface{}
 }
 
-// Validate checks for required fields
+// Validate checks for required fields.
 func (a GetBlockReaderArgs) Validate() error {
 	if a.VolumeID == "" || a.SnapshotID == "" || a.BlockSizeBytes == 0 || a.SnapshotID == a.PreviousSnapshotID {
-		return fmt.Errorf("invalid GetBlockReaderArgs")
+		return ErrInvalidArgs
 	}
+
 	return nil
 }
 
@@ -56,18 +63,22 @@ var managerRegistry = map[string]Manager{}
 
 var managerRegistryMutex sync.Mutex
 
-// RegisterManager registers a manager type
+// RegisterManager registers a manager type.
 func RegisterManager(volumeType string, p Manager) {
 	managerRegistryMutex.Lock()
 	defer managerRegistryMutex.Unlock()
+
 	managerRegistry[volumeType] = p
+
 	log(context.Background()).Debugf("registered volume type [%s]", volumeType)
 }
 
-// FindManager returns the manager for a manager type or nil
+// FindManager returns the manager for a manager type or nil.
 func FindManager(volumeType string) Manager {
 	managerRegistryMutex.Lock()
 	defer managerRegistryMutex.Unlock()
+
 	log(context.Background()).Debugf("lookup volume type [%s]", volumeType)
+
 	return managerRegistry[volumeType]
 }
