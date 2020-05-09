@@ -45,13 +45,15 @@ type FilesystemArgs struct {
 	VolumeID string
 	// The identifier of the volume snapshot being backed up or restored.
 	VolumeSnapshotID string
+	// The amount of concurrency during restore. 0 assigns a default value.
+	RestoreConcurrency int
 	// Profile containing location and credential information needed to access the volume.
 	VolumeAccessProfile interface{}
 }
 
 // Validate checks for required fields
 func (a *FilesystemArgs) Validate() error {
-	if a.Repo == nil || a.VolumeManager == nil || a.VolumeID == "" || a.VolumeSnapshotID == "" || a.VolumeAccessProfile == nil {
+	if a.Repo == nil || a.VolumeManager == nil || a.VolumeID == "" || a.VolumeSnapshotID == "" || a.RestoreConcurrency < 0 || a.VolumeAccessProfile == nil {
 		return ErrInvalidArgs
 	}
 
@@ -61,7 +63,7 @@ func (a *FilesystemArgs) Validate() error {
 // SourceInfo generates a snapshotSourceInfo
 func (a *FilesystemArgs) SourceInfo() snapshot.SourceInfo {
 	return snapshot.SourceInfo{
-		Path:     path.Join("/volumefs", a.VolumeManager.Type(), a.VolumeID),
+		Path:     path.Join("/volumefs", a.VolumeID),
 		Host:     a.Repo.Hostname(),
 		UserName: a.Repo.Username(),
 	}

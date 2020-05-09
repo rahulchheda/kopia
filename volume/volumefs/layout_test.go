@@ -21,38 +21,38 @@ func TestLayout(t *testing.T) {
 	Ei := 1024 * Ti
 
 	layoutTCs := []layoutProperties{ // * indicates >16Ti size
-		{blockSzB: 64 * Ki, dirSz: 32, depth: 3, maxVolSzB: 2 * Gi, dirSzL2: 5, dirSzMask: 31, maxBlocks: 32 * Ki, dirHexFmtLen: 2},
-		{blockSzB: 64 * Ki, dirSz: 64, depth: 3, maxVolSzB: 16 * Gi, dirSzL2: 6, dirSzMask: 63, maxBlocks: 256 * Ki, dirHexFmtLen: 2},
-		{blockSzB: 64 * Ki, dirSz: 128, depth: 3, maxVolSzB: 128 * Gi, dirSzL2: 7, dirSzMask: 127, maxBlocks: 2 * Mi, dirHexFmtLen: 2},
-		{blockSzB: 64 * Ki, dirSz: 256, depth: 3, maxVolSzB: 1 * Ti, dirSzL2: 8, dirSzMask: 255, maxBlocks: 16 * Mi, dirHexFmtLen: 2},
-		{blockSzB: 64 * Ki, dirSz: 512, depth: 3, maxVolSzB: 8 * Ti, dirSzL2: 9, dirSzMask: 511, maxBlocks: 128 * Mi, dirHexFmtLen: 3},
-		{blockSzB: 64 * Ki, dirSz: 128, depth: 4, maxVolSzB: 16 * Ti, dirSzL2: 7, dirSzMask: 127, maxBlocks: 256 * Mi, dirHexFmtLen: 2}, // *
-		{blockSzB: 64 * Ki, dirSz: 256, depth: 4, maxVolSzB: 256 * Ti, dirSzL2: 8, dirSzMask: 255, maxBlocks: 4 * Gi, dirHexFmtLen: 2},  // *
-		{blockSzB: 64 * Ki, dirSz: 32, depth: 5, maxVolSzB: 2 * Ti, dirSzL2: 5, dirSzMask: 31, maxBlocks: 32 * Mi, dirHexFmtLen: 2},
-		{blockSzB: 64 * Ki, dirSz: 64, depth: 5, maxVolSzB: 64 * Ti, dirSzL2: 6, dirSzMask: 63, maxBlocks: 1 * Gi, dirHexFmtLen: 2},   // *
-		{blockSzB: 64 * Ki, dirSz: 128, depth: 5, maxVolSzB: 2 * Ei, dirSzL2: 7, dirSzMask: 127, maxBlocks: 32 * Gi, dirHexFmtLen: 2}, // *
+		{blockSzB: 64 * Ki, dirSz: 32, depth: 3, maxVolSzB: 2 * Gi, dirSzLog2: 5, dirSzMask: 31, maxBlocks: 32 * Ki, dirHexFmtLen: 2},
+		{blockSzB: 64 * Ki, dirSz: 64, depth: 3, maxVolSzB: 16 * Gi, dirSzLog2: 6, dirSzMask: 63, maxBlocks: 256 * Ki, dirHexFmtLen: 2},
+		{blockSzB: 64 * Ki, dirSz: 128, depth: 3, maxVolSzB: 128 * Gi, dirSzLog2: 7, dirSzMask: 127, maxBlocks: 2 * Mi, dirHexFmtLen: 2},
+		{blockSzB: 64 * Ki, dirSz: 256, depth: 3, maxVolSzB: 1 * Ti, dirSzLog2: 8, dirSzMask: 255, maxBlocks: 16 * Mi, dirHexFmtLen: 2},
+		{blockSzB: 64 * Ki, dirSz: 512, depth: 3, maxVolSzB: 8 * Ti, dirSzLog2: 9, dirSzMask: 511, maxBlocks: 128 * Mi, dirHexFmtLen: 3},
+		{blockSzB: 64 * Ki, dirSz: 128, depth: 4, maxVolSzB: 16 * Ti, dirSzLog2: 7, dirSzMask: 127, maxBlocks: 256 * Mi, dirHexFmtLen: 2}, // *
+		{blockSzB: 64 * Ki, dirSz: 256, depth: 4, maxVolSzB: 256 * Ti, dirSzLog2: 8, dirSzMask: 255, maxBlocks: 4 * Gi, dirHexFmtLen: 2},  // *
+		{blockSzB: 64 * Ki, dirSz: 32, depth: 5, maxVolSzB: 2 * Ti, dirSzLog2: 5, dirSzMask: 31, maxBlocks: 32 * Mi, dirHexFmtLen: 2},
+		{blockSzB: 64 * Ki, dirSz: 64, depth: 5, maxVolSzB: 64 * Ti, dirSzLog2: 6, dirSzMask: 63, maxBlocks: 1 * Gi, dirHexFmtLen: 2},   // *
+		{blockSzB: 64 * Ki, dirSz: 128, depth: 5, maxVolSzB: 2 * Ei, dirSzLog2: 7, dirSzMask: 127, maxBlocks: 32 * Gi, dirHexFmtLen: 2}, // *
 
-		{blockSzB: 256 * Ki, dirSz: 32, depth: 3, maxVolSzB: 8 * Gi, dirSzL2: 5, dirSzMask: 31, maxBlocks: 32 * Ki, dirHexFmtLen: 2},
-		{blockSzB: 256 * Ki, dirSz: 64, depth: 3, maxVolSzB: 64 * Gi, dirSzL2: 6, dirSzMask: 63, maxBlocks: 256 * Ki, dirHexFmtLen: 2},
-		{blockSzB: 256 * Ki, dirSz: 128, depth: 3, maxVolSzB: 512 * Gi, dirSzL2: 7, dirSzMask: 127, maxBlocks: 2 * Mi, dirHexFmtLen: 2},
-		{blockSzB: 256 * Ki, dirSz: 256, depth: 3, maxVolSzB: 4 * Ti, dirSzL2: 8, dirSzMask: 255, maxBlocks: 16 * Mi, dirHexFmtLen: 2},
-		{blockSzB: 256 * Ki, dirSz: 512, depth: 3, maxVolSzB: 32 * Ti, dirSzL2: 9, dirSzMask: 511, maxBlocks: 128 * Mi, dirHexFmtLen: 3}, // *
-		{blockSzB: 256 * Ki, dirSz: 128, depth: 4, maxVolSzB: 64 * Ti, dirSzL2: 7, dirSzMask: 127, maxBlocks: 256 * Mi, dirHexFmtLen: 2}, // *
-		{blockSzB: 256 * Ki, dirSz: 256, depth: 4, maxVolSzB: 1 * Ei, dirSzL2: 8, dirSzMask: 255, maxBlocks: 4 * Gi, dirHexFmtLen: 2},    // *
-		{blockSzB: 256 * Ki, dirSz: 32, depth: 5, maxVolSzB: 8 * Ti, dirSzL2: 5, dirSzMask: 31, maxBlocks: 32 * Mi, dirHexFmtLen: 2},
-		{blockSzB: 256 * Ki, dirSz: 64, depth: 5, maxVolSzB: 256 * Ti, dirSzL2: 6, dirSzMask: 63, maxBlocks: 1 * Gi, dirHexFmtLen: 2}, // *
-		{blockSzB: 256 * Ki, dirSz: 128, depth: 5, maxVolSzB: 8 * Ei, dirSzL2: 7, dirSzMask: 127, maxBlocks: 32 * Gi, dirHexFmtLen: 2},
+		{blockSzB: 256 * Ki, dirSz: 32, depth: 3, maxVolSzB: 8 * Gi, dirSzLog2: 5, dirSzMask: 31, maxBlocks: 32 * Ki, dirHexFmtLen: 2},
+		{blockSzB: 256 * Ki, dirSz: 64, depth: 3, maxVolSzB: 64 * Gi, dirSzLog2: 6, dirSzMask: 63, maxBlocks: 256 * Ki, dirHexFmtLen: 2},
+		{blockSzB: 256 * Ki, dirSz: 128, depth: 3, maxVolSzB: 512 * Gi, dirSzLog2: 7, dirSzMask: 127, maxBlocks: 2 * Mi, dirHexFmtLen: 2},
+		{blockSzB: 256 * Ki, dirSz: 256, depth: 3, maxVolSzB: 4 * Ti, dirSzLog2: 8, dirSzMask: 255, maxBlocks: 16 * Mi, dirHexFmtLen: 2},
+		{blockSzB: 256 * Ki, dirSz: 512, depth: 3, maxVolSzB: 32 * Ti, dirSzLog2: 9, dirSzMask: 511, maxBlocks: 128 * Mi, dirHexFmtLen: 3}, // *
+		{blockSzB: 256 * Ki, dirSz: 128, depth: 4, maxVolSzB: 64 * Ti, dirSzLog2: 7, dirSzMask: 127, maxBlocks: 256 * Mi, dirHexFmtLen: 2}, // *
+		{blockSzB: 256 * Ki, dirSz: 256, depth: 4, maxVolSzB: 1 * Ei, dirSzLog2: 8, dirSzMask: 255, maxBlocks: 4 * Gi, dirHexFmtLen: 2},    // *
+		{blockSzB: 256 * Ki, dirSz: 32, depth: 5, maxVolSzB: 8 * Ti, dirSzLog2: 5, dirSzMask: 31, maxBlocks: 32 * Mi, dirHexFmtLen: 2},
+		{blockSzB: 256 * Ki, dirSz: 64, depth: 5, maxVolSzB: 256 * Ti, dirSzLog2: 6, dirSzMask: 63, maxBlocks: 1 * Gi, dirHexFmtLen: 2}, // *
+		{blockSzB: 256 * Ki, dirSz: 128, depth: 5, maxVolSzB: 8 * Ei, dirSzLog2: 7, dirSzMask: 127, maxBlocks: 32 * Gi, dirHexFmtLen: 2},
 
-		{blockSzB: 1 * Mi, dirSz: 32, depth: 3, maxVolSzB: 32 * Gi, dirSzL2: 5, dirSzMask: 31, maxBlocks: 32 * Ki, dirHexFmtLen: 2},
-		{blockSzB: 1 * Mi, dirSz: 64, depth: 3, maxVolSzB: 256 * Gi, dirSzL2: 6, dirSzMask: 63, maxBlocks: 256 * Ki, dirHexFmtLen: 2},
-		{blockSzB: 1 * Mi, dirSz: 128, depth: 3, maxVolSzB: 2 * Ti, dirSzL2: 7, dirSzMask: 127, maxBlocks: 2 * Mi, dirHexFmtLen: 2},
-		{blockSzB: 1 * Mi, dirSz: 256, depth: 3, maxVolSzB: 16 * Ti, dirSzL2: 8, dirSzMask: 255, maxBlocks: 16 * Mi, dirHexFmtLen: 2},   // *
-		{blockSzB: 1 * Mi, dirSz: 512, depth: 3, maxVolSzB: 128 * Ti, dirSzL2: 9, dirSzMask: 511, maxBlocks: 128 * Mi, dirHexFmtLen: 3}, // *
-		{blockSzB: 1 * Mi, dirSz: 128, depth: 4, maxVolSzB: 256 * Ti, dirSzL2: 7, dirSzMask: 127, maxBlocks: 256 * Mi, dirHexFmtLen: 2}, // *
-		{blockSzB: 1 * Mi, dirSz: 256, depth: 4, maxVolSzB: 4 * Ei, dirSzL2: 8, dirSzMask: 255, maxBlocks: 4 * Gi, dirHexFmtLen: 2},     // *
-		{blockSzB: 1 * Mi, dirSz: 32, depth: 5, maxVolSzB: 32 * Ti, dirSzL2: 5, dirSzMask: 31, maxBlocks: 32 * Mi, dirHexFmtLen: 2},     // *
-		{blockSzB: 1 * Mi, dirSz: 64, depth: 5, maxVolSzB: 1 * Ei, dirSzL2: 6, dirSzMask: 63, maxBlocks: 1 * Gi, dirHexFmtLen: 2},       // *
-		{blockSzB: 1 * Mi, dirSz: 128, depth: 5, maxVolSzB: 32 * Ei, dirSzL2: 7, dirSzMask: 127, maxBlocks: 32 * Gi, dirHexFmtLen: 2},   // *
+		{blockSzB: 1 * Mi, dirSz: 32, depth: 3, maxVolSzB: 32 * Gi, dirSzLog2: 5, dirSzMask: 31, maxBlocks: 32 * Ki, dirHexFmtLen: 2},
+		{blockSzB: 1 * Mi, dirSz: 64, depth: 3, maxVolSzB: 256 * Gi, dirSzLog2: 6, dirSzMask: 63, maxBlocks: 256 * Ki, dirHexFmtLen: 2},
+		{blockSzB: 1 * Mi, dirSz: 128, depth: 3, maxVolSzB: 2 * Ti, dirSzLog2: 7, dirSzMask: 127, maxBlocks: 2 * Mi, dirHexFmtLen: 2},
+		{blockSzB: 1 * Mi, dirSz: 256, depth: 3, maxVolSzB: 16 * Ti, dirSzLog2: 8, dirSzMask: 255, maxBlocks: 16 * Mi, dirHexFmtLen: 2},   // *
+		{blockSzB: 1 * Mi, dirSz: 512, depth: 3, maxVolSzB: 128 * Ti, dirSzLog2: 9, dirSzMask: 511, maxBlocks: 128 * Mi, dirHexFmtLen: 3}, // *
+		{blockSzB: 1 * Mi, dirSz: 128, depth: 4, maxVolSzB: 256 * Ti, dirSzLog2: 7, dirSzMask: 127, maxBlocks: 256 * Mi, dirHexFmtLen: 2}, // *
+		{blockSzB: 1 * Mi, dirSz: 256, depth: 4, maxVolSzB: 4 * Ei, dirSzLog2: 8, dirSzMask: 255, maxBlocks: 4 * Gi, dirHexFmtLen: 2},     // *
+		{blockSzB: 1 * Mi, dirSz: 32, depth: 5, maxVolSzB: 32 * Ti, dirSzLog2: 5, dirSzMask: 31, maxBlocks: 32 * Mi, dirHexFmtLen: 2},     // *
+		{blockSzB: 1 * Mi, dirSz: 64, depth: 5, maxVolSzB: 1 * Ei, dirSzLog2: 6, dirSzMask: 63, maxBlocks: 1 * Gi, dirHexFmtLen: 2},       // *
+		{blockSzB: 1 * Mi, dirSz: 128, depth: 5, maxVolSzB: 32 * Ei, dirSzLog2: 7, dirSzMask: 127, maxBlocks: 32 * Gi, dirHexFmtLen: 2},   // *
 	}
 	for i, tc := range layoutTCs {
 		tc.dirTopHexFmtLen = tc.dirHexFmtLen + extraTopHexFmtLen // fill in
@@ -93,6 +93,9 @@ func TestLayout(t *testing.T) {
 			name: pp[len(pp)-1],
 		}
 		assert.Equal(tc.addr, fm.blockAddr(), "case %d", i)
+
+		addr := f.pathToAddr(tc.pp)
+		assert.Equal(tc.addr, addr, "case %d %s=>%0x exp=%0x", i, pp.String(), addr, tc.addr)
 	}
 
 	_, err := f.addrToPath(f.maxBlocks)

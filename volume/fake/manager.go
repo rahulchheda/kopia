@@ -101,6 +101,11 @@ func (p *manager) GetBlockReader(args volume.GetBlockReaderArgs) (volume.BlockRe
 	return rp, nil
 }
 
+// GetBlockWriter is not supported.
+func (p *manager) GetBlockWriter(args volume.GetBlockWriterArgs) (volume.BlockWriter, error) {
+	return nil, volume.ErrNotSupported
+}
+
 // Validate verifies the ReaderProfile.
 func (rp *ReaderProfile) Validate() error {
 	if len(rp.Ranges) == 0 {

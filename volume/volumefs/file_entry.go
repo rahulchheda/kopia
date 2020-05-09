@@ -27,6 +27,7 @@ func (fm *fileMeta) fsEntry(f *Filesystem) fs.File {
 	}
 }
 
+// @TODO FIX ME - save block addr in fileMeta and change Name() to return relative name
 func (fm *fileMeta) blockAddr() int64 {
 	var addr int64
 

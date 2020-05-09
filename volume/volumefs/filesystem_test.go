@@ -63,7 +63,7 @@ func TestFilesystemArgs(t *testing.T) {
 	si := fa.SourceInfo()
 	assert.Equal(th.repo.Hostname(), si.Host)
 	assert.Equal(th.repo.Username(), si.UserName)
-	assert.Equal(path.Join("/volumefs", vmgr.VolumeType, fa.VolumeID), si.Path)
+	assert.Equal(path.Join("/volumefs", fa.VolumeID), si.Path)
 }
 
 // Test harness based on upload_test.go, repotesting_test.go, snapshot_test.go, etc.

@@ -59,7 +59,7 @@ func TestInitializeForBackupNoPreviousSnapshot(t *testing.T) {
 			assert.Equal(f.epoch, x.mTime)
 		}
 	})
-	assert.Equal(len(expAddresses)+1, fileCnt) // includes meta
+	assert.Equal(len(expAddresses)+3, fileCnt) // includes meta
 	assert.Equal(6, dirCnt)
 
 	for _, ba := range expAddresses {
@@ -72,6 +72,14 @@ func TestInitializeForBackupNoPreviousSnapshot(t *testing.T) {
 
 	fn := fmt.Sprintf(metaFmtX, metaBlockSzB, f.blockSzB)
 	fm := f.lookupFile(ctx, parsedPath{fn})
+	assert.NotNil(fm, "meta %s", fn)
+
+	fn = fmt.Sprintf(metaFmtX, metaDirSz, f.dirSz)
+	fm = f.lookupFile(ctx, parsedPath{fn})
+	assert.NotNil(fm, "meta %s", fn)
+
+	fn = fmt.Sprintf(metaFmtX, metaDepth, f.depth)
+	fm = f.lookupFile(ctx, parsedPath{fn})
 	assert.NotNil(fm, "meta %s", fn)
 
 	th.compareInternalAndExternalTrees(ctx, f, root)
@@ -128,13 +136,13 @@ func TestScanGetSnapshotManifest(t *testing.T) {
 	assert.NoError(err)
 
 	// Case: success
-	man, err := f.scanGetSnapshotManifest(ctx, snap1_0.RootObjectID())
+	man, err := f.findSnapshotManifest(ctx, snap1_0.RootObjectID())
 	assert.NoError(err)
 	assert.NotNil(man)
 	assert.Equal(snap1_1.ID, man.ID)
 
 	// Case: not found
-	man, err = f.scanGetSnapshotManifest(ctx, snap1_0.RootObjectID()+"foo")
+	man, err = f.findSnapshotManifest(ctx, snap1_0.RootObjectID()+"foo")
 	assert.Error(err)
 	assert.Nil(man)
 }

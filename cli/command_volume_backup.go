@@ -12,6 +12,7 @@ import (
 	"github.com/kopia/kopia/snapshot/policy"
 	"github.com/kopia/kopia/snapshot/snapshotfs"
 	"github.com/kopia/kopia/volume"
+	"github.com/kopia/kopia/volume/blockfile"
 	fmgr "github.com/kopia/kopia/volume/fake" // register the fake manager
 	"github.com/kopia/kopia/volume/volumefs"
 
@@ -25,7 +26,8 @@ var (
 	volBackupCommandVolSnapID     = volBackupCommand.Flag("vol-snapshot-id", "Volume snapshot identifier").Required().Short('i').String()
 	volBackupCommandPrevVolSnapID = volBackupCommand.Flag("vol-previous-snapshot-id", "Previous volume snapshot identifier. Use with '-S'.").Short('I').String()
 	volBackupCommandPrevSnapID    = volBackupCommand.Flag("previous-snapshot-id", "Previous repository snapshot identifier. Use with '-I'.").Short('S').String()
-	volBackupCommandFakeProfile   = volBackupCommand.Flag("fake-profile", "Path to 'fake' volume manager profile.").ExistingFile()
+	volBackupCommandFakeProfile   = volBackupCommand.Flag("fake-profile", "Path to the volume manager profile if -T=fake.").ExistingFile()
+	volBackupCommandBlockfile     = volBackupCommand.Flag("block-file", "Path to a file if -T=blockfile.").ExistingFile()
 )
 
 func init() {
@@ -53,6 +55,10 @@ func runVolBackupCommand(ctx context.Context, rep repo.Repository) error {
 	switch fsArgs.VolumeManager.Type() { // setup manager type specific profiles
 	case fmgr.VolumeType:
 		fsArgs.VolumeAccessProfile = *volBackupCommandFakeProfile
+	case blockfile.VolumeType:
+		bfp := &blockfile.Profile{}
+		bfp.Name = *volBackupCommandBlockfile
+		fsArgs.VolumeAccessProfile = bfp
 	default:
 		break
 	}

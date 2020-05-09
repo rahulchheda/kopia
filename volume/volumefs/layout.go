@@ -35,7 +35,7 @@ type layoutProperties struct {
 	dirSz    int64
 	depth    int
 	// the rest are computed
-	dirSzL2         int
+	dirSzLog2       int
 	dirSzMask       int64
 	maxBlocks       int64
 	maxVolSzB       int64
@@ -52,11 +52,11 @@ func (l *layoutProperties) initLayoutProperties(snapshotBlockSize, maxDirEntries
 	l.blockSzB = snapshotBlockSize
 	l.dirSz = maxDirEntries
 	l.depth = maxTreeDepth
-	l.dirSzL2 = int(math.Log2(float64(maxDirEntries)))
+	l.dirSzLog2 = int(math.Log2(float64(maxDirEntries)))
 	l.dirSzMask = maxDirEntries - 1
-	l.maxBlocks = 1 << (maxTreeDepth * l.dirSzL2)
+	l.maxBlocks = 1 << (maxTreeDepth * l.dirSzLog2)
 	l.maxVolSzB = l.maxBlocks * l.blockSzB
-	l.dirHexFmtLen = l.dirSzL2/hexBits + (l.dirSzL2%4+3)/hexBits
+	l.dirHexFmtLen = l.dirSzLog2/hexBits + (l.dirSzLog2%4+3)/hexBits
 	l.dirTopHexFmtLen = l.dirHexFmtLen + extraTopHexFmtLen
 	l.fileHexFmtLen = fileHexFmtLen // fixed
 }
@@ -72,26 +72,45 @@ func (pp parsedPath) String() string {
 	return path.Join(pp...)
 }
 
+func (f *Filesystem) newParsedPath() parsedPath {
+	return make(parsedPath, 0, f.depth)
+}
+
 // addrToPath returns the parsed path for a block file
 func (f *Filesystem) addrToPath(blockAddr int64) (parsedPath, error) {
 	if blockAddr >= f.maxBlocks || blockAddr < 0 {
 		// @TODO: future special case blockAddr > f.maxBlocks with reserved hex digit in top dir
-		// Can choose to add additional trees of depth maxTreeDepth-1 or add indirect blocks for
-		// additional trees of depth maxTreeDepth.
+		// Can choose to add additional trees of depth f.depth-1 or add indirect blocks for
+		// additional trees of depth f.depth.
 		return nil, ErrOutOfRange
 	}
 
-	pp := make(parsedPath, 0, maxTreeDepth)
+	pp := f.newParsedPath()
 
-	for i, dirHexFmtLen := maxTreeDepth-1, f.dirTopHexFmtLen; i > 0; i, dirHexFmtLen = i-1, f.dirHexFmtLen {
-		idx := (blockAddr >> (f.dirSzL2 * i)) & f.dirSzMask
+	for i, dirHexFmtLen := f.depth-1, f.dirTopHexFmtLen; i > 0; i, dirHexFmtLen = i-1, f.dirHexFmtLen {
+		idx := (blockAddr >> (f.dirSzLog2 * i)) & f.dirSzMask
 		el := fmt.Sprintf("%0*x", dirHexFmtLen, idx)
 		pp = append(pp, el)
 	}
 
+	// @TODO use relative naming
 	pp = append(pp, fmt.Sprintf("%0*x", f.fileHexFmtLen, blockAddr))
 
 	return pp, nil
+}
+
+// pathToAddr returns the address from a parsed block file path
+func (f *Filesystem) pathToAddr(pp parsedPath) (blockAddr int64) {
+	for i := 0; i < len(pp); i++ {
+		var el int64
+
+		fmt.Sscanf(pp[i], "%x", &el)
+
+		blockAddr <<= f.dirSzLog2
+		blockAddr |= el & f.dirSzMask
+	}
+
+	return
 }
 
 // lookupDir searches for a directory in the directory hierarchy

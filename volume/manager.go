@@ -14,16 +14,22 @@ var log = logging.GetContextLoggerFunc("volume")
 
 // Package errors.
 var (
-	ErrInvalidArgs = fmt.Errorf("invalid arguments")
+	ErrInvalidArgs  = fmt.Errorf("invalid arguments")
+	ErrNotSupported = fmt.Errorf("not supported")
 )
 
 // Manager offers methods to operate on volumes of some type.
 type Manager interface {
 	// Type returns the volume type.
 	Type() string
+
 	// GetBlockReader returns a BlockReader for a particular volume.
+	// Optional - will return ErrNotSupported if unavailable.
 	GetBlockReader(args GetBlockReaderArgs) (BlockReader, error)
-	// TBD: GetBlockWriter optional
+
+	// GetBlockWriter returns a BlockWriter for a particular volume.
+	// Optional - will return ErrNotSupported if unavailable.
+	GetBlockWriter(args GetBlockWriterArgs) (BlockWriter, error)
 }
 
 // GetBlockReaderArgs contains the arguments for GetBlockReader.
@@ -59,6 +65,36 @@ type BlockReader interface {
 	GetBlock(ctx context.Context, blockAddr int64) (io.ReadCloser, error)
 }
 
+// GetBlockWriterArgs contains the arguments for GetBlockWriter.
+type GetBlockWriterArgs struct {
+	// The ID of the volume concerned.
+	VolumeID string
+	// The snapshot block size used by the filesystem.
+	BlockSizeBytes int64
+	// Manager specific profile containing location and credential information.
+	Profile interface{}
+}
+
+// Validate checks for required fields.
+func (a GetBlockWriterArgs) Validate() error {
+	if a.VolumeID == "" || a.BlockSizeBytes < 0 {
+		return ErrInvalidArgs
+	}
+
+	return nil
+}
+
+// BlockWriter is the interface used to write snapshot blocks to a volume manager.
+type BlockWriter interface {
+	// AllocateBuffer returns a buffer of volume specific size and alignment
+	// to be used in the writer returned by PutBlock.
+	AllocateBuffer() []byte
+	// PutBlock returns a writer for the specified snapshot block.
+	PutBlock(ctx context.Context, blockAddr int64) (io.WriteCloser, error)
+}
+
+// managerRegistry contains registered managers.
+// Typically this is accomplished as the side-effect of importing their individual packages.
 var managerRegistry = map[string]Manager{}
 
 var managerRegistryMutex sync.Mutex

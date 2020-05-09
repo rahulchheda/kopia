@@ -30,6 +30,7 @@ require (
 	github.com/minio/minio-go/v6 v6.0.50
 	github.com/mmcloughlin/avo v0.0.0-20200303042253-6df701fe672f // indirect
 	github.com/natefinch/atomic v0.0.0-20150920032501-a62ce929ffcc
+	github.com/ncw/directio v1.0.5
 	github.com/op/go-logging v0.0.0-20160315200505-970db520ece7
 	github.com/pkg/errors v0.9.1
 	github.com/pkg/profile v1.4.0
