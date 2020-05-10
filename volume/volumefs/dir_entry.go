@@ -108,7 +108,6 @@ func (e *dirEntry) Mode() os.FileMode {
 }
 
 func (e *dirEntry) Size() int64 {
-	// TBD: not sure if this is the correct thing to return
 	return int64(len(e.m.subdirs) + len(e.m.files))
 }
 

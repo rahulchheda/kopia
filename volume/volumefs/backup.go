@@ -34,7 +34,7 @@ func (f *Filesystem) InitializeForBackup(ctx context.Context, previousSnapshotID
 			mTime: f.epoch,
 		}
 
-		f.setMetadata(ctx)
+		f.createMetadataFiles(ctx)
 	}
 
 	// now get the changed blocks
@@ -62,14 +62,7 @@ func (f *Filesystem) InitializeForBackup(ctx context.Context, previousSnapshotID
 
 // scanPreviousSnapshot imports a previous snapshot and returns the in-memory metadata hierarchy.
 func (f *Filesystem) scanPreviousSnapshot(ctx context.Context, prevSnapID string) (*dirMeta, error) {
-	var err error // nolint:wsl
-
-	f.previousRootEntry, err = f.findPreviousSnapshot(ctx, prevSnapID)
-	if err != nil {
-		return nil, err
-	}
-
-	if err = f.recoverMetadataFromRootEntry(ctx, f.previousRootEntry); err != nil { // nolint:gocritic
+	if err := f.initFromSnapshot(ctx, prevSnapID); err != nil {
 		return nil, err
 	}
 
@@ -150,7 +143,7 @@ func (f *Filesystem) generateOrUpdateMetadata(ctx context.Context) error {
 	for _, ba := range bal {
 		pp, err := f.addrToPath(ba)
 		if err != nil {
-			log(ctx).Errorf("address(%08x): %s", ba, err.Error())
+			log(ctx).Debugf("address(%08x): %s", ba, err.Error())
 			return err
 		}
 

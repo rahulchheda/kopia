@@ -22,6 +22,7 @@ import (
 	"github.com/kopia/kopia/snapshot/policy"
 	"github.com/kopia/kopia/snapshot/snapshotfs"
 	"github.com/kopia/kopia/volume"
+	"github.com/kopia/kopia/volume/blockfile"
 	vmgr "github.com/kopia/kopia/volume/fake"
 
 	"github.com/stretchr/testify/assert"
@@ -128,6 +129,7 @@ func newVolFsTestHarness(t *testing.T) (context.Context, *volFsTestHarness) {
 
 func (th *volFsTestHarness) cleanup() {
 	os.RemoveAll(th.repoDir)
+	th.t.Log("Test harness cleanup done")
 }
 
 // nolint:wsl,gocritic
@@ -135,7 +137,7 @@ func (th *volFsTestHarness) addSnapshot(ctx context.Context, bal []int64) *snaps
 	assert := assert.New(th.t)
 	sourceDir := mockfs.NewDirectory()
 
-	f := th.filesystem(nil) // for utility methods
+	f := th.fsForBackupTests(nil) // for utility methods
 
 	// create directories first
 	dirMap := map[string]struct{}{}
@@ -162,7 +164,9 @@ func (th *volFsTestHarness) addSnapshot(ctx context.Context, bal []int64) *snaps
 	}
 
 	// Add the metadata files
-	sourceDir.AddFile(fmt.Sprintf(metaFmtX, metaBlockSzB, f.GetBlockSize()), []byte{}, defaultPermissions)
+	for _, pp := range f.metadataFiles() {
+		sourceDir.AddFile(pp.String(), []byte{}, defaultPermissions)
+	}
 
 	th.ft.Advance(1 * time.Hour)
 	u := snapshotfs.NewUploader(th.repo)
@@ -191,9 +195,8 @@ func (th *volFsTestHarness) mustSaveSnapshot(snapManifest *snapshot.Manifest) ma
 	return manID
 }
 
-// newFilesystem helper
 // nolint:wsl,gocritic
-func (th *volFsTestHarness) filesystem(profile interface{}) *Filesystem {
+func (th *volFsTestHarness) fsForBackupTests(profile interface{}) *Filesystem {
 	if th.retFS != nil {
 		return th.retFS
 	}
@@ -213,6 +216,30 @@ func (th *volFsTestHarness) filesystem(profile interface{}) *Filesystem {
 		VolumeID:            "volID",
 		VolumeSnapshotID:    "volSnapID1",
 		VolumeAccessProfile: profile,
+	}
+	th.t.Logf("%#v", fa)
+	assert.NoError(fa.Validate())
+
+	f, err := New(fa)
+	assert.NoError(err)
+	assert.NotNil(f)
+
+	return f
+}
+
+// nolint:wsl,gocritic
+func (th *volFsTestHarness) fsForRestoreTests(p *blockfile.Profile) *Filesystem {
+	assert := assert.New(th.t)
+
+	mgr := volume.FindManager(blockfile.VolumeType)
+	assert.NotNil(mgr)
+
+	fa := &FilesystemArgs{
+		Repo:                th.repo,
+		VolumeManager:       mgr,
+		VolumeID:            "volID",
+		VolumeSnapshotID:    "volSnapID1",
+		VolumeAccessProfile: p,
 	}
 	th.t.Logf("%#v", fa)
 	assert.NoError(fa.Validate())
@@ -321,4 +348,197 @@ func (th *volFsTestHarness) compareInternalAndExternalTrees(ctx context.Context,
 		assert.Equal(len(entries), cnt, msg)
 	}
 	checkNode(rootEntry, nil)
+}
+
+type testBW struct {
+	dbs         int // block size
+	putBlockBA  int64
+	putBlockWC  io.WriteCloser
+	putBlockErr error
+}
+
+var _ volume.BlockWriter = (*testBW)(nil)
+
+func (bw *testBW) AllocateBuffer() []byte {
+	return make([]byte, bw.dbs)
+}
+
+func (bw *testBW) PutBlock(ctx context.Context, blockAddr int64) (io.WriteCloser, error) {
+	bw.putBlockBA = blockAddr
+	return bw.putBlockWC, bw.putBlockErr
+}
+
+type testDirEntry struct {
+	name string
+
+	retReadDirErr error
+}
+
+var _ fs.Directory = (*testDirEntry)(nil)
+
+func (e *testDirEntry) IsDir() bool {
+	return true
+}
+
+func (e *testDirEntry) Name() string {
+	return e.name
+}
+
+func (e *testDirEntry) Mode() os.FileMode {
+	return 0555 | os.ModeDir
+}
+
+func (e *testDirEntry) Size() int64 {
+	return 8
+}
+
+func (e *testDirEntry) Sys() interface{} {
+	return nil
+}
+
+func (e *testDirEntry) ModTime() time.Time {
+	return time.Now()
+}
+
+func (e *testDirEntry) Owner() fs.OwnerInfo {
+	return fs.OwnerInfo{}
+}
+
+func (e *testDirEntry) Summary() *fs.DirectorySummary {
+	return nil
+}
+
+func (e *testDirEntry) Child(ctx context.Context, name string) (fs.Entry, error) {
+	return fs.ReadDirAndFindChild(ctx, e, name)
+}
+
+func (e *testDirEntry) Readdir(ctx context.Context) (fs.Entries, error) {
+	// Mixed entries only found in the top directory
+	return nil, e.retReadDirErr
+}
+
+type testFileEntry struct {
+	name       string
+	size       int64
+	retOpenR   fs.Reader
+	retOpenErr error
+}
+
+var _ fs.File = (*testFileEntry)(nil)
+
+func (e *testFileEntry) IsDir() bool {
+	return false
+}
+
+func (e *testFileEntry) Name() string {
+	return e.name
+}
+
+func (e *testFileEntry) Mode() os.FileMode {
+	return 0555 // nolint:gomnd
+}
+
+func (e *testFileEntry) Size() int64 {
+	return e.size
+}
+
+func (e *testFileEntry) Sys() interface{} {
+	return nil
+}
+
+func (e *testFileEntry) ModTime() time.Time {
+	return time.Now()
+}
+
+func (e *testFileEntry) Owner() fs.OwnerInfo {
+	return fs.OwnerInfo{}
+}
+
+func (e *testFileEntry) Open(ctx context.Context) (fs.Reader, error) {
+	return e.retOpenR, e.retOpenErr
+}
+
+type testReader struct {
+	t *testing.T
+
+	retCloseErr error
+	closeCalled bool
+
+	retReadN     int
+	retReadErr   error
+	readRemBytes int
+	cnt          int
+
+	retEntryE   fs.Entry
+	retEntryErr error
+}
+
+var _ fs.Reader = (*testReader)(nil)
+
+func (tr *testReader) Close() error {
+	tr.closeCalled = true
+	return tr.retCloseErr
+}
+
+func (tr *testReader) Read(b []byte) (int, error) {
+	retN := tr.retReadN
+	retE := tr.retReadErr
+
+	tr.cnt++
+	if tr.cnt > 10 {
+		return 0, io.ErrUnexpectedEOF
+	}
+
+	if tr.retReadErr == nil && retN == 0 {
+		if tr.readRemBytes > 0 {
+			if len(b) < tr.readRemBytes {
+				retN = len(b)
+			} else {
+				retN = tr.readRemBytes
+			}
+
+			tr.readRemBytes -= retN
+		} else {
+			retE = io.EOF
+		}
+
+		tr.t.Logf("*** Read(%d) -> %d %d", len(b), retN, tr.readRemBytes)
+	}
+
+	return retN, retE
+}
+
+func (tr *testReader) Seek(offset int64, whence int) (int64, error) {
+	return 0, nil
+}
+
+func (tr *testReader) Entry() (fs.Entry, error) {
+	return tr.retEntryE, tr.retEntryErr
+}
+
+type testWC struct {
+	t *testing.T
+
+	retCloseErr error
+	closeCalled bool
+
+	retWriteN   int
+	retWriteErr error
+}
+
+var _ io.WriteCloser = (*testWC)(nil)
+
+func (wc *testWC) Close() error {
+	wc.closeCalled = true
+	return wc.retCloseErr
+}
+
+func (wc *testWC) Write(b []byte) (int, error) {
+	retN := wc.retWriteN
+	if wc.retWriteErr == nil && retN == 0 {
+		retN = len(b)
+		wc.t.Logf("*** Write(%d)", len(b))
+	}
+
+	return retN, wc.retWriteErr
 }

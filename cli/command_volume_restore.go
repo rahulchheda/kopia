@@ -49,5 +49,11 @@ func runVolRestoreCommand(ctx context.Context, rep repo.Repository) error {
 		return err
 	}
 
-	return f.Restore(ctx, *volRestoreCommandSnapID)
+	stats, err := f.Restore(ctx, *volRestoreCommandSnapID)
+
+	if err == nil {
+		fmt.Printf("%#v\n", stats)
+	}
+
+	return err
 }

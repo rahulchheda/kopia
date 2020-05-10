@@ -54,7 +54,7 @@ func (r *fileReader) Entry() (fs.Entry, error) {
 }
 
 func (r *fileReader) Seek(offset int64, whence int) (int64, error) {
-	r.logger.Errorf("Seek(%s)", r.fe.m.name)
+	r.logger.Debugf("Seek(%s)", r.fe.m.name)
 	return 0, fmt.Errorf("unsupported") // nolint
 }
 

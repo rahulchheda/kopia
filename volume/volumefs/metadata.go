@@ -58,7 +58,7 @@ func (f *Filesystem) recoverMetadataFromFilename(name string) {
 func (f *Filesystem) recoverMetadataFromRootEntry(ctx context.Context, rootEntry fs.Directory) error {
 	entries, err := rootEntry.Readdir(ctx)
 	if err != nil {
-		f.logger.Errorf("failed to recover metadata: %v", err)
+		f.logger.Debugf("failed to recover metadata: %v", err)
 		return err
 	}
 
@@ -74,17 +74,24 @@ func (f *Filesystem) recoverMetadataFromRootEntry(ctx context.Context, rootEntry
 	return nil
 }
 
-// setMetadata sets one-time filesystem metadata
-func (f *Filesystem) setMetadata(ctx context.Context) {
-	fn := fmt.Sprintf(metaFmtX, metaBlockSzB, f.blockSzB)
-	pp := parsedPath([]string{fn})
-	f.ensureFile(ctx, pp)
+// createMetadataFiles creates files for the filesystem metadata
+func (f *Filesystem) createMetadataFiles(ctx context.Context) {
+	for _, pp := range f.metadataFiles() {
+		f.ensureFile(ctx, pp)
+	}
+}
 
-	fn = fmt.Sprintf(metaFmtX, metaDirSz, f.dirSz)
-	pp = parsedPath([]string{fn})
-	f.ensureFile(ctx, pp)
+// metadataFiles returns the metadata file paths
+func (f *Filesystem) metadataFiles() []parsedPath {
+	ret := []parsedPath{}
 
-	fn = fmt.Sprintf(metaFmtX, metaDepth, f.depth)
-	pp = parsedPath([]string{fn})
-	f.ensureFile(ctx, pp)
+	for _, fn := range []string{
+		fmt.Sprintf(metaFmtX, metaBlockSzB, f.blockSzB),
+		fmt.Sprintf(metaFmtX, metaDirSz, f.dirSz),
+		fmt.Sprintf(metaFmtX, metaDepth, f.depth),
+	} {
+		ret = append(ret, parsedPath([]string{fn}))
+	}
+
+	return ret
 }
