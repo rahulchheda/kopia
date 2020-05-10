@@ -415,6 +415,7 @@ func TestReader(t *testing.T) {
 		case "full block":
 			tdf.retReadBufs = append(tdf.retReadBufs, make([]byte, dbs))
 		case "canceled":
+			r.m.ioChan <- struct{}{} // acquire sem
 			expError = ErrCanceled
 			cancel()
 		}
@@ -436,5 +437,10 @@ func TestReader(t *testing.T) {
 
 		err = rc.Close()
 		assert.NoError(err)
+
+		// post-mortem
+		if tc == "canceled" {
+			<-r.m.ioChan // release sem
+		}
 	}
 }

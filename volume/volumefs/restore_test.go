@@ -57,8 +57,8 @@ func TestRestoreHelper(t *testing.T) {
 	for _, tc := range []string{
 		"init", "terminate-on-error", "set-error", "wrote-bytes",
 		"restoreDir", "restoreDir-abort-dir", "restoreDir-abort-file", "restoreDir-readdir-error",
-		"worker-aborted", "worker-stop", "worker-pb-error", "worker-fe-open-err-wc-err",
-		"worker-wc-write-err", "worker-wrote-bytes",
+		"worker-aborted", "worker-stop", "worker-pb-error", "worker-fe-open-err",
+		"worker-wc-write-err", "worker-wrote-bytes", "worker-writer-close-error", "worker-reader-close-error",
 	} {
 		t.Logf("Case: %s", tc)
 
@@ -162,9 +162,8 @@ func TestRestoreHelper(t *testing.T) {
 			rh.workerBody(ctx)
 			assert.Error(rh.err)
 			assert.Regexp(tbw.putBlockErr.Error(), rh.err.Error())
-		case "worker-fe-open-err-wc-err":
+		case "worker-fe-open-err":
 			twc := &testWC{}
-			twc.retCloseErr = ErrOutOfRange // just for coverage
 			tbw.putBlockWC = twc
 			tfe := &testFileEntry{}
 			tfe.retOpenErr = ErrInvalidArgs
@@ -200,6 +199,44 @@ func TestRestoreHelper(t *testing.T) {
 			mustCloseFileChan = false
 			rh.workerBody(ctx)
 			assert.NoError(rh.err)
+			assert.Equal(int64(2*dbs), rh.BytesWritten)
+			assert.True(twc.closeCalled)
+			assert.True(tr.closeCalled)
+		case "worker-writer-close-error":
+			twc := &testWC{}
+			twc.t = t
+			twc.retCloseErr = ErrOutOfRange
+			tbw.putBlockWC = twc
+			tr := &testReader{}
+			tr.t = t
+			tr.readRemBytes = 2 * dbs
+			tfe := &testFileEntry{}
+			tfe.retOpenR = tr
+			rh.fileChan <- restoreFileData{blockAddr: 0xabc, fe: tfe}
+			rh.stopWorkers()
+			mustCloseFileChan = false
+			rh.workerBody(ctx)
+			assert.Error(rh.err)
+			assert.Regexp(twc.retCloseErr.Error(), rh.err.Error())
+			assert.Equal(int64(2*dbs), rh.BytesWritten)
+			assert.True(twc.closeCalled)
+			assert.True(tr.closeCalled)
+		case "worker-reader-close-error":
+			twc := &testWC{}
+			twc.t = t
+			tbw.putBlockWC = twc
+			tr := &testReader{}
+			tr.t = t
+			tr.readRemBytes = 2 * dbs
+			tr.retCloseErr = ErrInvalidArgs
+			tfe := &testFileEntry{}
+			tfe.retOpenR = tr
+			rh.fileChan <- restoreFileData{blockAddr: 0xabc, fe: tfe}
+			rh.stopWorkers()
+			mustCloseFileChan = false
+			rh.workerBody(ctx)
+			assert.Error(rh.err)
+			assert.Regexp(tr.retCloseErr.Error(), rh.err.Error())
 			assert.Equal(int64(2*dbs), rh.BytesWritten)
 			assert.True(twc.closeCalled)
 			assert.True(tr.closeCalled)

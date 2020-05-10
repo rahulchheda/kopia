@@ -284,6 +284,7 @@ func (r *restoreHelper) workerBody(ctx context.Context) {
 func (r *restoreHelper) closeAndLogError(c io.Closer, what string) {
 	if err := c.Close(); err != nil {
 		r.f.logger.Debugf("close %s error: %v", what, err)
+		r.setError(err)
 	}
 }
 
