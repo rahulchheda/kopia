@@ -23,6 +23,10 @@ func TestGetBlockWriter(t *testing.T) {
 		VolumeID:       "volID",
 		BlockSizeBytes: int64(1024 * 1024),
 	}
+
+	factory := volume.FindManager(VolumeType)
+	assert.NotNil(factory)
+
 	errTcs := []struct {
 		wp  *Profile
 		gbw volume.GetBlockWriterArgs
@@ -37,16 +41,12 @@ func TestGetBlockWriter(t *testing.T) {
 			arg.Profile = tc.wp
 		}
 
-		m := volume.FindManager(VolumeType)
-		assert.NotNil(m)
-
-		bw, err := m.GetBlockWriter(arg)
+		bw, err := factory.GetBlockWriter(arg)
 		assert.Error(err, "case %d", i)
 		assert.Nil(bw, "case %d", i)
 	}
 
 	for _, tc := range []string{"default block size", "specific block size"} {
-		bfm := &manager{}
 		pGood := &Profile{Name: "/block/file"}
 		expBlockSize := DefaultBlockSizeBytes
 
@@ -59,10 +59,11 @@ func TestGetBlockWriter(t *testing.T) {
 		gbwGood.Profile = pGood
 		assert.NoError(gbwGood.Validate())
 		assert.NoError(pGood.Validate())
-		assert.Empty(bfm.Name)
-		bw, err := bfm.GetBlockWriter(gbwGood)
+		bw, err := factory.GetBlockWriter(gbwGood)
 		assert.NoError(err)
 		assert.NotNil(bw)
+		bfm, ok := bw.(*manager)
+		assert.True(ok)
 		assert.Equal(expBlockSize, bfm.DeviceBlockSizeBytes)
 		assert.Equal(pGood.Name, bfm.Name)
 		assert.Equal(gbwGood.BlockSizeBytes, bfm.fsBlockSizeBytes)
@@ -70,11 +71,6 @@ func TestGetBlockWriter(t *testing.T) {
 		assert.Zero(bfm.count)
 		assert.Nil(bfm.file)
 		assert.NotNil(bfm.ioChan)
-
-		// call again even with same data is not ok
-		bw2, err := bfm.GetBlockWriter(gbwGood)
-		assert.Equal(ErrAlreadyInitialized, err)
-		assert.Nil(bw2)
 
 		// block allocation
 		b := bw.AllocateBuffer()
@@ -88,8 +84,8 @@ func TestPutBlock(t *testing.T) {
 	assert := assert.New(t)
 
 	ctx := context.Background()
-	bfm := &manager{}
-	bfm.fsBlockSizeBytes = 1024 * 1024
+	factory := volume.FindManager(VolumeType)
+	assert.NotNil(factory)
 
 	tmpFile := path.Join(os.TempDir(), "testVolume")
 	defer func() {
@@ -104,9 +100,12 @@ func TestPutBlock(t *testing.T) {
 		Profile:        pGood,
 	}
 
-	bw, err := bfm.GetBlockWriter(gbwGood)
+	bw, err := factory.GetBlockWriter(gbwGood)
 	assert.NoError(err)
 	assert.NotNil(bw)
+	bfm, ok := bw.(*manager)
+	assert.True(ok)
+	bfm.fsBlockSizeBytes = 1024 * 1024
 
 	// Case: first writer
 	ba1 := int64(256)
@@ -196,8 +195,8 @@ func TestPutBlock(t *testing.T) {
 func TestWriter(t *testing.T) {
 	assert := assert.New(t)
 
-	bfm := &manager{}
-	bfm.fsBlockSizeBytes = 1024 * 1024
+	factory := volume.FindManager(VolumeType)
+	assert.NotNil(factory)
 
 	assert.NotNil(openFile)
 	savedOpenFile := openFile
@@ -217,9 +216,12 @@ func TestWriter(t *testing.T) {
 		Profile:        pGood,
 	}
 
-	bw, err := bfm.GetBlockWriter(gbwGood)
+	bw, err := factory.GetBlockWriter(gbwGood)
 	assert.NoError(err)
 	assert.NotNil(bw)
+	bfm, ok := bw.(*manager)
+	assert.True(ok)
+	bfm.fsBlockSizeBytes = 1024 * 1024
 	assert.NotNil(bfm.ioChan)
 
 	alignedBuf := bfm.AllocateBuffer()

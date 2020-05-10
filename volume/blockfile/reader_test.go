@@ -31,6 +31,9 @@ func TestGetBlockReader(t *testing.T) {
 		BlockSizeBytes:     int64(1024 * 1024),
 	}
 
+	factory := volume.FindManager(VolumeType)
+	assert.NotNil(factory)
+
 	errTcs := []struct {
 		wp  *Profile
 		gbw volume.GetBlockReaderArgs
@@ -46,16 +49,12 @@ func TestGetBlockReader(t *testing.T) {
 			arg.Profile = tc.wp
 		}
 
-		m := volume.FindManager(VolumeType)
-		assert.NotNil(m)
-
-		bw, err := m.GetBlockReader(arg)
+		bw, err := factory.GetBlockReader(arg)
 		assert.Error(err, "case %d", i)
 		assert.Nil(bw, "case %d", i)
 	}
 
 	for _, tc := range []string{"default block size", "specific block size"} {
-		bfm := &manager{}
 		pGood := &Profile{Name: "/block/file"}
 		expBlockSize := DefaultBlockSizeBytes
 
@@ -68,21 +67,17 @@ func TestGetBlockReader(t *testing.T) {
 		gbwGood.Profile = pGood
 		assert.NoError(gbwGood.Validate())
 		assert.NoError(pGood.Validate())
-		assert.Empty(bfm.Name)
-		bw, err := bfm.GetBlockReader(gbwGood)
+		bw, err := factory.GetBlockReader(gbwGood)
 		assert.NoError(err)
 		assert.NotNil(bw)
+		bfm, ok := bw.(*manager)
+		assert.True(ok)
 		assert.Equal(expBlockSize, bfm.DeviceBlockSizeBytes)
 		assert.Equal(pGood.Name, bfm.Name)
 		assert.Equal(gbwGood.BlockSizeBytes, bfm.fsBlockSizeBytes)
 		assert.Nil(bfm.logger)
 		assert.Zero(bfm.count)
 		assert.Nil(bfm.file)
-
-		// call again even with same data is not ok
-		bw2, err := bfm.GetBlockReader(gbwGood)
-		assert.Equal(ErrAlreadyInitialized, err)
-		assert.Nil(bw2)
 	}
 }
 
@@ -337,6 +332,9 @@ func TestReader(t *testing.T) {
 		openFile = savedOpenFile
 	}()
 
+	factory := volume.FindManager(VolumeType)
+	assert.NotNil(factory)
+
 	bs := 8192
 	dbs := bs / 2
 	pGood := &Profile{Name: "/block/file", DeviceBlockSizeBytes: int64(dbs)}
@@ -361,13 +359,13 @@ func TestReader(t *testing.T) {
 		openFile = tof.OpenFile
 		tof.retFile = tdf
 
-		bfm := &manager{}
-		bfm.fsBlockSizeBytes = int64(bs)
-		bfm.Name = "foo"
-
-		bw, err := bfm.GetBlockReader(gbwGood)
+		bw, err := factory.GetBlockReader(gbwGood)
 		assert.NoError(err)
 		assert.NotNil(bw)
+		bfm, ok := bw.(*manager)
+		assert.True(ok)
+		bfm.fsBlockSizeBytes = int64(bs)
+		bfm.Name = "foo"
 		assert.Equal(dbs, int(bfm.DeviceBlockSizeBytes))
 
 		ba1 := int64(256)

@@ -9,15 +9,15 @@ import (
 	"github.com/ncw/directio"
 )
 
-var _ = volume.BlockReader(&manager{})
-
 // GetBlockReader provides support for an "initial" snapshot of a file, for testing
 // and verification purposes only. It cannot support change block tracking.
 // The implementation is not very efficient.
-func (m *manager) GetBlockReader(args volume.GetBlockReaderArgs) (volume.BlockReader, error) {
+func (factory *blockfileFactory) GetBlockReader(args volume.GetBlockReaderArgs) (volume.BlockReader, error) {
 	if err := args.Validate(); err != nil {
 		return nil, err
 	}
+
+	m := &manager{}
 
 	if args.PreviousSnapshotID != "" {
 		return nil, volume.ErrNotSupported
@@ -33,6 +33,8 @@ func (m *manager) GetBlockReader(args volume.GetBlockReaderArgs) (volume.BlockRe
 
 	return m, nil
 }
+
+var _ volume.BlockReader = (*manager)(nil)
 
 // GetBlockAddresses returns block addresses for non-zero snapshot sized blocks.
 func (m *manager) GetBlockAddresses(ctx context.Context) ([]int64, error) {

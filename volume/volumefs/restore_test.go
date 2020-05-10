@@ -2,28 +2,142 @@ package volumefs
 
 import (
 	"fmt"
-	"os"
-	"path"
 	"sort"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/kopia/kopia/volume"
 	"github.com/kopia/kopia/volume/blockfile"
+	vmgr "github.com/kopia/kopia/volume/fake"
 
 	"github.com/stretchr/testify/assert"
 )
 
 // nolint:wsl,gocritic
 func TestRestore(t *testing.T) {
+	assert := assert.New(t)
 
-	// internal "restorer" interface to fake doRestore
+	ctx, th := newVolFsTestHarness(t)
+	defer th.cleanup()
 
+	for _, tc := range []string{"empty-previous-snapshot", "invalid-snapshot", "default-concurrency", "specific-concurrency", "gbw-config-error", "gbw-unsupported"} {
+		t.Logf("Case: %s", tc)
+
+		var expError string
+		expConcurrency := DefaultRestoreConcurrency
+
+		dbs := 4096
+		p := &blockfile.Profile{
+			Name:                 "foo",
+			CreateIfMissing:      true,
+			DeviceBlockSizeBytes: int64(dbs),
+		}
+		mgr := volume.FindManager(blockfile.VolumeType)
+		assert.NotNil(mgr)
+
+		fa := &FilesystemArgs{
+			Repo:                th.repo,
+			VolumeManager:       mgr,
+			VolumeID:            "volID",
+			VolumeSnapshotID:    "volSnapID1",
+			VolumeAccessProfile: p,
+		}
+		switch tc {
+		case "specific-concurrency":
+			expConcurrency += 2
+			fa.RestoreConcurrency = expConcurrency
+		case "gbw-unsupported":
+			// fake manager does not support GBW
+			mgr = volume.FindManager(vmgr.VolumeType)
+			assert.NotNil(mgr)
+			fa.VolumeManager = mgr
+			expError = volume.ErrNotSupported.Error()
+		}
+
+		assert.NoError(fa.Validate())
+
+		fr, err := New(fa)
+		assert.NoError(err)
+		assert.NotNil(fr)
+		assert.NotNil(fr.restorer)
+		assert.Equal(fr, fr.restorer)
+
+		fr.logger = log(ctx)
+
+		// create a snapshot
+		blocks := []int64{}
+		fb := th.fsForBackupTests(nil)
+		th.retFS = fb // so we know the layout used in the snap
+		snap := th.addSnapshot(ctx, blocks)
+		snapID := snap.RootObjectID().String()
+
+		// replace the restorer
+		tr := &testRestorer{}
+		fr.restorer = tr
+		tr.retRS = RestoreStats{
+			BytesWritten: 100,
+			NumFiles:     10,
+			NumDirs:      1,
+		}
+
+		switch tc {
+		case "empty-previous-snapshot":
+			snapID = ""
+			expError = ErrInvalidArgs.Error()
+		case "invalid-snapshot":
+			snapID += "foo"
+			expError = "invalid"
+		case "gbw-config-error":
+			p.Name = ""
+			expError = "invalid.*arg"
+		}
+
+		stats, err := fr.Restore(ctx, snapID)
+		if expError == "" {
+			assert.NoError(err)
+			assert.Equal(tr.retRS, stats)
+			assert.Equal(expConcurrency, tr.inNumWorkers)
+		} else {
+			assert.Regexp(expError, err.Error())
+			assert.Equal(RestoreStats{}, stats)
+		}
+	}
 }
 
 // nolint:wsl,gocritic
-func TestDoRestore(t *testing.T) {
-	// provide a fake bw and a fake dir with 0 entries
+func TestInternalRestore(t *testing.T) {
+	// restore has no branches: test with a simple 0 size snapshot
+	// and assume here that the helper works - it is tested separately.
+	assert := assert.New(t)
+
+	ctx, th := newVolFsTestHarness(t)
+	defer th.cleanup()
+
+	dbs := 4096
+	p := &blockfile.Profile{
+		Name:                 "foo",
+		CreateIfMissing:      true,
+		DeviceBlockSizeBytes: int64(dbs),
+	}
+	fr := th.fsForRestoreTests(p)
+	fr.logger = log(ctx)
+
+	blocks := []int64{}
+	fb := th.fsForBackupTests(nil)
+	th.retFS = fb // so we know the layout used in the snap
+	snap := th.addSnapshot(ctx, blocks)
+	fr.initFromSnapshot(ctx, snap.RootObjectID().String())
+
+	tbw := &testBW{dbs: dbs}
+
+	stats, err := fr.restore(ctx, tbw, 1)
+	assert.NoError(err)
+	expStats := RestoreStats{}
+	expStats.init(fr)
+	expStats.NumDirs = 1
+	expStats.NumDirEntries = int64(len(fr.metadataFiles()))
+	assert.Equal(expStats, stats)
 }
 
 // nolint:wsl,gocritic,gocyclo
@@ -33,15 +147,9 @@ func TestRestoreHelper(t *testing.T) {
 	ctx, th := newVolFsTestHarness(t)
 	defer th.cleanup()
 
-	tmpFile := path.Join(os.TempDir(), "testVolume")
-	defer func() {
-		os.Remove(tmpFile)
-	}()
-	os.Remove(tmpFile)
-
 	dbs := 4096
 	p := &blockfile.Profile{
-		Name:                 tmpFile,
+		Name:                 "foo",
 		CreateIfMissing:      true,
 		DeviceBlockSizeBytes: int64(dbs),
 	}

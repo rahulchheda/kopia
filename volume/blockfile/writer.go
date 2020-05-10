@@ -9,13 +9,13 @@ import (
 	"github.com/ncw/directio"
 )
 
-var _ = volume.BlockWriter(&manager{})
-
 // GetBlockWriter returns a volume.BlockWriter.
-func (m *manager) GetBlockWriter(args volume.GetBlockWriterArgs) (volume.BlockWriter, error) {
+func (factory *blockfileFactory) GetBlockWriter(args volume.GetBlockWriterArgs) (volume.BlockWriter, error) {
 	if err := args.Validate(); err != nil {
 		return nil, err
 	}
+
+	m := &manager{}
 
 	if err := m.applyProfileFromArgs(modeWrite, args.Profile, args.BlockSizeBytes); err != nil {
 		return nil, err
@@ -27,6 +27,8 @@ func (m *manager) GetBlockWriter(args volume.GetBlockWriterArgs) (volume.BlockWr
 
 	return m, nil
 }
+
+var _ volume.BlockWriter = (*manager)(nil)
 
 func (m *manager) AllocateBuffer() []byte {
 	// AlignedBlock panics in degenerate cases

@@ -16,6 +16,7 @@
 package volumefs
 
 import (
+	"context"
 	"fmt"
 	"path"
 	"time"
@@ -79,6 +80,11 @@ type Filesystem struct {
 	rootDir           *dirMeta
 	previousRootEntry fs.Directory
 	logger            logging.Logger
+	restorer          restorer
+}
+
+type restorer interface {
+	restore(ctx context.Context, bw volume.BlockWriter, numWorkers int) (RestoreStats, error)
 }
 
 // New returns a new volume filesystem
@@ -90,6 +96,7 @@ func New(args *FilesystemArgs) (*Filesystem, error) {
 	f := &Filesystem{}
 	f.FilesystemArgs = *args
 	f.setDefaultLayoutProperties() // block size may be reset from previous repo snapshot
+	f.restorer = f
 
 	return f, nil
 }

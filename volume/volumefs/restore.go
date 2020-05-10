@@ -18,7 +18,7 @@ const (
 	DefaultRestoreConcurrency = 4
 )
 
-// RestoreStats contain restore statistics
+// RestoreStats contains restore statistics
 type RestoreStats struct {
 	BytesWritten  int64
 	NumDirs       int
@@ -26,6 +26,11 @@ type RestoreStats struct {
 	NumDirEntries int64
 	MinBlockAddr  int64
 	MaxBlockAddr  int64
+}
+
+func (rs *RestoreStats) init(f *Filesystem) {
+	rs.MinBlockAddr = f.maxBlocks + 1
+	rs.MaxBlockAddr = -1
 }
 
 // Restore extracts a snapshot to a volume.
@@ -66,12 +71,12 @@ func (f *Filesystem) Restore(ctx context.Context, prevSnapID string) (RestoreSta
 		numWorkers = f.RestoreConcurrency
 	}
 
-	return f.doRestore(ctx, bw, numWorkers)
+	return f.restorer.restore(ctx, bw, numWorkers)
 }
 
-// doRestore restores a filesystem using the provided BlockWriter and
+// restore restores a filesystem using the provided BlockWriter and
 // the specified degree of concurrency.
-func (f *Filesystem) doRestore(ctx context.Context, bw volume.BlockWriter, numWorkers int) (RestoreStats, error) {
+func (f *Filesystem) restore(ctx context.Context, bw volume.BlockWriter, numWorkers int) (RestoreStats, error) {
 	rh := &restoreHelper{}
 
 	rh.init(f, bw, numWorkers)
@@ -129,8 +134,7 @@ func (r *restoreHelper) init(f *Filesystem, bw volume.BlockWriter, numWorkers in
 	r.bw = bw
 	r.fileChan = make(chan restoreFileData, numWorkers)
 	r.stopChan = make(chan struct{})
-	r.MinBlockAddr = f.maxBlocks
-	r.MaxBlockAddr = -1
+	r.RestoreStats.init(f)
 }
 
 // setError aborts the restore session on the first error posted

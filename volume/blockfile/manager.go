@@ -34,7 +34,22 @@ var (
 	ErrProfileMissing     = fmt.Errorf("profile missing")
 )
 
-// Profile contains directives for the manager.
+// init registers the factory interface on import.
+func init() {
+	volume.RegisterManager(VolumeType, &blockfileFactory{})
+}
+
+// blockfileFactory is the external factory type
+type blockfileFactory struct{}
+
+var _ volume.Manager = (*blockfileFactory)(nil)
+
+// Type returns the volume type
+func (factory *blockfileFactory) Type() string {
+	return VolumeType
+}
+
+// Profile contains directives for an instance of the manager.
 type Profile struct {
 	// Path name of the device special file or ordinary file.
 	Name string
@@ -55,11 +70,6 @@ func (p *Profile) Validate() error {
 	return nil
 }
 
-// init registers the manager via import.
-func init() {
-	volume.RegisterManager(VolumeType, &manager{})
-}
-
 type devFiler interface {
 	Close() error
 	ReadAt([]byte, int64) (int, error)
@@ -67,6 +77,7 @@ type devFiler interface {
 	WriteAt([]byte, int64) (int, error)
 }
 
+// manager is the internal type that contains instance data
 type manager struct {
 	Profile
 
@@ -79,12 +90,6 @@ type manager struct {
 
 	count  int           // The active count - on last close the file must be closed.
 	ioChan chan struct{} // A counting semaphore to serialize concurrent write or read calls.
-}
-
-var _ = volume.Manager(&manager{})
-
-func (m *manager) Type() string {
-	return VolumeType
 }
 
 func (m *manager) applyProfileFromArgs(mode string, argsProfile interface{}, argsBlockSize int64) error {

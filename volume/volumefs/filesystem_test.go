@@ -542,3 +542,19 @@ func (wc *testWC) Write(b []byte) (int, error) {
 
 	return retN, wc.retWriteErr
 }
+
+type testRestorer struct {
+	inBW         volume.BlockWriter
+	inNumWorkers int
+	retRS        RestoreStats
+	retErr       error
+}
+
+var _ restorer = (*testRestorer)(nil)
+
+func (tr *testRestorer) restore(ctx context.Context, bw volume.BlockWriter, numWorkers int) (RestoreStats, error) {
+	tr.inBW = bw
+	tr.inNumWorkers = numWorkers
+
+	return tr.retRS, tr.retErr
+}

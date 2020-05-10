@@ -22,7 +22,7 @@ func TestManagerRegistered(t *testing.T) {
 
 	assert.Equal(VolumeType, m.Type())
 
-	bfm, ok := m.(*manager)
+	bfm, ok := m.(*blockfileFactory) // factory structure
 	assert.True(ok)
 	assert.NotNil(bfm)
 }
