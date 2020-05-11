@@ -9,8 +9,6 @@ import (
 
 	"github.com/kopia/kopia/repo/logging"
 	"github.com/kopia/kopia/volume"
-
-	"github.com/ncw/directio"
 )
 
 // Package constants.
@@ -93,10 +91,6 @@ type manager struct {
 }
 
 func (m *manager) applyProfileFromArgs(mode string, argsProfile interface{}, argsBlockSize int64) error {
-	if m.mode != "" {
-		return ErrAlreadyInitialized
-	}
-
 	p, ok := argsProfile.(*Profile)
 	if !ok {
 		return ErrProfileMissing
@@ -122,10 +116,11 @@ func (m *manager) applyProfileFromArgs(mode string, argsProfile interface{}, arg
 
 type devFileOpener func(string, int, os.FileMode) (devFiler, error)
 
-var openFile devFileOpener = directioOpenFile
+var openFile devFileOpener = osOpenFile
 
-func directioOpenFile(name string, flags int, perms os.FileMode) (devFiler, error) {
-	return directio.OpenFile(name, flags, perms)
+func osOpenFile(name string, flags int, perms os.FileMode) (devFiler, error) {
+	// Note: directio OpenFile does not work on files in linux docker containers
+	return os.OpenFile(name, flags, perms)
 }
 
 func (m *manager) openFile(mustLock, forReading bool) (devFiler, error) {
