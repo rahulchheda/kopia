@@ -10,6 +10,7 @@ import (
 	"io"
 	"io/ioutil"
 	"path/filepath"
+	"sync"
 	"text/template"
 
 	"github.com/kopia/kopia/repo/logging"
@@ -20,7 +21,8 @@ import (
 const (
 	VolumeType = "fake"
 
-	fillBufSz = 256
+	defaultBlockSize = 16384
+	fillBufSz        = 256
 )
 
 var log = logging.GetContextLoggerFunc("volume/fakemanager")
@@ -36,7 +38,8 @@ func init() {
 }
 
 // ReaderProfile contains the directives for a fake manager session
-// It can be passed in directly to GetBlockReader.
+// It can be passed in directly to GetBlockReader or read from a JSON file.
+// It satisfies volume.BlockIterator.
 type ReaderProfile struct {
 	Ranges    []BlockAddrRange
 	numBlocks int
@@ -95,7 +98,7 @@ func (p *manager) GetBlockReader(args volume.GetBlockReaderArgs) (volume.BlockRe
 		return nil, err
 	}
 
-	rp.blockSize = args.BlockSizeBytes
+	rp.blockSize = defaultBlockSize
 	log(ctx).Debugf("rp: %#v", rp)
 
 	return rp, nil
@@ -133,7 +136,18 @@ func (rp *ReaderProfile) Validate() error {
 	return nil
 }
 
+// GetBlocks satisfies volume.BlockReader
+func (rp *ReaderProfile) GetBlocks(ctx context.Context) (volume.BlockIterator, error) {
+	ba, err := rp.GetBlockAddresses(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return rp.newBlockIterator(ba), nil
+}
+
 // GetBlockAddresses fakes its namesake.
+// @TODO fold into GetBlocks() or make internal.
 func (rp *ReaderProfile) GetBlockAddresses(ctx context.Context) ([]int64, error) {
 	ba := make([]int64, rp.numBlocks)
 	i := 0
@@ -153,6 +167,97 @@ func (rp *ReaderProfile) GetBlockAddresses(ctx context.Context) ([]int64, error)
 	return ba, nil
 }
 
+type blockIterator struct {
+	rp          *ReaderProfile
+	mux         sync.Mutex
+	iterBlocks  []int64
+	iterCurrent int
+	iterError   error
+	blockPool   sync.Pool
+}
+
+func (rp *ReaderProfile) newBlockIterator(blocks []int64) *blockIterator {
+	bi := &blockIterator{}
+	bi.iterBlocks = blocks
+	bi.rp = rp
+	bi.blockPool.New = func() interface{} {
+		b := new(block)
+		b.addr = -1
+
+		return b
+	}
+
+	return bi
+}
+
+// Next is from volume.BlockIterator
+func (bi *blockIterator) Next(ctx context.Context) volume.Block {
+	bi.mux.Lock()
+	defer bi.mux.Unlock()
+
+	if bi.iterError != nil {
+		return nil
+	}
+
+	if bi.iterCurrent < len(bi.iterBlocks) {
+		b := bi.blockPool.Get().(*block)
+		b.bi = bi // will be unset if reused
+		b.addr = bi.iterBlocks[bi.iterCurrent]
+		bi.iterCurrent++
+
+		return b
+	}
+
+	bi.iterError = io.EOF
+
+	return nil
+}
+
+func (bi *blockIterator) AtEnd() bool {
+	return bi.iterError != nil
+}
+
+// Close is from volume.BlockIterator
+func (bi *blockIterator) Close() error {
+	var err error
+
+	bi.mux.Lock()
+	defer bi.mux.Unlock()
+
+	if bi.iterError != nil && bi.iterError != io.EOF {
+		err = bi.iterError
+	} else {
+		bi.iterError = io.EOF // don't use the iterator again
+	}
+
+	return err
+}
+
+// block satisfies volume.Block
+type block struct {
+	bi   *blockIterator
+	addr int64
+}
+
+func (b *block) Address() int64 {
+	return b.addr
+}
+
+// Size is from volume.Block
+func (b *block) Size() int {
+	return int(b.bi.rp.blockSize)
+}
+
+func (b *block) Release() {
+	bi := b.bi
+	b.bi = nil // force failure if used
+	bi.blockPool.Put(b)
+}
+
+func (b *block) Get(ctx context.Context) (io.ReadCloser, error) {
+	return b.bi.rp.GetBlock(ctx, b.addr)
+}
+
 // BlockTemplateArgs are used for template substitution.
 type BlockTemplateArgs struct {
 	Start   string
@@ -161,12 +266,13 @@ type BlockTemplateArgs struct {
 }
 
 // GetBlock fakes its namesake.
+// @TODO make internal
 func (rp *ReaderProfile) GetBlock(ctx context.Context, blockAddr int64) (io.ReadCloser, error) {
-	var rangeTemplate *template.Template
-
-	var err error
-
-	var start, count int64
+	var (
+		rangeTemplate *template.Template
+		err           error
+		start, count  int64
+	)
 
 	for i, r := range rp.Ranges {
 		if r.Start+r.Count < blockAddr {

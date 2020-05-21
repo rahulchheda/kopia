@@ -26,10 +26,9 @@ func init() {
 
 func runVolRestoreCommand(ctx context.Context, rep repo.Repository) error {
 	fsArgs := &volumefs.FilesystemArgs{
-		Repo:               rep,
-		VolumeID:           *volRestoreCommandVolID,
-		VolumeSnapshotID:   "snapID", // required for Validate() only
-		RestoreConcurrency: *volRestoreCommandConcurrency,
+		Repo:             rep,
+		VolumeID:         *volRestoreCommandVolID,
+		VolumeSnapshotID: "snapID", // required for Validate() only
 	}
 
 	fsArgs.VolumeManager = volume.FindManager(blockfile.VolumeType)
@@ -49,10 +48,15 @@ func runVolRestoreCommand(ctx context.Context, rep repo.Repository) error {
 		return err
 	}
 
-	stats, err := f.Restore(ctx, *volRestoreCommandSnapID)
+	args := volumefs.RestoreArgs{
+		PreviousSnapshotID: *volRestoreCommandSnapID,
+		RestoreConcurrency: *volRestoreCommandConcurrency,
+	}
+
+	res, err := f.Restore(ctx, args)
 
 	if err == nil {
-		fmt.Printf("%#v\n", stats)
+		fmt.Printf("%#v\n", res)
 	}
 
 	return err

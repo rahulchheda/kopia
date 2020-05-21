@@ -1,10 +1,9 @@
 package volumefs
 
 import (
-	"context"
-	"fmt"
 	"math"
 	"path"
+	"strconv"
 )
 
 // The file system is organized into a symmetric tree based on block address.
@@ -23,25 +22,21 @@ import (
 
 const (
 	maxDirEntries     = int64(256) // nolint:gomnd // must be a power of 2
-	maxTreeDepth      = 3
-	snapshotBlockSize = int64(1024 * 1024) // nolint:gomnd
-	extraTopHexFmtLen = 1
-	fileHexFmtLen     = 12 // counts up to 2^48
-	hexBits           = 4
+	maxTreeDepth      = 4
+	snapshotBlockSize = int64(1024 * 16) // nolint:gomnd // this value actually comes from the device
+	baseEncoding      = 32
 )
 
 type layoutProperties struct {
 	blockSzB int64
 	dirSz    int64
 	depth    int
-	// the rest are computed
-	dirSzLog2       int
-	dirSzMask       int64
-	maxBlocks       int64
-	maxVolSzB       int64
-	dirHexFmtLen    int
-	dirTopHexFmtLen int
-	fileHexFmtLen   int
+	// the rest are computed or fixed
+	dirSzLog2    int
+	dirSzMask    int64
+	maxBlocks    int64
+	maxVolSzB    int64
+	baseEncoding int
 }
 
 func (f *Filesystem) setDefaultLayoutProperties() {
@@ -56,9 +51,7 @@ func (l *layoutProperties) initLayoutProperties(snapshotBlockSize, maxDirEntries
 	l.dirSzMask = maxDirEntries - 1
 	l.maxBlocks = 1 << (maxTreeDepth * l.dirSzLog2)
 	l.maxVolSzB = l.maxBlocks * l.blockSzB
-	l.dirHexFmtLen = l.dirSzLog2/hexBits + (l.dirSzLog2%4+3)/hexBits
-	l.dirTopHexFmtLen = l.dirHexFmtLen + extraTopHexFmtLen
-	l.fileHexFmtLen = fileHexFmtLen // fixed
+	l.baseEncoding = baseEncoding
 }
 
 // GetBlockSize returns the snapshot block size
@@ -72,29 +65,42 @@ func (pp parsedPath) String() string {
 	return path.Join(pp...)
 }
 
+func (pp parsedPath) Last() string {
+	if len(pp) > 0 {
+		return pp[len(pp)-1]
+	}
+
+	return ""
+}
+
+func (pp parsedPath) Child(name string) parsedPath {
+	cpp := make(parsedPath, len(pp)+1)
+	for i := 0; i < len(pp); i++ {
+		cpp[i] = pp[i]
+	}
+
+	cpp[len(pp)] = name
+
+	return cpp
+}
+
 func (f *Filesystem) newParsedPath() parsedPath {
 	return make(parsedPath, 0, f.depth)
 }
 
-// addrToPath returns the parsed path for a block file
+// addrToPath returns the parsed path for a block file relative to the block map root directory.
 func (f *Filesystem) addrToPath(blockAddr int64) (parsedPath, error) {
 	if blockAddr >= f.maxBlocks || blockAddr < 0 {
-		// @TODO: future special case blockAddr > f.maxBlocks with reserved hex digit in top dir
-		// Can choose to add additional trees of depth f.depth-1 or add indirect blocks for
-		// additional trees of depth f.depth.
 		return nil, ErrOutOfRange
 	}
 
 	pp := f.newParsedPath()
 
-	for i, dirHexFmtLen := f.depth-1, f.dirTopHexFmtLen; i > 0; i, dirHexFmtLen = i-1, f.dirHexFmtLen {
+	for i := f.depth - 1; i >= 0; i-- {
 		idx := (blockAddr >> (f.dirSzLog2 * i)) & f.dirSzMask
-		el := fmt.Sprintf("%0*x", dirHexFmtLen, idx)
+		el := strconv.FormatInt(idx, f.baseEncoding)
 		pp = append(pp, el)
 	}
-
-	// @TODO use relative naming
-	pp = append(pp, fmt.Sprintf("%0*x", f.fileHexFmtLen, blockAddr))
 
 	return pp, nil
 }
@@ -102,9 +108,7 @@ func (f *Filesystem) addrToPath(blockAddr int64) (parsedPath, error) {
 // pathToAddr returns the address from a parsed block file path
 func (f *Filesystem) pathToAddr(pp parsedPath) (blockAddr int64) {
 	for i := 0; i < len(pp); i++ {
-		var el int64
-
-		fmt.Sscanf(pp[i], "%x", &el)
+		el, _ := strconv.ParseInt(pp[i], f.baseEncoding, 64)
 
 		blockAddr <<= f.dirSzLog2
 		blockAddr |= el & f.dirSzMask
@@ -113,14 +117,12 @@ func (f *Filesystem) pathToAddr(pp parsedPath) (blockAddr int64) {
 	return
 }
 
-// lookupDir searches for a directory in the directory hierarchy
-func (f *Filesystem) lookupDir(ctx context.Context, pp parsedPath) *dirMeta {
-	pDir := f.rootDir
-
+// lookupDir searches for a directory in a directory hierarchy
+func (f *Filesystem) lookupDir(pDir *dirMeta, pp parsedPath) *dirMeta {
 	for i := 0; i < len(pp); i++ {
 		sdm := pDir.findSubdir(pp[i])
 		if sdm == nil {
-			log(ctx).Debugf("dir not found [%s]", pp[:i])
+			f.logger.Debugf("dir not found [%s]", pp[:i])
 			return nil
 		}
 
@@ -131,34 +133,33 @@ func (f *Filesystem) lookupDir(ctx context.Context, pp parsedPath) *dirMeta {
 }
 
 // lookupFile searches for a file in the directory hierarchy
-func (f *Filesystem) lookupFile(ctx context.Context, pp parsedPath) *fileMeta {
+func (f *Filesystem) lookupFile(pDir *dirMeta, pp parsedPath) *fileMeta {
 	fileIdx := len(pp) - 1
-	if pDir := f.lookupDir(ctx, pp[:fileIdx]); pDir != nil {
+	if pDir = f.lookupDir(pDir, pp[:fileIdx]); pDir != nil {
 		if fm := pDir.findFile(pp[fileIdx]); fm != nil {
 			return fm
 		}
 
-		log(ctx).Debugf("file not found [%s]", pp)
+		f.logger.Debugf("file not found [%s]", pp)
 	}
 
 	return nil
 }
 
-// ensureFile adds a new file to the directory hierarchy or updates its mTime if it exists
-func (f *Filesystem) ensureFile(ctx context.Context, pp parsedPath) {
+// ensureFile adds a new file to the specified directory hierarchy if it does not exist.
+// It returns the fileMeta.
+func (f *Filesystem) ensureFileInTree(pDir *dirMeta, pp parsedPath) *fileMeta {
 	fileIdx := len(pp) - 1
-	pDir := f.rootDir
 
 	for i := 0; i < fileIdx; i++ {
 		sdm := pDir.findSubdir(pp[i])
 		if sdm == nil {
 			sdm = &dirMeta{
-				name:  pp[i],
-				mTime: f.epoch,
+				name: pp[i],
 			}
 
 			pDir.insertSubdir(sdm)
-			log(ctx).Debugf("inserted directory(%s)", pp[:i+1])
+			f.logger.Debugf("inserted directory(%s)", pp[:i+1])
 		}
 
 		pDir = sdm
@@ -167,17 +168,14 @@ func (f *Filesystem) ensureFile(ctx context.Context, pp parsedPath) {
 	fm := pDir.findFile(pp[fileIdx])
 	if fm == nil {
 		fm = &fileMeta{
-			name:  pp[fileIdx],
-			mTime: f.epoch,
+			name: pp[fileIdx],
 		}
 
 		pDir.insertFile(fm)
-		log(ctx).Debugf("inserted file(%s)", pp)
+		f.logger.Debugf("inserted file(%s)", pp)
 
-		return
+		return fm
 	}
 
-	fm.mTime = f.epoch
-
-	log(ctx).Debugf("updated file(%s)", pp)
+	return fm
 }

@@ -1,22 +1,17 @@
 package cli
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
-	"os"
 	"time"
 
-	"github.com/kopia/kopia/fs"
 	"github.com/kopia/kopia/repo"
-	"github.com/kopia/kopia/snapshot"
-	"github.com/kopia/kopia/snapshot/policy"
-	"github.com/kopia/kopia/snapshot/snapshotfs"
 	"github.com/kopia/kopia/volume"
 	"github.com/kopia/kopia/volume/blockfile"
 	fmgr "github.com/kopia/kopia/volume/fake" // register the fake manager
 	"github.com/kopia/kopia/volume/volumefs"
-
-	"github.com/pkg/errors"
 )
 
 var (
@@ -28,6 +23,7 @@ var (
 	volBackupCommandPrevSnapID    = volBackupCommand.Flag("previous-snapshot-id", "Previous repository snapshot identifier. Use with '-I'.").Short('S').String()
 	volBackupCommandFakeProfile   = volBackupCommand.Flag("fake-profile", "Path to the volume manager profile if -T=fake.").ExistingFile()
 	volBackupCommandBlockfile     = volBackupCommand.Flag("block-file", "Path to a file if -T=blockfile.").ExistingFile()
+	volBackupCommandConcurrency   = volBackupCommand.Flag("parallel", "Backup N blocks in parallel").PlaceHolder("N").Default("0").Int()
 )
 
 func init() {
@@ -68,94 +64,28 @@ func runVolBackupCommand(ctx context.Context, rep repo.Repository) error {
 		return err
 	}
 
-	root, err := f.InitializeForBackup(ctx, *volBackupCommandPrevSnapID, *volBackupCommandPrevVolSnapID)
+	backupArgs := volumefs.BackupArgs{
+		PreviousSnapshotID:       *volBackupCommandPrevSnapID,
+		PreviousVolumeSnapshotID: *volBackupCommandPrevVolSnapID,
+		BackupConcurrency:        *volBackupCommandConcurrency,
+	}
+
+	result, err := f.Backup(ctx, backupArgs)
 	if err != nil {
 		return err
 	}
 
-	u := setupUploader(rep) // defined in command_snapshot_create
+	dur := result.Current.EndTime.Sub(result.Current.StartTime)
+	printStderr("\nCreated snapshot with root %v and ID %v in %v\n", result.Current.RootObjectID(), result.Current.ID, dur.Truncate(time.Second))
 
-	sourceInfo := f.SourceInfo()
+	var (
+		buf bytes.Buffer
+		enc = json.NewEncoder(&buf)
+	)
 
-	return snapshotSingleVolumeSource(ctx, rep, u, sourceInfo, root)
-}
+	_ = enc.Encode(result.Analyze())
 
-// snapshotSingleVolumeSource is identical to snapshotSingleSource with the exception of:
-// - removed getLocalFSEntry
-// - added source info and rootDir
-// Note there are still references to snapshot command variables that are unused here.
-func snapshotSingleVolumeSource(ctx context.Context, rep repo.Repository, u *snapshotfs.Uploader, sourceInfo snapshot.SourceInfo, rootDir fs.Entry) error {
-	printStderr("Snapshotting %v ...\n", sourceInfo)
+	printStderr("%s\n", buf.String())
 
-	t0 := time.Now()
-
-	previous, err := findPreviousSnapshotManifest(ctx, rep, sourceInfo, nil)
-	if err != nil {
-		return err
-	}
-
-	policyTree, err := policy.TreeForSource(ctx, rep, sourceInfo)
-	if err != nil {
-		return errors.Wrap(err, "unable to get policy tree")
-	}
-
-	log(ctx).Debugf("uploading %v using %v previous manifests", sourceInfo, len(previous))
-
-	manifest, err := u.Upload(ctx, rootDir, policyTree, sourceInfo, previous...)
-	if err != nil {
-		return err
-	}
-
-	manifest.Description = *snapshotCreateDescription
-	startTimeOverride, _ := parseTimestamp(*snapshotCreateStartTime)
-	endTimeOverride, _ := parseTimestamp(*snapshotCreateEndTime)
-
-	if !startTimeOverride.IsZero() {
-		if endTimeOverride.IsZero() {
-			// Calculate the correct end time based on current duration if they're not specified
-			duration := manifest.EndTime.Sub(manifest.StartTime)
-			manifest.EndTime = startTimeOverride.Add(duration)
-		}
-
-		manifest.StartTime = startTimeOverride
-	}
-
-	if !endTimeOverride.IsZero() {
-		if startTimeOverride.IsZero() {
-			inverseDuration := manifest.StartTime.Sub(manifest.EndTime)
-			manifest.StartTime = endTimeOverride.Add(inverseDuration)
-		}
-
-		manifest.EndTime = endTimeOverride
-	}
-
-	snapID, err := snapshot.SaveSnapshot(ctx, rep, manifest)
-	if err != nil {
-		return errors.Wrap(err, "cannot save manifest")
-	}
-
-	if _, err = policy.ApplyRetentionPolicy(ctx, rep, sourceInfo, true); err != nil {
-		return errors.Wrap(err, "unable to apply retention policy")
-	}
-
-	if ferr := rep.Flush(ctx); ferr != nil {
-		return errors.Wrap(ferr, "flush error")
-	}
-
-	progress.Finish()
-
-	var maybePartial string
-	if manifest.IncompleteReason != "" {
-		maybePartial = " partial"
-	}
-
-	if ds := manifest.RootEntry.DirSummary; ds != nil {
-		if ds.NumFailed > 0 {
-			errorColor.Fprintf(os.Stderr, "\nIgnored %v errors while snapshotting.", ds.NumFailed) //nolint:errcheck
-		}
-	}
-
-	printStderr("\nCreated%v snapshot with root %v and ID %v in %v\n", maybePartial, manifest.RootObjectID(), snapID, time.Since(t0).Truncate(time.Second))
-
-	return err
+	return nil
 }

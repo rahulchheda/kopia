@@ -15,6 +15,7 @@ import (
 const (
 	VolumeType            = "blockfile"
 	DefaultBlockSizeBytes = int64(16 * 1024) // nolint:gomnd // must be a power of 2
+	DefaultConcurrency    = 4
 
 	modeRead  = "readMode"
 	modeWrite = "writeMode"
@@ -25,6 +26,7 @@ var log = logging.GetContextLoggerFunc("volume/blockfile")
 // Errors
 var (
 	ErrAlreadyInitialized = fmt.Errorf("already initialized")
+	ErrInUse              = fmt.Errorf("in use")
 	ErrCanceled           = fmt.Errorf("canceled")
 	ErrCapacityExceeded   = fmt.Errorf("block capacity has been exceeded")
 	ErrInvalidArgs        = fmt.Errorf("invalid blockwriter arguments")
@@ -56,12 +58,14 @@ type Profile struct {
 	// The device block size. If unset a DefaultBlockSizeBytes will be used. Must be a power of 2.
 	// Data written must be done in chunks of a multiple of this size.
 	DeviceBlockSizeBytes int64
+	// The degree of concurrency. Optional.
+	Concurrency int
 }
 
 // Validate checks the Profile values for correctness.
 func (p *Profile) Validate() error {
 	// 0 is ok; see https://stackoverflow.com/questions/600293/how-to-check-if-a-number-is-a-power-of-2
-	if p.Name == "" || p.DeviceBlockSizeBytes < 0 || ((p.DeviceBlockSizeBytes & (p.DeviceBlockSizeBytes - 1)) != 0) {
+	if p.Name == "" || p.DeviceBlockSizeBytes < 0 || p.Concurrency < 0 || ((p.DeviceBlockSizeBytes & (p.DeviceBlockSizeBytes - 1)) != 0) {
 		return ErrInvalidArgs
 	}
 
@@ -81,16 +85,18 @@ type manager struct {
 
 	logger logging.Logger
 
-	fsBlockSizeBytes int64 // The snapshot block size used by the filesystem.
-	mux              sync.Mutex
-	file             devFiler // The file is shared by all writers.
-	mode             string
+	mux  sync.Mutex
+	file devFiler // The file is shared by all writers.
+	mode string
 
 	count  int           // The active count - on last close the file must be closed.
 	ioChan chan struct{} // A counting semaphore to serialize concurrent write or read calls.
+
+	bp      volume.BlockProcessor // block processor used by PutBlocks
+	bufPool sync.Pool             // buffer pool used by PutBlocks
 }
 
-func (m *manager) applyProfileFromArgs(mode string, argsProfile interface{}, argsBlockSize int64) error {
+func (m *manager) applyProfileFromArgs(mode string, argsProfile interface{}) error {
 	p, ok := argsProfile.(*Profile)
 	if !ok {
 		return ErrProfileMissing
@@ -105,10 +111,15 @@ func (m *manager) applyProfileFromArgs(mode string, argsProfile interface{}, arg
 		bSz = p.DeviceBlockSizeBytes
 	}
 
+	concurrency := p.Concurrency
+	if concurrency == 0 {
+		concurrency = DefaultConcurrency
+	}
+
 	m.Profile = *p
 	m.Name = filepath.Clean(p.Name)
 	m.DeviceBlockSizeBytes = bSz
-	m.fsBlockSizeBytes = argsBlockSize
+	m.Concurrency = concurrency
 	m.mode = mode
 
 	return nil
@@ -120,6 +131,7 @@ var openFile devFileOpener = osOpenFile
 
 func osOpenFile(name string, flags int, perms os.FileMode) (devFiler, error) {
 	// Note: directio OpenFile does not work on files in linux docker containers
+	// Could try it first and fall back to os.
 	return os.OpenFile(name, flags, perms)
 }
 

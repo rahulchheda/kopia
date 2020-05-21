@@ -1,82 +1,28 @@
 package volumefs
 
 import (
-	"context"
-	"fmt"
-	"os"
-	"time"
-
-	"github.com/kopia/kopia/fs"
+	"github.com/kopia/kopia/repo/object"
+	"github.com/kopia/kopia/snapshot"
 )
 
 // file metadata is saved in the following type
 type fileMeta struct {
-	name  string
-	mTime time.Time
+	name string
+	oid  object.ID
 }
 
-func (fm *fileMeta) isMeta(f *Filesystem) bool {
-	isMeta, _, _ := f.isMetaFile(fm.name)
+func (fm *fileMeta) isMeta() bool {
+	var md metadata
+
+	isMeta, _, _ := md.isMetaFile(fm.name)
+
 	return isMeta
 }
 
-func (fm *fileMeta) fsEntry(f *Filesystem) fs.File {
-	return &fileEntry{
-		f: f,
-		m: fm,
+func (fm *fileMeta) snapshotDirEntry() *snapshot.DirEntry {
+	return &snapshot.DirEntry{
+		Name:     fm.name,
+		Type:     snapshot.EntryTypeFile,
+		ObjectID: fm.oid,
 	}
-}
-
-// @TODO FIX ME - save block addr in fileMeta and change Name() to return relative name
-func (fm *fileMeta) blockAddr() int64 {
-	var addr int64
-
-	fmt.Sscanf(fm.name, "%x", &addr)
-
-	return addr
-}
-
-// fileEntry implements fs.File
-type fileEntry struct {
-	f *Filesystem
-	m *fileMeta
-}
-
-var _ fs.File = (*fileEntry)(nil)
-
-func (e *fileEntry) IsDir() bool {
-	return false
-}
-
-func (e *fileEntry) Name() string {
-	return e.m.name
-}
-
-func (e *fileEntry) Mode() os.FileMode {
-	return 0555 // nolint:gomnd
-}
-
-func (e *fileEntry) Size() int64 {
-	if e.m.isMeta(e.f) {
-		return 0
-	}
-
-	return e.f.blockSzB
-}
-
-func (e *fileEntry) Sys() interface{} {
-	return nil
-}
-
-func (e *fileEntry) ModTime() time.Time {
-	return e.m.mTime
-}
-
-func (e *fileEntry) Owner() fs.OwnerInfo {
-	return fs.OwnerInfo{}
-}
-
-func (e *fileEntry) Open(ctx context.Context) (fs.Reader, error) {
-	e.f.logger.Debugf("Open(%s)", e.m.name)
-	return newFileReader(ctx, e)
 }

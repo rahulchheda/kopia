@@ -16,12 +16,11 @@
 package volumefs
 
 import (
-	"context"
 	"fmt"
 	"path"
+	"sync"
 	"time"
 
-	"github.com/kopia/kopia/fs"
 	"github.com/kopia/kopia/repo"
 	"github.com/kopia/kopia/repo/logging"
 	"github.com/kopia/kopia/snapshot"
@@ -32,8 +31,10 @@ var log = logging.GetContextLoggerFunc("volume/filesystem")
 
 // package errors.
 var (
-	ErrOutOfRange  = fmt.Errorf("block address out of range")
-	ErrInvalidArgs = fmt.Errorf("invalid arguments")
+	ErrOutOfRange      = fmt.Errorf("block address out of range")
+	ErrInvalidArgs     = fmt.Errorf("invalid arguments")
+	ErrInternalError   = fmt.Errorf("internal error")
+	ErrInvalidSnapshot = fmt.Errorf("invalid snapshot")
 )
 
 // FilesystemArgs contains arguments to create a filesystem
@@ -46,15 +47,13 @@ type FilesystemArgs struct {
 	VolumeID string
 	// The identifier of the volume snapshot being backed up or restored.
 	VolumeSnapshotID string
-	// The amount of concurrency during restore. 0 assigns a default value.
-	RestoreConcurrency int
 	// Profile containing location and credential information needed to access the volume.
 	VolumeAccessProfile interface{}
 }
 
 // Validate checks for required fields
 func (a *FilesystemArgs) Validate() error {
-	if a.Repo == nil || a.VolumeManager == nil || a.VolumeID == "" || a.VolumeSnapshotID == "" || a.RestoreConcurrency < 0 || a.VolumeAccessProfile == nil {
+	if a.Repo == nil || a.VolumeManager == nil || a.VolumeID == "" || a.VolumeSnapshotID == "" || a.VolumeAccessProfile == nil {
 		return ErrInvalidArgs
 	}
 
@@ -75,16 +74,10 @@ func (a *FilesystemArgs) SourceInfo() snapshot.SourceInfo {
 type Filesystem struct {
 	FilesystemArgs
 	layoutProperties
-	blockReader       volume.BlockReader
-	epoch             time.Time // all changes stamped with this time
-	rootDir           *dirMeta
-	previousRootEntry fs.Directory
-	logger            logging.Logger
-	restorer          restorer
-}
-
-type restorer interface {
-	restore(ctx context.Context, bw volume.BlockWriter, numWorkers int) (RestoreStats, error)
+	prevVolumeSnapshotID string
+	epoch                time.Time // all changes stamped with this time
+	logger               logging.Logger
+	blockPool            sync.Pool
 }
 
 // New returns a new volume filesystem
@@ -95,8 +88,51 @@ func New(args *FilesystemArgs) (*Filesystem, error) {
 
 	f := &Filesystem{}
 	f.FilesystemArgs = *args
+	f.blockPool.New = func() interface{} {
+		return new(block)
+	}
+
 	f.setDefaultLayoutProperties() // block size may be reset from previous repo snapshot
-	f.restorer = f
 
 	return f, nil
+}
+
+// Snapshot returns a snapshot manifest.
+type Snapshot struct {
+	Current *snapshot.Manifest
+}
+
+// SnapshotAnalysis analyzes the data in a snapshot manifest.
+type SnapshotAnalysis struct {
+	BlockSizeBytes   int
+	Bytes            int64
+	NumBlocks        int
+	NumDirs          int
+	ChainLength      int
+	ChainedBytes     int64
+	ChainedNumBlocks int
+	ChainedNumDirs   int
+}
+
+// Analyze analyzes a snapshot
+func (s *Snapshot) Analyze() SnapshotAnalysis {
+	var sa SnapshotAnalysis
+
+	if s.Current == nil {
+		return sa
+	}
+
+	cs := s.Current.Stats
+
+	sa.BlockSizeBytes = int(cs.CachedFiles)
+	sa.Bytes = cs.TotalFileSize - cs.ExcludedTotalFileSize
+	sa.NumBlocks = cs.TotalFileCount - cs.ExcludedFileCount
+	sa.NumDirs = cs.TotalDirectoryCount - cs.ExcludedDirCount
+
+	sa.ChainLength = int(cs.NonCachedFiles)
+	sa.ChainedBytes = cs.ExcludedTotalFileSize
+	sa.ChainedNumBlocks = cs.ExcludedFileCount
+	sa.ChainedNumDirs = cs.ExcludedDirCount
+
+	return sa
 }

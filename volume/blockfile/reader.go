@@ -3,6 +3,7 @@ package blockfile
 import (
 	"context"
 	"io"
+	"sync"
 
 	"github.com/kopia/kopia/volume"
 
@@ -23,7 +24,7 @@ func (factory *blockfileFactory) GetBlockReader(args volume.GetBlockReaderArgs) 
 		return nil, volume.ErrNotSupported
 	}
 
-	if err := m.applyProfileFromArgs(modeRead, args.Profile, args.BlockSizeBytes); err != nil {
+	if err := m.applyProfileFromArgs(modeRead, args.Profile); err != nil {
 		return nil, err
 	}
 
@@ -36,8 +37,19 @@ func (factory *blockfileFactory) GetBlockReader(args volume.GetBlockReaderArgs) 
 
 var _ volume.BlockReader = (*manager)(nil)
 
-// GetBlockAddresses returns block addresses for non-zero snapshot sized blocks.
-func (m *manager) GetBlockAddresses(ctx context.Context) ([]int64, error) {
+// GetBlocks returns an iterator for the non-zero volume blocks.
+func (m *manager) GetBlocks(ctx context.Context) (volume.BlockIterator, error) {
+	ba, err := m.getBlockAddresses(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return m.newBlockIterator(ba), nil
+}
+
+// getBlockAddresses returns block addresses for non-zero snapshot sized blocks.
+// @TODO fold into GetBlocks() or make internal.
+func (m *manager) getBlockAddresses(ctx context.Context) ([]int64, error) {
 	m.logger = log(ctx)
 
 	f, err := m.openFile(false, true)
@@ -55,18 +67,18 @@ func (m *manager) GetBlockAddresses(ctx context.Context) ([]int64, error) {
 	}
 
 	fSz := fi.Size()
-	maxBlocks := fSz/m.fsBlockSizeBytes + (fSz+m.fsBlockSizeBytes-1)%m.fsBlockSizeBytes
+	maxBlocks := fSz/m.DeviceBlockSizeBytes + (fSz+m.DeviceBlockSizeBytes-1)%m.DeviceBlockSizeBytes
 
 	bmap := make([]int64, 0, maxBlocks)
 
 	addBlock := func(offset int64) {
-		ba := offset / m.fsBlockSizeBytes
+		ba := offset / m.DeviceBlockSizeBytes
 		m.logger.Debugf("block 0x%014x non-zero", ba)
 		bmap = append(bmap, ba)
 	}
 
 	// need to read the file to find out zero blocks
-	buf := directio.AlignedBlock(int(m.fsBlockSizeBytes))
+	buf := directio.AlignedBlock(int(m.DeviceBlockSizeBytes))
 	pos := int64(0)
 
 	for i := int64(0); i < maxBlocks; i++ {
@@ -103,8 +115,96 @@ func (m *manager) isZeroBlock(buf []byte, n int) bool {
 	return true
 }
 
-// GetBlock returns a reader for the data in the specified snapshot block.
-func (m *manager) GetBlock(ctx context.Context, blockAddr int64) (io.ReadCloser, error) {
+type blockIterator struct {
+	m           *manager
+	iterBlocks  []int64
+	iterCurrent int
+	iterError   error
+	blockPool   sync.Pool
+}
+
+func (m *manager) newBlockIterator(blocks []int64) *blockIterator {
+	bi := &blockIterator{m: m, iterBlocks: blocks}
+	bi.blockPool.New = func() interface{} {
+		b := new(block)
+		b.addr = -1
+
+		return b
+	}
+
+	return bi
+}
+
+// Next is from volume.BlockIterator
+func (bi *blockIterator) Next(ctx context.Context) volume.Block {
+	bi.m.mux.Lock()
+	defer bi.m.mux.Unlock()
+
+	if bi.iterError != nil {
+		return nil
+	}
+
+	if bi.iterCurrent < len(bi.iterBlocks) {
+		b := bi.blockPool.Get().(*block)
+		b.bi = bi // will be unset if reused
+		b.addr = bi.iterBlocks[bi.iterCurrent]
+		bi.iterCurrent++
+
+		return b
+	}
+
+	bi.iterError = io.EOF
+
+	return nil
+}
+
+func (bi *blockIterator) AtEnd() bool {
+	return bi.iterError != nil
+}
+
+// Close is from volume.BlockIterator
+func (bi *blockIterator) Close() error {
+	var err error
+
+	bi.m.mux.Lock()
+	defer bi.m.mux.Unlock()
+
+	if bi.iterError != nil && bi.iterError != io.EOF {
+		err = bi.iterError
+	} else {
+		bi.iterError = io.EOF // don't use the iterator again
+	}
+
+	return err
+}
+
+// block satisfies volume.Block
+type block struct {
+	bi   *blockIterator
+	addr int64
+}
+
+func (b *block) Address() int64 {
+	return b.addr
+}
+
+// Size is from volume.Block
+func (b *block) Size() int {
+	return int(b.bi.m.DeviceBlockSizeBytes)
+}
+
+func (b *block) Release() {
+	bi := b.bi
+	b.bi = nil // force failure if used
+	bi.blockPool.Put(b)
+}
+
+func (b *block) Get(ctx context.Context) (io.ReadCloser, error) {
+	return b.bi.m.getBlock(ctx, b.addr)
+}
+
+// getBlock returns a reader for the data in the specified snapshot block.
+func (m *manager) getBlock(ctx context.Context, blockAddr int64) (io.ReadCloser, error) {
 	m.mux.Lock()
 	defer m.mux.Unlock()
 
@@ -124,8 +224,8 @@ func (m *manager) GetBlock(ctx context.Context, blockAddr int64) (io.ReadCloser,
 	br := &Reader{
 		rwCommon: rwCommon{
 			m:              m,
-			currentOffset:  blockAddr * m.fsBlockSizeBytes,
-			remainingBytes: int(m.fsBlockSizeBytes),
+			currentOffset:  blockAddr * m.DeviceBlockSizeBytes,
+			remainingBytes: int(m.DeviceBlockSizeBytes),
 		},
 	}
 	br.ctx, br.cancel = context.WithCancel(ctx)

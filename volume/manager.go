@@ -32,6 +32,18 @@ type Manager interface {
 	GetBlockWriter(args GetBlockWriterArgs) (BlockWriter, error)
 }
 
+// BlockReader is the interface used to get block related data and metadata from a volume manager.
+type BlockReader interface {
+	// GetBlocks returns an iterator to consume blocks from the volume.
+	GetBlocks(ctx context.Context) (BlockIterator, error)
+}
+
+// BlockWriter is the interface used to write snapshot blocks to a volume manager.
+type BlockWriter interface {
+	// PutBlocks sends blocks to the volume via an iterator.
+	PutBlocks(ctx context.Context, bi BlockIterator) error
+}
+
 // GetBlockReaderArgs contains the arguments for GetBlockReader.
 type GetBlockReaderArgs struct {
 	// The ID of the volume concerned.
@@ -41,56 +53,57 @@ type GetBlockReaderArgs struct {
 	// The previous snapshot ID for an incremental backup, if set.
 	// If not set a complete backup is to be performed.
 	PreviousSnapshotID string
-	// The snapshot block size expected by the filesystem.
-	BlockSizeBytes int64
 	// Manager specific profile containing location and credential information.
 	Profile interface{}
 }
 
 // Validate checks for required fields.
 func (a GetBlockReaderArgs) Validate() error {
-	if a.VolumeID == "" || a.SnapshotID == "" || a.BlockSizeBytes == 0 || a.SnapshotID == a.PreviousSnapshotID {
+	if a.VolumeID == "" || a.SnapshotID == "" || a.SnapshotID == a.PreviousSnapshotID {
 		return ErrInvalidArgs
 	}
 
 	return nil
-}
-
-// BlockReader is the interface used to get block related data and metadata from a volume manager.
-type BlockReader interface {
-	// GetBlockAddresses returns block addresses (in the snapshot address space) that need to be backed up.
-	// It is assumed that the entire volume block map will fit into memory if necessary.
-	GetBlockAddresses(ctx context.Context) ([]int64, error)
-	// GetBlock returns a reader for the data in the specified snapshot block.
-	GetBlock(ctx context.Context, blockAddr int64) (io.ReadCloser, error)
 }
 
 // GetBlockWriterArgs contains the arguments for GetBlockWriter.
 type GetBlockWriterArgs struct {
 	// The ID of the volume concerned.
 	VolumeID string
-	// The snapshot block size used by the filesystem.
-	BlockSizeBytes int64
 	// Manager specific profile containing location and credential information.
 	Profile interface{}
 }
 
 // Validate checks for required fields.
 func (a GetBlockWriterArgs) Validate() error {
-	if a.VolumeID == "" || a.BlockSizeBytes < 0 {
+	if a.VolumeID == "" {
 		return ErrInvalidArgs
 	}
 
 	return nil
 }
 
-// BlockWriter is the interface used to write snapshot blocks to a volume manager.
-type BlockWriter interface {
-	// AllocateBuffer returns a buffer of volume specific size and alignment
-	// to be used in the writer returned by PutBlock.
-	AllocateBuffer() []byte
-	// PutBlock returns a writer for the specified snapshot block.
-	PutBlock(ctx context.Context, blockAddr int64) (io.WriteCloser, error)
+// Block is an abstraction of a volume data block.
+type Block interface {
+	// Address returns the block address.
+	Address() int64
+	// Size returns the size of the block in bytes.
+	Size() int
+	// Get returns a reader to read the block data.
+	Get(ctx context.Context) (io.ReadCloser, error)
+	// Release should be called on completion to free the resources associated with the block.
+	Release()
+}
+
+// BlockIterator enumerates blocks.
+type BlockIterator interface {
+	// Next returns the next block. It may return nil without implying exhaustion - AtEnd() must be checked.
+	// The lifecycle of the returned Block is independent of that of the iterator.
+	Next(ctx context.Context) Block
+	// AtEnd returns true if the iterator has encountered an error or is exhausted.
+	AtEnd() bool
+	// Close terminates the iterator and returns any error.
+	Close() error
 }
 
 // managerRegistry contains registered managers.

@@ -3,6 +3,7 @@ package blockfile
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"testing"
 	"time"
@@ -209,4 +210,77 @@ func (tfi *testFileInfo) IsDir() bool {
 
 func (tfi *testFileInfo) Sys() interface{} {
 	return nil
+}
+
+type testBlockIterator struct {
+	retCloseE error
+}
+
+// nolint:wsl
+func (tbi *testBlockIterator) Next(ctx context.Context) volume.Block {
+	return nil
+}
+
+func (tbi *testBlockIterator) AtEnd() bool {
+	return true
+}
+
+func (tbi *testBlockIterator) Close() error {
+	return tbi.retCloseE
+}
+
+type testBlock struct {
+	addr     int64
+	size     int
+	released bool
+
+	retGetRC  io.ReadCloser
+	retGetErr error
+}
+
+func (tb *testBlock) Address() int64 {
+	return tb.addr
+}
+
+func (tb *testBlock) Size() int {
+	return tb.size
+}
+
+func (tb *testBlock) Get(ctx context.Context) (io.ReadCloser, error) {
+	return tb.retGetRC, tb.retGetErr
+}
+
+func (tb *testBlock) Release() {
+	tb.released = true
+}
+
+type testReadCloser struct {
+	retCloseErr error
+	closeCalled bool
+
+	retReadN   []int
+	retReadErr []error
+	readB      []byte
+}
+
+func (rc *testReadCloser) Read(b []byte) (int, error) {
+	rc.readB = b
+	n := 0
+
+	if len(rc.retReadN) > 0 {
+		n, rc.retReadN = rc.retReadN[0], rc.retReadN[1:]
+	}
+
+	var err error
+
+	if len(rc.retReadErr) > 0 {
+		err, rc.retReadErr = rc.retReadErr[0], rc.retReadErr[1:]
+	}
+
+	return n, err
+}
+
+func (rc *testReadCloser) Close() error {
+	rc.closeCalled = true
+	return rc.retCloseErr
 }

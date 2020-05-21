@@ -6,7 +6,9 @@ import (
 	"io"
 	"os"
 	"path"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/kopia/kopia/volume"
 
@@ -20,15 +22,13 @@ func TestGetBlockReader(t *testing.T) {
 
 	pGood := &Profile{Name: "/block/file"}
 	gbwGood := volume.GetBlockReaderArgs{
-		VolumeID:       "volID",
-		SnapshotID:     "snapID",
-		BlockSizeBytes: int64(1024 * 1024),
+		VolumeID:   "volID",
+		SnapshotID: "snapID",
 	}
 	gbwCBT := volume.GetBlockReaderArgs{
 		VolumeID:           "volID",
 		SnapshotID:         "snapID",
 		PreviousSnapshotID: "prevSnapID",
-		BlockSizeBytes:     int64(1024 * 1024),
 	}
 
 	factory := volume.FindManager(VolumeType)
@@ -55,6 +55,7 @@ func TestGetBlockReader(t *testing.T) {
 	}
 
 	for _, tc := range []string{"default block size", "specific block size"} {
+		t.Logf("Case: %s", tc)
 		pGood := &Profile{Name: "/block/file"}
 		expBlockSize := DefaultBlockSizeBytes
 
@@ -74,7 +75,6 @@ func TestGetBlockReader(t *testing.T) {
 		assert.True(ok)
 		assert.Equal(expBlockSize, bfm.DeviceBlockSizeBytes)
 		assert.Equal(pGood.Name, bfm.Name)
-		assert.Equal(gbwGood.BlockSizeBytes, bfm.fsBlockSizeBytes)
 		assert.Nil(bfm.logger)
 		assert.Zero(bfm.count)
 		assert.Nil(bfm.file)
@@ -103,7 +103,7 @@ func TestGetBlockAddressesFakeFile(t *testing.T) {
 
 		ctx := context.Background()
 		bfm := &manager{}
-		bfm.fsBlockSizeBytes = int64(bs)
+		bfm.DeviceBlockSizeBytes = int64(bs)
 		bfm.Name = "foo"
 
 		tdf := &testDevFiler{}
@@ -137,24 +137,30 @@ func TestGetBlockAddressesFakeFile(t *testing.T) {
 			tdf.retReadErrs = append(tdf.retReadErrs, expError)
 		}
 
-		bw, err := bfm.GetBlockAddresses(ctx)
+		iter, err := bfm.GetBlocks(ctx)
+
+		var bi *blockIterator
+		var ok bool
 
 		if expError == nil {
 			assert.NoError(err)
-			assert.NotNil(bw)
+			assert.NotNil(iter)
+			bi, ok = iter.(*blockIterator)
+			assert.True(ok)
+			assert.NotNil(bi.iterBlocks)
 			assert.Equal(os.O_RDONLY, tof.inFlags)
 		} else {
 			assert.Equal(expError, err)
-			assert.Nil(bw)
+			assert.Nil(iter)
 		}
 
 		switch tc {
 		case "zero-blocks":
-			assert.Len(bw, 0)
+			assert.Len(bi.iterBlocks, 0)
 		case "b-0-b-b":
-			assert.Len(bw, 3)
+			assert.Len(bi.iterBlocks, 3)
 		case "0-b-0-s":
-			assert.Len(bw, 2)
+			assert.Len(bi.iterBlocks, 2)
 		}
 	}
 }
@@ -177,11 +183,10 @@ func TestGetBlockAddressesRealFile(t *testing.T) {
 
 		ctx := context.Background()
 		bfm := &manager{}
-		bfm.fsBlockSizeBytes = 2 * int64(bs)
+		bfm.DeviceBlockSizeBytes = 2 * int64(bs)
 		bfm.Name = tmpFile
 
 		ndb := 0
-		var expError error
 
 		switch tc {
 		case "b-b-b-b":
@@ -191,7 +196,7 @@ func TestGetBlockAddressesRealFile(t *testing.T) {
 		}
 
 		os.Remove(tmpFile)
-		f, err := directio.OpenFile(tmpFile, os.O_WRONLY|os.O_CREATE, 0600)
+		f, err := openFile(tmpFile, os.O_WRONLY|os.O_CREATE, 0600)
 		assert.NoError(err)
 		for i := 0; i < ndb; i++ {
 			n, wErr := f.WriteAt(buf, int64(i*bs))
@@ -201,23 +206,25 @@ func TestGetBlockAddressesRealFile(t *testing.T) {
 		err = f.Close()
 		assert.NoError(err)
 
-		bw, err := bfm.GetBlockAddresses(ctx)
+		iter, err := bfm.GetBlocks(ctx)
 
-		if expError == nil {
-			assert.NoError(err)
-			assert.NotNil(bw)
-		} else {
-			assert.Equal(expError, err)
-			assert.Nil(bw)
-		}
+		var bi *blockIterator
+		var ok bool
+
+		assert.NoError(err)
+		assert.NotNil(iter)
+		bi, ok = iter.(*blockIterator)
+		assert.True(ok)
+		assert.NotNil(bi.iterBlocks)
 
 		switch tc {
 		case "zero-blocks":
-			assert.Len(bw, 0)
+			assert.Len(bi.iterBlocks, 0)
 		case "b-b-b-b":
-			assert.Len(bw, ndb/2, "got len %d", len(bw))
+			assert.Len(bi.iterBlocks, ndb/2, "got len %d", len(bi.iterBlocks))
+			assert.False(bi.AtEnd())
 		case "b-b-b":
-			assert.Len(bw, ndb/2+1, "got len %d", len(bw))
+			assert.Len(bi.iterBlocks, ndb/2+1, "got len %d", len(bi.iterBlocks))
 		}
 	}
 }
@@ -235,7 +242,7 @@ func TestGetBlock(t *testing.T) {
 	bs := 8192
 	ctx := context.Background()
 	bfm := &manager{}
-	bfm.fsBlockSizeBytes = int64(bs)
+	bfm.DeviceBlockSizeBytes = int64(bs)
 	bfm.Name = "foo"
 
 	tdf := &testDevFiler{}
@@ -246,7 +253,7 @@ func TestGetBlock(t *testing.T) {
 	// Case: first reader
 	ba1 := int64(256)
 	assert.Equal(0, bfm.count)
-	rc1, err := bfm.GetBlock(ctx, ba1)
+	rc1, err := bfm.getBlock(ctx, ba1)
 	assert.NoError(err)
 	assert.NotNil(rc1)
 
@@ -254,8 +261,8 @@ func TestGetBlock(t *testing.T) {
 	assert.True(ok)
 	assert.NotNil(r1)
 	assert.Equal(bfm, r1.m)
-	assert.Equal(ba1*bfm.fsBlockSizeBytes, r1.currentOffset)
-	assert.EqualValues(bfm.fsBlockSizeBytes, r1.remainingBytes)
+	assert.Equal(ba1*bfm.DeviceBlockSizeBytes, r1.currentOffset)
+	assert.EqualValues(bfm.DeviceBlockSizeBytes, r1.remainingBytes)
 	assert.NotNil(r1.cancel)
 
 	assert.Equal(1, bfm.count)
@@ -264,7 +271,7 @@ func TestGetBlock(t *testing.T) {
 	// Case: overlapping second reader
 	ba2 := int64(1024)
 	assert.Equal(1, bfm.count)
-	rc2, err := bfm.GetBlock(ctx, ba2)
+	rc2, err := bfm.getBlock(ctx, ba2)
 	assert.NoError(err)
 	assert.NotNil(rc2)
 
@@ -272,8 +279,8 @@ func TestGetBlock(t *testing.T) {
 	assert.True(ok)
 	assert.NotNil(r2)
 	assert.Equal(bfm, r2.m)
-	assert.Equal(ba2*bfm.fsBlockSizeBytes, r2.currentOffset)
-	assert.EqualValues(bfm.fsBlockSizeBytes, r2.remainingBytes)
+	assert.Equal(ba2*bfm.DeviceBlockSizeBytes, r2.currentOffset)
+	assert.EqualValues(bfm.DeviceBlockSizeBytes, r2.remainingBytes)
 	assert.NotNil(r2.cancel)
 
 	assert.Equal(2, bfm.count)
@@ -295,7 +302,7 @@ func TestGetBlock(t *testing.T) {
 	// Case: file reopened on subsequent call
 	bfm.file = nil
 	ba3 := int64(512)
-	rc3, err := bfm.GetBlock(ctx, ba3)
+	rc3, err := bfm.getBlock(ctx, ba3)
 	assert.NoError(err)
 	assert.NotNil(rc3)
 
@@ -303,8 +310,8 @@ func TestGetBlock(t *testing.T) {
 	assert.True(ok)
 	assert.NotNil(r3)
 	assert.Equal(bfm, r3.m)
-	assert.Equal(ba3*bfm.fsBlockSizeBytes, r3.currentOffset)
-	assert.EqualValues(bfm.fsBlockSizeBytes, r3.remainingBytes)
+	assert.Equal(ba3*bfm.DeviceBlockSizeBytes, r3.currentOffset)
+	assert.EqualValues(bfm.DeviceBlockSizeBytes, r3.remainingBytes)
 	assert.NotNil(r3.cancel)
 
 	assert.Equal(1, bfm.count)
@@ -317,7 +324,7 @@ func TestGetBlock(t *testing.T) {
 	// Case: open failure case
 	tof.retError = fmt.Errorf("open error")
 	baE := int64(4096)
-	rcE, err := bfm.GetBlock(ctx, baE)
+	rcE, err := bfm.getBlock(ctx, baE)
 	assert.Regexp("open error", err)
 	assert.Nil(rcE)
 }
@@ -335,20 +342,26 @@ func TestReader(t *testing.T) {
 	factory := volume.FindManager(VolumeType)
 	assert.NotNil(factory)
 
-	bs := 8192
-	dbs := bs / 2
+	dbs := 4096
 	pGood := &Profile{Name: "/block/file", DeviceBlockSizeBytes: int64(dbs)}
 	gbwGood := volume.GetBlockReaderArgs{
-		VolumeID:       "volID",
-		SnapshotID:     "snapID",
-		BlockSizeBytes: int64(bs),
+		VolumeID:   "volID",
+		SnapshotID: "snapID",
 	}
 	gbwGood.Profile = pGood
 	assert.NoError(gbwGood.Validate())
 	assert.NoError(pGood.Validate())
 
 	// rwCommon cases are done in TestWriter
-	for _, tc := range []string{"nil buffer", "invalid size", "at eof", "read error", "short last block", "full block", "canceled"} {
+	for _, tc := range []string{
+		"nil buffer",
+		"invalid size",
+		"at eof",
+		"read error",
+		"short last block",
+		"full block",
+		"canceled",
+	} {
 		t.Logf("Case: %s", tc)
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -364,13 +377,12 @@ func TestReader(t *testing.T) {
 		assert.NotNil(bw)
 		bfm, ok := bw.(*manager)
 		assert.True(ok)
-		bfm.fsBlockSizeBytes = int64(bs)
 		bfm.Name = "foo"
 		assert.Equal(dbs, int(bfm.DeviceBlockSizeBytes))
 
 		ba1 := int64(256)
 		assert.Equal(0, bfm.count)
-		rc, err := bw.GetBlock(ctx, ba1)
+		rc, err := bfm.getBlock(ctx, ba1)
 		assert.NoError(err)
 		assert.NotNil(rc)
 
@@ -382,13 +394,13 @@ func TestReader(t *testing.T) {
 
 		r.numCalls = 0
 		r.currentOffset = 0
-		r.remainingBytes = int(bfm.fsBlockSizeBytes)
+		r.remainingBytes = int(bfm.DeviceBlockSizeBytes)
 
 		var expError error
-		b := make([]byte, bs)
+		b := make([]byte, dbs)
 		expOffset := dbs
 		expN := dbs
-		expRemB := bs - dbs
+		expRemB := 0
 
 		// pre-processing
 		switch tc {
@@ -440,5 +452,131 @@ func TestReader(t *testing.T) {
 		if tc == "canceled" {
 			<-r.m.ioChan // release sem
 		}
+	}
+}
+
+// nolint:wsl,gocritic,gocyclo
+func TestBlockIterator(t *testing.T) {
+	assert := assert.New(t)
+
+	assert.NotNil(openFile)
+	savedOpenFile := openFile
+	defer func() {
+		openFile = savedOpenFile
+	}()
+
+	for _, tc := range []string{
+		"empty", "1 block", "1 block Get error", "block concurrency", "iter error", "iter empty after close",
+	} {
+
+		var blocks []int64
+		var expCloseErr error
+
+		bs := 8192
+		ctx := context.Background()
+		bfm := &manager{}
+		bfm.DeviceBlockSizeBytes = int64(bs)
+		bfm.Name = "foo"
+
+		tdf := &testDevFiler{}
+		tof := &testOpenFile{}
+		openFile = tof.OpenFile
+		tof.retFile = tdf
+
+		switch tc {
+		case "empty":
+			blocks = []int64{}
+		case "1 block":
+			blocks = []int64{5}
+		case "1 block Get error":
+			blocks = []int64{9}
+			tof.retFile = nil
+			tof.retError = ErrInvalidSize
+		case "block concurrency":
+			blocks = []int64{0, 1, 2, 3}
+		case "iter error":
+			blocks = []int64{0, 1, 2}
+		case "iter empty after close":
+			blocks = []int64{1}
+		}
+
+		bi := bfm.newBlockIterator(blocks)
+		assert.Equal(bfm, bi.m)
+		assert.Equal(blocks, bi.iterBlocks)
+		assert.Equal(0, bi.iterCurrent)
+
+		switch tc {
+		case "empty":
+			b := bi.Next(ctx)
+			assert.Nil(b)
+		case "1 block":
+			b := bi.Next(ctx)
+			assert.NotNil(b)
+			assert.False(bi.AtEnd())
+			assert.Equal(blocks[0], b.Address())
+			assert.EqualValues(bfm.DeviceBlockSizeBytes, b.Size())
+			assert.Equal(1, bi.iterCurrent)
+			rc, err := b.Get(ctx)
+			assert.NoError(err)
+			assert.Equal(tdf, bfm.file)
+			r, ok := rc.(*Reader)
+			assert.True(ok)
+			assert.Equal(b.Address()*bfm.DeviceBlockSizeBytes, r.currentOffset)
+			b.Release()
+
+			b = bi.Next(ctx)
+			assert.Nil(b)
+			assert.True(bi.AtEnd())
+		case "1 block Get error":
+			b := bi.Next(ctx)
+			assert.NotNil(b)
+			assert.Equal(blocks[0], b.Address())
+			assert.EqualValues(bfm.DeviceBlockSizeBytes, b.Size())
+			assert.Equal(1, bi.iterCurrent)
+
+			rc, err := b.Get(ctx)
+			assert.Equal(tof.retError, err)
+			assert.Nil(rc)
+			b.Release()
+
+			b = bi.Next(ctx)
+			assert.Nil(b)
+		case "block concurrency":
+			wg := sync.WaitGroup{}
+			assert.True(len(blocks)-2 > 0)
+			wg.Add(len(blocks) - 2)
+			for i := 0; i < len(blocks)-2; i++ {
+				b := bi.Next(ctx)
+				assert.NotNil(b)
+
+				go func(b volume.Block) {
+					time.Sleep(2 * time.Millisecond)
+					b.Release()
+					wg.Done()
+				}(b)
+				time.Sleep(time.Millisecond)
+			}
+			wg.Wait()
+			for b := bi.Next(ctx); b != nil; b = bi.Next(ctx) {
+				b.Release()
+			}
+		case "iter error":
+			assert.True(len(bi.iterBlocks) > 1)
+			b := bi.Next(ctx)
+			assert.NotNil(b)
+			b.Release()
+			expCloseErr = ErrCanceled
+			bi.iterError = expCloseErr
+			assert.Nil(bi.Next(ctx))
+		case "iter empty after close":
+			assert.True(len(bi.iterBlocks) > 0)
+			bi.Close()
+			assert.Nil(bi.Next(ctx))
+		}
+
+		closeErr := bi.Close()
+		assert.Equal(expCloseErr, closeErr)
+		closeErr = bi.Close()               // same behavior
+		assert.Equal(expCloseErr, closeErr) // if called again
 	}
 }

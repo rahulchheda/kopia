@@ -22,7 +22,6 @@ import (
 	"github.com/kopia/kopia/snapshot/policy"
 	"github.com/kopia/kopia/snapshot/snapshotfs"
 	"github.com/kopia/kopia/volume"
-	"github.com/kopia/kopia/volume/blockfile"
 	vmgr "github.com/kopia/kopia/volume/fake"
 
 	"github.com/stretchr/testify/assert"
@@ -65,6 +64,11 @@ func TestFilesystemArgs(t *testing.T) {
 	assert.Equal(th.repo.Hostname(), si.Host)
 	assert.Equal(th.repo.Username(), si.UserName)
 	assert.Equal(path.Join("/volumefs", fa.VolumeID), si.Path)
+
+	f, err := New(&fa)
+	assert.NoError(err)
+	assert.NotNil(f)
+	assert.NotNil(f.blockPool.New)
 }
 
 // Test harness based on upload_test.go, repotesting_test.go, snapshot_test.go, etc.
@@ -164,7 +168,8 @@ func (th *volFsTestHarness) addSnapshot(ctx context.Context, bal []int64) *snaps
 	}
 
 	// Add the metadata files
-	for _, pp := range f.metadataFiles() {
+	md := f.metadata()
+	for _, pp := range md.metadataFiles() { // TBD handle previous snap id
 		sourceDir.AddFile(pp.String(), []byte{}, defaultPermissions)
 	}
 
@@ -227,145 +232,139 @@ func (th *volFsTestHarness) fsForBackupTests(profile interface{}) *Filesystem {
 	return f
 }
 
+// // nolint:wsl,gocritic
+// func (th *volFsTestHarness) fsForRestoreTests(p *blockfile.Profile) *Filesystem {
+// 	assert := assert.New(th.t)
+
+// 	mgr := volume.FindManager(blockfile.VolumeType)
+// 	assert.NotNil(mgr)
+
+// 	fa := &FilesystemArgs{
+// 		Repo:                th.repo,
+// 		VolumeManager:       mgr,
+// 		VolumeID:            "volID",
+// 		VolumeSnapshotID:    "volSnapID1",
+// 		VolumeAccessProfile: p,
+// 	}
+// 	th.t.Logf("%#v", fa)
+// 	assert.NoError(fa.Validate())
+
+// 	f, err := New(fa)
+// 	assert.NoError(err)
+// 	assert.NotNil(f)
+
+// 	return f
+// }
+
 // nolint:wsl,gocritic
-func (th *volFsTestHarness) fsForRestoreTests(p *blockfile.Profile) *Filesystem {
-	assert := assert.New(th.t)
+// func (th *volFsTestHarness) compareInternalAndExternalTrees(ctx context.Context, f *Filesystem, rootEntry fs.Directory) {
+// 	assert := assert.New(th.t)
 
-	mgr := volume.FindManager(blockfile.VolumeType)
-	assert.NotNil(mgr)
+// 	var checkNode func(dir fs.Directory, ppp parsedPath)
 
-	fa := &FilesystemArgs{
-		Repo:                th.repo,
-		VolumeManager:       mgr,
-		VolumeID:            "volID",
-		VolumeSnapshotID:    "volSnapID1",
-		VolumeAccessProfile: p,
-	}
-	th.t.Logf("%#v", fa)
-	assert.NoError(fa.Validate())
+// 	checkNode = func(dir fs.Directory, ppp parsedPath) {
+// 		msg := fmt.Sprintf("node [%s]", ppp)
+// 		th.t.Logf("Entered dir [%s]", ppp)
+// de, ok := dir.(*dirEntry)
+// assert.True(ok, msg)
+// assert.NotNil(de, msg)
+// assert.NotNil(de.m, msg)
+// assert.Equal(f, de.f, msg)
+// assert.Equal(0555|os.ModeDir, dir.Mode(), msg)
+// assert.Equal(de.m.mTime, dir.ModTime(), msg)
+// if ppp != nil {
+// must be in the metadata tree
+// ldm := f.lookupDir(ctx, ppp)
+// assert.Equal(de.m, ldm, msg)
+// th.t.Logf("Found [%s] in meta", ppp)
+// } else {
+// 	assert.Equal(f.rootDir, de.m)
+// 	th.t.Logf("Found [%s] in meta", ppp)
+// }
+// 		entries, err := dir.Readdir(ctx)
+// 		assert.NoError(err, msg)
+// 		th.t.Logf("Dir [%s] has %d entries", ppp, len(entries))
+// 		// assert.Equal(len(de.m.subdirs)+len(de.m.files), len(entries), msg)
+// 		cnt := 0
+// 		for _, entry := range entries {
+// 			epp := append(ppp, entry.Name())
+// 			msg := fmt.Sprintf("node [%s]", epp) // nolint:govet
+// 			if fsd, ok := entry.(fs.Directory); ok {
+// 				cnt++
+// 				assert.True(entry.IsDir(), msg)
+// 				checkNode(fsd, epp)
+// 			} else {
+// 				assert.False(entry.IsDir(), msg)
+// 			}
+// 		}
+// 		for _, entry := range entries {
+// 			epp := append(ppp, entry.Name())
+// 			msg := fmt.Sprintf("node %s", epp) // nolint:govet
+// 			if fsf, ok := entry.(fs.File); ok {
+// 				cnt++
+// 				assert.NotNil(fsf, msg)
+// 				assert.False(entry.IsDir(), msg)
+// 				// fe, ok := fsf.(*fileEntry)
+// 				// assert.True(ok, msg)
+// 				// assert.NotNil(fe, msg)
+// 				// assert.Equal(f, fe.f, msg)
+// 				// assert.NotNil(fe.m, msg)
+// 				// lfm := f.lookupFile(f.rootDir, epp)
+// 				// // assert.Equal(fe.m, lfm, msg)
+// 				// th.t.Logf("Found [%s] in meta", epp)
+// 				// if lfm.isMeta() {
+// 				// 	assert.Equal(int64(0), fsf.Size())
+// 				// } else {
+// 				// 	assert.Equal(f.blockSzB, fsf.Size())
+// 				// }
+// 				// assert.Equal(os.FileMode(0555), fsf.Mode(), msg)
+// 				// assert.Equal(fe.m.mTime, fsf.ModTime(), msg)
 
-	f, err := New(fa)
-	assert.NoError(err)
-	assert.NotNil(f)
+// 				// fsr, err := fsf.Open(ctx)
+// 				// assert.NoError(err, msg)
+// 				// defer fsr.Close()
 
-	return f
-}
-
-// nolint:wsl,gocritic
-func (th *volFsTestHarness) compareInternalAndExternalTrees(ctx context.Context, f *Filesystem, rootEntry fs.Directory) {
-	assert := assert.New(th.t)
-
-	var checkNode func(dir fs.Directory, ppp parsedPath)
-
-	checkNode = func(dir fs.Directory, ppp parsedPath) {
-		msg := fmt.Sprintf("node [%s]", ppp)
-		th.t.Logf("Entered dir [%s]", ppp)
-		de, ok := dir.(*dirEntry)
-		assert.True(ok, msg)
-		assert.NotNil(de, msg)
-		assert.NotNil(de.m, msg)
-		assert.Equal(f, de.f, msg)
-		assert.Equal(0555|os.ModeDir, dir.Mode(), msg)
-		assert.Equal(de.m.mTime, dir.ModTime(), msg)
-		if ppp != nil {
-			// must be in the metadata tree
-			ldm := f.lookupDir(ctx, ppp)
-			assert.Equal(de.m, ldm, msg)
-			th.t.Logf("Found [%s] in meta", ppp)
-		} else {
-			assert.Equal(f.rootDir, de.m)
-			th.t.Logf("Found [%s] in meta", ppp)
-		}
-		entries, err := dir.Readdir(ctx)
-		assert.NoError(err, msg)
-		th.t.Logf("Dir [%s] has %d entries", ppp, len(entries))
-		assert.Equal(len(de.m.subdirs)+len(de.m.files), len(entries), msg)
-		cnt := 0
-		for _, entry := range entries {
-			epp := append(ppp, entry.Name())
-			msg := fmt.Sprintf("node [%s]", epp) // nolint:govet
-			if fsd, ok := entry.(fs.Directory); ok {
-				cnt++
-				assert.True(entry.IsDir(), msg)
-				checkNode(fsd, epp)
-			} else {
-				assert.False(entry.IsDir(), msg)
-			}
-		}
-		for _, entry := range entries {
-			epp := append(ppp, entry.Name())
-			msg := fmt.Sprintf("node %s", epp) // nolint:govet
-			if fsf, ok := entry.(fs.File); ok {
-				cnt++
-				assert.NotNil(fsf, msg)
-				assert.False(entry.IsDir(), msg)
-				fe, ok := fsf.(*fileEntry)
-				assert.True(ok, msg)
-				assert.NotNil(fe, msg)
-				assert.Equal(f, fe.f, msg)
-				assert.NotNil(fe.m, msg)
-				lfm := f.lookupFile(ctx, epp)
-				assert.Equal(fe.m, lfm, msg)
-				th.t.Logf("Found [%s] in meta", epp)
-				if lfm.isMeta(f) {
-					assert.Equal(int64(0), fsf.Size())
-				} else {
-					assert.Equal(f.blockSzB, fsf.Size())
-				}
-				assert.Equal(os.FileMode(0555), fsf.Mode(), msg)
-				assert.Equal(fe.m.mTime, fsf.ModTime(), msg)
-
-				fsr, err := fsf.Open(ctx)
-				assert.NoError(err, msg)
-				defer fsr.Close()
-
-				assert.NotNil(fsr, msg)
-				fr, ok := fsr.(*fileReader)
-				assert.True(ok, msg)
-				assert.NotNil(fr, msg)
-				assert.Equal(fe, fr.fe, msg)
-				le, err := fsr.Entry()
-				assert.NoError(err)
-				assert.Equal(fsf, le, msg)
-				buf := make([]byte, f.blockSzB/4)
-				bytesRead := 0
-				for {
-					var n int
-					n, err = fsr.Read(buf)
-					if err != nil {
-						break
-					}
-					bytesRead += n
-				}
-				assert.True(err == io.EOF, msg)
-				if lfm.isMeta(f) {
-					assert.Equal(0, bytesRead)
-				}
-			} else {
-				assert.True(entry.IsDir(), msg)
-			}
-		}
-		assert.Equal(len(entries), cnt, msg)
-	}
-	checkNode(rootEntry, nil)
-}
+// 				// assert.NotNil(fsr, msg)
+// 				// fr, ok := fsr.(*fileReader)
+// 				// assert.True(ok, msg)
+// 				// assert.NotNil(fr, msg)
+// 				// assert.Equal(fe, fr.fe, msg)
+// 				// le, err := fsr.Entry()
+// 				// assert.NoError(err)
+// 				// assert.Equal(fsf, le, msg)
+// 				// buf := make([]byte, f.blockSzB/4)
+// 				// bytesRead := 0
+// 				// for {
+// 				// 	var n int
+// 				// 	n, err = fsr.Read(buf)
+// 				// 	if err != nil {
+// 				// 		break
+// 				// 	}
+// 				// 	bytesRead += n
+// 				// }
+// 				// assert.True(err == io.EOF, msg)
+// 				// if lfm.isMeta(f) {
+// 				// 	assert.Equal(0, bytesRead)
+// 				// }
+// 			} else {
+// 				assert.True(entry.IsDir(), msg)
+// 			}
+// 		}
+// 		assert.Equal(len(entries), cnt, msg)
+// 	}
+// 	checkNode(rootEntry, nil)
+// }
 
 type testBW struct {
-	dbs         int // block size
-	putBlockBA  int64
-	putBlockWC  io.WriteCloser
-	putBlockErr error
+	putBlocksBI  volume.BlockIterator
+	putBlocksErr error
 }
 
 var _ volume.BlockWriter = (*testBW)(nil)
 
-func (bw *testBW) AllocateBuffer() []byte {
-	return make([]byte, bw.dbs)
-}
-
-func (bw *testBW) PutBlock(ctx context.Context, blockAddr int64) (io.WriteCloser, error) {
-	bw.putBlockBA = blockAddr
-	return bw.putBlockWC, bw.putBlockErr
+func (bw *testBW) PutBlocks(ctx context.Context, bi volume.BlockIterator) error {
+	bw.putBlocksBI = bi
+	return bw.putBlocksErr
 }
 
 type testDirEntry struct {
@@ -543,18 +542,27 @@ func (wc *testWC) Write(b []byte) (int, error) {
 	return retN, wc.retWriteErr
 }
 
-type testRestorer struct {
-	inBW         volume.BlockWriter
-	inNumWorkers int
-	retRS        RestoreStats
-	retErr       error
-}
+// func (dm *dirMeta) descend(cb func(*dirMeta, parsedPath, interface{})) {
+// 	dm.postOrderWalk(nil, cb)
+// }
 
-var _ restorer = (*testRestorer)(nil)
+// func (dm *dirMeta) postOrderWalk(ppp parsedPath, cb func(*dirMeta, parsedPath, interface{})) {
+// 	pp := parsedPath{}
+// 	if ppp != nil {
+// 		pp = append(ppp, dm.name) // nolint:gocritic
+// 	}
 
-func (tr *testRestorer) restore(ctx context.Context, bw volume.BlockWriter, numWorkers int) (RestoreStats, error) {
-	tr.inBW = bw
-	tr.inNumWorkers = numWorkers
+// 	cb(dm, pp, true)
 
-	return tr.retRS, tr.retErr
-}
+// 	for _, sdm := range dm.subdirs {
+// 		sdm.postOrderWalk(pp, cb)
+// 	}
+
+// 	for _, fm := range dm.files {
+// 		pp = append(pp, fm.name)
+// 		cb(dm, pp, fm)
+// 		pp = pp[:len(pp)-1]
+// 	}
+
+// 	cb(dm, pp, false)
+// }

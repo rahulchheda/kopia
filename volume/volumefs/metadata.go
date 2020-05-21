@@ -3,22 +3,76 @@ package volumefs
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"regexp"
+	"strconv"
 
 	"github.com/kopia/kopia/fs"
 )
 
 // metadata file names match the following patterns
 var reMetaFile = regexp.MustCompile(`meta:(\w+):(.*)`)
-var metaFmtX = "meta:%s:%x"
 
 const (
-	metaBlockSzB = "blockSzB"
-	metaDirSz    = "dirSz"
-	metaDepth    = "depth"
+	metaFmtX = "meta:%s:%x"
+	metaFmtS = "meta:%s:%s"
 )
 
-func (f *Filesystem) isMetaFile(name string) (isMeta bool, metaName, metaValue string) {
+// metadata collates the filesystem metadata.
+func (f *Filesystem) metadata() metadata {
+	return metadata{
+		BlockSzB:      f.blockSzB,
+		DirSz:         f.dirSz,
+		Depth:         f.depth,
+		VolSnapID:     f.VolumeSnapshotID,
+		VolPrevSnapID: f.prevVolumeSnapshotID,
+	}
+}
+
+// recoverMetadataFromDirEntry scans a directory and parses metadata file names.
+// It does not modify the filesystem.
+func (f *Filesystem) recoverMetadataFromDirEntry(ctx context.Context, dir fs.Directory) (metadata, error) {
+	var md metadata
+
+	entries, err := dir.Readdir(ctx)
+	if err != nil {
+		f.logger.Debugf("failed to recover metadata: %v", err)
+		return md, err
+	}
+
+	md.recoverMetadataFromEntries(entries)
+
+	return md, nil
+}
+
+// createMetadataFiles creates files for the filesystem metadata in the specified directory.
+func (f *Filesystem) createMetadataFiles(ctx context.Context, dir *dirMeta) error {
+	md := f.metadata()
+	for _, pp := range md.metadataFiles() {
+		f.ensureFileInTree(dir, pp)
+
+		oid, _, err := f.writeFileToRepo(ctx, pp, nil, nil)
+		if err != nil {
+			return err
+		}
+
+		fm := f.lookupFile(dir, pp)
+		fm.oid = oid
+	}
+
+	return nil
+}
+
+// metadata contains values that are recorded in the names of special files in a directory.
+type metadata struct {
+	BlockSzB      int64
+	DirSz         int64
+	Depth         int
+	VolSnapID     string
+	VolPrevSnapID string
+}
+
+func (md *metadata) isMetaFile(name string) (isMeta bool, metaName, metaValue string) {
 	matches := reMetaFile.FindStringSubmatch(name)
 	if len(matches) != 3 { // nolint:gomnd
 		return false, "", ""
@@ -27,70 +81,67 @@ func (f *Filesystem) isMetaFile(name string) (isMeta bool, metaName, metaValue s
 	return true, matches[1], matches[2]
 }
 
-func (f *Filesystem) recoverMetadataFromFilename(name string) {
-	isMeta, name, value := f.isMetaFile(name)
+func (md *metadata) recoverMetadataFromFilename(name string) {
+	isMeta, name, value := md.isMetaFile(name)
 	if !isMeta {
 		return
 	}
 
-	i64 := int64(0)
-	fmt.Sscanf(value, "%x", &i64)
+	vV := reflect.ValueOf(md)
+	vV = vV.Elem()
+	vT := vV.Type()
 
-	switch name {
-	case metaBlockSzB:
-		if i64 > 0 {
-			f.logger.Debugf("recovered blockSzB=0x%x", i64)
-			f.blockSzB = i64
-		}
-	case metaDirSz:
-		if i64 > 0 {
-			f.logger.Debugf("recovered dirSz=%d", i64)
-			f.dirSz = i64
-		}
-	case metaDepth:
-		if i64 > 0 {
-			f.logger.Debugf("recovered metadata depth=%d", i64)
-			f.depth = int(i64)
+	for i := 0; i < vT.NumField(); i++ {
+		if vT.Field(i).Name == name {
+			vFV := vV.Field(i)
+			switch vFV.Kind() {
+			case reflect.Int:
+				fallthrough // nolint:gocritic
+			case reflect.Int64:
+				var i64 int64
+				i64, _ = strconv.ParseInt(value, 16, 64)
+				vFV.SetInt(i64)
+			default:
+				vFV.SetString(value)
+			}
+
+			return
 		}
 	}
 }
 
-func (f *Filesystem) recoverMetadataFromRootEntry(ctx context.Context, rootEntry fs.Directory) error {
-	entries, err := rootEntry.Readdir(ctx)
-	if err != nil {
-		f.logger.Debugf("failed to recover metadata: %v", err)
-		return err
-	}
-
+func (md *metadata) recoverMetadataFromEntries(entries fs.Entries) {
 	for _, entry := range entries {
 		if fe, ok := entry.(fs.File); ok {
-			f.recoverMetadataFromFilename(fe.Name())
+			md.recoverMetadataFromFilename(fe.Name())
 		}
 	}
-
-	// recompute
-	f.layoutProperties.initLayoutProperties(f.blockSzB, f.dirSz, f.depth)
-
-	return nil
 }
 
-// createMetadataFiles creates files for the filesystem metadata
-func (f *Filesystem) createMetadataFiles(ctx context.Context) {
-	for _, pp := range f.metadataFiles() {
-		f.ensureFile(ctx, pp)
-	}
-}
-
-// metadataFiles returns the metadata file paths
-func (f *Filesystem) metadataFiles() []parsedPath {
+// metadataFiles returns path names for all non-zero metadata values.
+func (md *metadata) metadataFiles() []parsedPath {
 	ret := []parsedPath{}
 
-	for _, fn := range []string{
-		fmt.Sprintf(metaFmtX, metaBlockSzB, f.blockSzB),
-		fmt.Sprintf(metaFmtX, metaDirSz, f.dirSz),
-		fmt.Sprintf(metaFmtX, metaDepth, f.depth),
-	} {
-		ret = append(ret, parsedPath([]string{fn}))
+	vV := reflect.ValueOf(md)
+	vV = vV.Elem()
+	vT := vV.Type()
+
+	for i := 0; i < vT.NumField(); i++ {
+		vFV := vV.Field(i)
+		switch vFV.Kind() {
+		case reflect.Int:
+			fallthrough // nolint:gocritic
+		case reflect.Int64:
+			if vFV.Int() != 0 {
+				s := fmt.Sprintf(metaFmtX, vV.Type().Field(i).Name, vFV.Int())
+				ret = append(ret, parsedPath([]string{s}))
+			}
+		case reflect.String:
+			if vFV.String() != "" {
+				s := fmt.Sprintf(metaFmtS, vV.Type().Field(i).Name, vFV.String())
+				ret = append(ret, parsedPath([]string{s}))
+			}
+		}
 	}
 
 	return ret

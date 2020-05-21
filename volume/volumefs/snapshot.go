@@ -10,28 +10,38 @@ import (
 	"github.com/kopia/kopia/snapshot/snapshotfs"
 )
 
-// findPreviousSnapshot returns the root directory entry for a snapshot.
-func (f *Filesystem) findPreviousSnapshot(ctx context.Context, prevSnapID string) (fs.Directory, error) {
-	var err error              // nolint:wsl
-	var man *snapshot.Manifest // nolint:wsl
-	var rootEntry fs.Entry     // nolint:wsl
-	var rootOID object.ID      // nolint:wsl
+const (
+	currentSnapshotDirName  = "t"
+	previousSnapshotDirName = "p"
+	directoryStreamType     = "kopia:directory" // copied from snapshot
+)
+
+// findPreviousSnapshot searches for the previous snapshot and parses it.
+func (f *Filesystem) findPreviousSnapshot(ctx context.Context, prevSnapID string) (*snapshot.Manifest, fs.Directory, metadata, error) {
+	var (
+		err       error
+		man       *snapshot.Manifest
+		md        metadata
+		rootEntry fs.Entry
+		rootOID   object.ID
+	)
 
 	if rootOID, err = object.ParseID(prevSnapID); err == nil {
 		if man, err = f.findSnapshotManifest(ctx, rootOID); err == nil {
 			if rootEntry, err = snapshotfs.SnapshotRoot(f.Repo, man); err == nil {
 				if !rootEntry.IsDir() {
-					return nil, fmt.Errorf("expected rootEntry to be a directory") // nolint
+					return nil, nil, md, fmt.Errorf("expected rootEntry to be a directory") // nolint
 				}
 
 				dfe := rootEntry.(fs.Directory)
-
-				return dfe, nil
+				if md, err = f.recoverMetadataFromDirEntry(ctx, dfe); err == nil {
+					return man, dfe, md, err
+				}
 			}
 		}
 	}
 
-	return nil, err
+	return nil, nil, md, err
 }
 
 // findSnapshotManifest returns the latest complete manifest containing the specified snapshot ID.
@@ -50,22 +60,9 @@ func (f *Filesystem) findSnapshotManifest(ctx context.Context, oid object.ID) (*
 	}
 
 	if latest != nil {
-		log(ctx).Debugf("found manifest %s modTime:%s", latest.ID, latest.RootEntry.ModTime)
+		log(ctx).Debugf("found manifest %s startTime:%s", latest.ID, latest.StartTime)
 		return latest, nil
 	}
 
 	return nil, fmt.Errorf("manifest not found")
-}
-
-func (f *Filesystem) initFromSnapshot(ctx context.Context, previousSnapshotID string) (err error) {
-	f.previousRootEntry, err = f.findPreviousSnapshot(ctx, previousSnapshotID)
-	if err != nil {
-		return
-	}
-
-	if err = f.recoverMetadataFromRootEntry(ctx, f.previousRootEntry); err != nil {
-		return
-	}
-
-	return
 }
