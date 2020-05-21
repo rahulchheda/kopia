@@ -69,6 +69,49 @@ func TestFilesystemArgs(t *testing.T) {
 	assert.NoError(err)
 	assert.NotNil(f)
 	assert.NotNil(f.blockPool.New)
+	bPtr := f.blockPool.Get()
+	assert.NotNil(bPtr)
+	b, ok := bPtr.(*block)
+	assert.True(ok)
+	f.blockPool.Put(b)
+}
+
+// nolint:wsl,gocritic
+func TestSnapshotAnalysis(t *testing.T) {
+	assert := assert.New(t)
+
+	expSA := SnapshotAnalysis{
+		BlockSizeBytes:   1000,
+		Bytes:            20000,
+		NumBlocks:        1000,
+		NumDirs:          100,
+		ChainLength:      2,
+		ChainedBytes:     80000,
+		ChainedNumBlocks: 2000,
+		ChainedNumDirs:   200,
+	}
+
+	curStats := snapshot.Stats{
+		TotalDirectoryCount: expSA.NumDirs + expSA.ChainedNumDirs,
+		TotalFileCount:      expSA.NumBlocks + expSA.ChainedNumBlocks,
+		TotalFileSize:       expSA.Bytes + expSA.ChainedBytes,
+
+		ExcludedFileCount:     expSA.ChainedNumBlocks,
+		ExcludedTotalFileSize: expSA.ChainedBytes,
+		ExcludedDirCount:      expSA.ChainedNumDirs,
+
+		CachedFiles:    int32(expSA.BlockSizeBytes),
+		NonCachedFiles: int32(expSA.ChainLength),
+	}
+	curSM := &snapshot.Manifest{
+		Stats: curStats,
+	}
+	s := Snapshot{
+		Current: curSM,
+	}
+
+	assert.Equal(expSA, s.Analyze())
+	assert.Equal(SnapshotAnalysis{}, (&Snapshot{}).Analyze())
 }
 
 // Test harness based on upload_test.go, repotesting_test.go, snapshot_test.go, etc.
