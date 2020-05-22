@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	vmgr "github.com/kopia/kopia/volume/fake"
+
 	"github.com/stretchr/testify/assert"
 )
 
@@ -35,7 +36,7 @@ func TestBlock(t *testing.T) {
 	b.Oid = "oid"
 
 	assert.Equal(int64(1000), b.Address())
-	assert.Equal(int(f.blockSzB), b.Size())
+	assert.Equal(f.blockSzB, b.Size())
 
 	expError := ErrInvalidArgs
 	tRepo.retOoE = expError

@@ -32,7 +32,7 @@ func (b *block) Address() int64 {
 
 // Size returns the size of the block in bytes.
 func (b *block) Size() int {
-	return int(b.f.blockSzB)
+	return b.f.blockSzB
 }
 
 // Release should be called on completion to free the resources associated with the block.
@@ -41,8 +41,8 @@ func (b *block) Release() {
 }
 
 // Get returns a reader to read the block data.
-func (b *block) Get(ctx context.Context) (rc io.ReadCloser, err error) {
-	rc, err = b.f.repo.OpenObject(ctx, b.Oid)
+func (b *block) Get(ctx context.Context) (io.ReadCloser, error) {
+	rc, err := b.f.repo.OpenObject(ctx, b.Oid)
 	if err != nil {
 		b.f.logger.Debugf("block[%x] OpenObject(%s): %v", b.BlockAddr, b.Oid, err)
 		return nil, err

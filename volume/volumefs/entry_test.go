@@ -6,6 +6,7 @@ import (
 
 	"github.com/kopia/kopia/fs"
 	"github.com/kopia/kopia/snapshot"
+
 	"github.com/stretchr/testify/assert"
 )
 
@@ -45,8 +46,8 @@ func TestEntry(t *testing.T) {
 			}
 			assert.Equal(expSDE, dm.snapshotDirEntry())
 
-			fm := f.lookupFile(rootDm, pp[0:i])
-			assert.Nil(fm)
+			efm := f.lookupFile(rootDm, pp[0:i])
+			assert.Nil(efm)
 		}
 
 		fm2 := f.lookupFile(rootDm, pp)

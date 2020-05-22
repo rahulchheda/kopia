@@ -47,7 +47,7 @@ func (bmg *blockMapGenerator) Init(f *Filesystem, chainLen, concurrency int) {
 	bmg.f = f
 	bmg.chainLen = chainLen
 	bmg.concurrency = concurrency
-	bmg.bm = newBTreeMap(int(f.dirSz))
+	bmg.bm = newBTreeMap(f.dirSz)
 	bmg.roots = make([]fs.Directory, 0, chainLen+1)
 }
 

@@ -43,7 +43,7 @@ func (f *Filesystem) setDefaultLayoutProperties() {
 	f.layoutProperties.initLayoutProperties(snapshotBlockSize, maxDirEntries, maxTreeDepth)
 }
 
-func (l *layoutProperties) initLayoutProperties(snapshotBlockSize, maxDirEntries int, maxTreeDepth int) {
+func (l *layoutProperties) initLayoutProperties(snapshotBlockSize, maxDirEntries, maxTreeDepth int) {
 	l.blockSzB = snapshotBlockSize
 	l.dirSz = maxDirEntries
 	l.depth = maxTreeDepth

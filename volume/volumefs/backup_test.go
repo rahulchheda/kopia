@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// nolint:wsl,gocritic
+// nolint:wsl,gocritic,goconst
 func TestBackup(t *testing.T) {
 	assert := assert.New(t)
 
@@ -222,6 +222,7 @@ func (tbp *testBackupProcessor) commitSnapshot(ctx context.Context, rootDir *dir
 	return tbp.retCsS, tbp.retCsE
 }
 
+// nolint:unused
 type testUploader struct {
 	inWriteDirPP parsedPath
 	inWriteDirDm *dirMeta
