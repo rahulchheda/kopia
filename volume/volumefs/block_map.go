@@ -141,7 +141,7 @@ func (bmi *bTreeIter) dispatch(i btree.Item) bool {
 	return true
 }
 
-// HashMap is simplistic and does not sort
+// HashMap is simplistic: does not have a sorted iterator
 // func newHashMap(order int) blockMapMutable {
 // 	hm := &hashMap{}
 // 	hm.m = make(map[int64]object.ID)

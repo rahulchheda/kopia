@@ -22,49 +22,54 @@ func TestLayout(t *testing.T) {
 	Ei := 1024 * Ti
 
 	layoutTCs := []layoutProperties{ // * indicates >= 16Ti size
-		{blockSzB: 16 * Ki, dirSz: 512, depth: 3, maxVolSzB: 2 * Ti, dirSzLog2: 9, dirSzMask: 511, maxBlocks: 128 * Mi},
-		{blockSzB: 16 * Ki, dirSz: 1024, depth: 3, maxVolSzB: 16 * Ti, dirSzLog2: 10, dirSzMask: 1023, maxBlocks: 1 * Gi}, // *
-		{blockSzB: 16 * Ki, dirSz: 256, depth: 4, maxVolSzB: 64 * Ti, dirSzLog2: 8, dirSzMask: 255, maxBlocks: 4 * Gi},    // *
-		{blockSzB: 16 * Ki, dirSz: 256, depth: 5, maxVolSzB: 16 * Ei, dirSzLog2: 8, dirSzMask: 255, maxBlocks: 1 * Ti},    // *
+		{blockSzB: int(16 * Ki), dirSz: 512, depth: 3, maxVolSzB: 2 * Ti, dirSzLog2: 9, dirSzMask: 511, maxBlocks: 128 * Mi},
+		{blockSzB: int(16 * Ki), dirSz: 1024, depth: 3, maxVolSzB: 16 * Ti, dirSzLog2: 10, dirSzMask: 1023, maxBlocks: 1 * Gi}, // *
+		{blockSzB: int(16 * Ki), dirSz: 256, depth: 4, maxVolSzB: 64 * Ti, dirSzLog2: 8, dirSzMask: 255, maxBlocks: 4 * Gi},    // *
+		{blockSzB: int(16 * Ki), dirSz: 256, depth: 5, maxVolSzB: 16 * Ei, dirSzLog2: 8, dirSzMask: 255, maxBlocks: 1 * Ti},    // *
 
-		{blockSzB: 64 * Ki, dirSz: 32, depth: 3, maxVolSzB: 2 * Gi, dirSzLog2: 5, dirSzMask: 31, maxBlocks: 32 * Ki},
-		{blockSzB: 64 * Ki, dirSz: 64, depth: 3, maxVolSzB: 16 * Gi, dirSzLog2: 6, dirSzMask: 63, maxBlocks: 256 * Ki},
-		{blockSzB: 64 * Ki, dirSz: 128, depth: 3, maxVolSzB: 128 * Gi, dirSzLog2: 7, dirSzMask: 127, maxBlocks: 2 * Mi},
-		{blockSzB: 64 * Ki, dirSz: 256, depth: 3, maxVolSzB: 1 * Ti, dirSzLog2: 8, dirSzMask: 255, maxBlocks: 16 * Mi},
-		{blockSzB: 64 * Ki, dirSz: 512, depth: 3, maxVolSzB: 8 * Ti, dirSzLog2: 9, dirSzMask: 511, maxBlocks: 128 * Mi},
-		{blockSzB: 64 * Ki, dirSz: 128, depth: 4, maxVolSzB: 16 * Ti, dirSzLog2: 7, dirSzMask: 127, maxBlocks: 256 * Mi}, // *
-		{blockSzB: 64 * Ki, dirSz: 256, depth: 4, maxVolSzB: 256 * Ti, dirSzLog2: 8, dirSzMask: 255, maxBlocks: 4 * Gi},  // *
-		{blockSzB: 64 * Ki, dirSz: 32, depth: 5, maxVolSzB: 2 * Ti, dirSzLog2: 5, dirSzMask: 31, maxBlocks: 32 * Mi},
-		{blockSzB: 64 * Ki, dirSz: 64, depth: 5, maxVolSzB: 64 * Ti, dirSzLog2: 6, dirSzMask: 63, maxBlocks: 1 * Gi},   // *
-		{blockSzB: 64 * Ki, dirSz: 128, depth: 5, maxVolSzB: 2 * Ei, dirSzLog2: 7, dirSzMask: 127, maxBlocks: 32 * Gi}, // *
+		{blockSzB: int(64 * Ki), dirSz: 32, depth: 3, maxVolSzB: 2 * Gi, dirSzLog2: 5, dirSzMask: 31, maxBlocks: 32 * Ki},
+		{blockSzB: int(64 * Ki), dirSz: 64, depth: 3, maxVolSzB: 16 * Gi, dirSzLog2: 6, dirSzMask: 63, maxBlocks: 256 * Ki},
+		{blockSzB: int(64 * Ki), dirSz: 128, depth: 3, maxVolSzB: 128 * Gi, dirSzLog2: 7, dirSzMask: 127, maxBlocks: 2 * Mi},
+		{blockSzB: int(64 * Ki), dirSz: 256, depth: 3, maxVolSzB: 1 * Ti, dirSzLog2: 8, dirSzMask: 255, maxBlocks: 16 * Mi},
+		{blockSzB: int(64 * Ki), dirSz: 512, depth: 3, maxVolSzB: 8 * Ti, dirSzLog2: 9, dirSzMask: 511, maxBlocks: 128 * Mi},
+		{blockSzB: int(64 * Ki), dirSz: 128, depth: 4, maxVolSzB: 16 * Ti, dirSzLog2: 7, dirSzMask: 127, maxBlocks: 256 * Mi}, // *
+		{blockSzB: int(64 * Ki), dirSz: 256, depth: 4, maxVolSzB: 256 * Ti, dirSzLog2: 8, dirSzMask: 255, maxBlocks: 4 * Gi},  // *
+		{blockSzB: int(64 * Ki), dirSz: 32, depth: 5, maxVolSzB: 2 * Ti, dirSzLog2: 5, dirSzMask: 31, maxBlocks: 32 * Mi},
+		{blockSzB: int(64 * Ki), dirSz: 64, depth: 5, maxVolSzB: 64 * Ti, dirSzLog2: 6, dirSzMask: 63, maxBlocks: 1 * Gi},   // *
+		{blockSzB: int(64 * Ki), dirSz: 128, depth: 5, maxVolSzB: 2 * Ei, dirSzLog2: 7, dirSzMask: 127, maxBlocks: 32 * Gi}, // *
 
-		{blockSzB: 256 * Ki, dirSz: 32, depth: 3, maxVolSzB: 8 * Gi, dirSzLog2: 5, dirSzMask: 31, maxBlocks: 32 * Ki},
-		{blockSzB: 256 * Ki, dirSz: 64, depth: 3, maxVolSzB: 64 * Gi, dirSzLog2: 6, dirSzMask: 63, maxBlocks: 256 * Ki},
-		{blockSzB: 256 * Ki, dirSz: 128, depth: 3, maxVolSzB: 512 * Gi, dirSzLog2: 7, dirSzMask: 127, maxBlocks: 2 * Mi},
-		{blockSzB: 256 * Ki, dirSz: 256, depth: 3, maxVolSzB: 4 * Ti, dirSzLog2: 8, dirSzMask: 255, maxBlocks: 16 * Mi},
-		{blockSzB: 256 * Ki, dirSz: 512, depth: 3, maxVolSzB: 32 * Ti, dirSzLog2: 9, dirSzMask: 511, maxBlocks: 128 * Mi}, // *
-		{blockSzB: 256 * Ki, dirSz: 128, depth: 4, maxVolSzB: 64 * Ti, dirSzLog2: 7, dirSzMask: 127, maxBlocks: 256 * Mi}, // *
-		{blockSzB: 256 * Ki, dirSz: 256, depth: 4, maxVolSzB: 1 * Ei, dirSzLog2: 8, dirSzMask: 255, maxBlocks: 4 * Gi},    // *
-		{blockSzB: 256 * Ki, dirSz: 32, depth: 5, maxVolSzB: 8 * Ti, dirSzLog2: 5, dirSzMask: 31, maxBlocks: 32 * Mi},
-		{blockSzB: 256 * Ki, dirSz: 64, depth: 5, maxVolSzB: 256 * Ti, dirSzLog2: 6, dirSzMask: 63, maxBlocks: 1 * Gi}, // *
-		{blockSzB: 256 * Ki, dirSz: 128, depth: 5, maxVolSzB: 8 * Ei, dirSzLog2: 7, dirSzMask: 127, maxBlocks: 32 * Gi},
+		{blockSzB: int(256 * Ki), dirSz: 32, depth: 3, maxVolSzB: 8 * Gi, dirSzLog2: 5, dirSzMask: 31, maxBlocks: 32 * Ki},
+		{blockSzB: int(256 * Ki), dirSz: 64, depth: 3, maxVolSzB: 64 * Gi, dirSzLog2: 6, dirSzMask: 63, maxBlocks: 256 * Ki},
+		{blockSzB: int(256 * Ki), dirSz: 128, depth: 3, maxVolSzB: 512 * Gi, dirSzLog2: 7, dirSzMask: 127, maxBlocks: 2 * Mi},
+		{blockSzB: int(256 * Ki), dirSz: 256, depth: 3, maxVolSzB: 4 * Ti, dirSzLog2: 8, dirSzMask: 255, maxBlocks: 16 * Mi},
+		{blockSzB: int(256 * Ki), dirSz: 512, depth: 3, maxVolSzB: 32 * Ti, dirSzLog2: 9, dirSzMask: 511, maxBlocks: 128 * Mi}, // *
+		{blockSzB: int(256 * Ki), dirSz: 128, depth: 4, maxVolSzB: 64 * Ti, dirSzLog2: 7, dirSzMask: 127, maxBlocks: 256 * Mi}, // *
+		{blockSzB: int(256 * Ki), dirSz: 256, depth: 4, maxVolSzB: 1 * Ei, dirSzLog2: 8, dirSzMask: 255, maxBlocks: 4 * Gi},    // *
+		{blockSzB: int(256 * Ki), dirSz: 32, depth: 5, maxVolSzB: 8 * Ti, dirSzLog2: 5, dirSzMask: 31, maxBlocks: 32 * Mi},
+		{blockSzB: int(256 * Ki), dirSz: 64, depth: 5, maxVolSzB: 256 * Ti, dirSzLog2: 6, dirSzMask: 63, maxBlocks: 1 * Gi}, // *
+		{blockSzB: int(256 * Ki), dirSz: 128, depth: 5, maxVolSzB: 8 * Ei, dirSzLog2: 7, dirSzMask: 127, maxBlocks: 32 * Gi},
 
-		{blockSzB: 1 * Mi, dirSz: 32, depth: 3, maxVolSzB: 32 * Gi, dirSzLog2: 5, dirSzMask: 31, maxBlocks: 32 * Ki},
-		{blockSzB: 1 * Mi, dirSz: 64, depth: 3, maxVolSzB: 256 * Gi, dirSzLog2: 6, dirSzMask: 63, maxBlocks: 256 * Ki},
-		{blockSzB: 1 * Mi, dirSz: 128, depth: 3, maxVolSzB: 2 * Ti, dirSzLog2: 7, dirSzMask: 127, maxBlocks: 2 * Mi},
-		{blockSzB: 1 * Mi, dirSz: 256, depth: 3, maxVolSzB: 16 * Ti, dirSzLog2: 8, dirSzMask: 255, maxBlocks: 16 * Mi},   // *
-		{blockSzB: 1 * Mi, dirSz: 512, depth: 3, maxVolSzB: 128 * Ti, dirSzLog2: 9, dirSzMask: 511, maxBlocks: 128 * Mi}, // *
-		{blockSzB: 1 * Mi, dirSz: 128, depth: 4, maxVolSzB: 256 * Ti, dirSzLog2: 7, dirSzMask: 127, maxBlocks: 256 * Mi}, // *
-		{blockSzB: 1 * Mi, dirSz: 256, depth: 4, maxVolSzB: 4 * Ei, dirSzLog2: 8, dirSzMask: 255, maxBlocks: 4 * Gi},     // *
-		{blockSzB: 1 * Mi, dirSz: 32, depth: 5, maxVolSzB: 32 * Ti, dirSzLog2: 5, dirSzMask: 31, maxBlocks: 32 * Mi},     // *
-		{blockSzB: 1 * Mi, dirSz: 64, depth: 5, maxVolSzB: 1 * Ei, dirSzLog2: 6, dirSzMask: 63, maxBlocks: 1 * Gi},       // *
-		{blockSzB: 1 * Mi, dirSz: 128, depth: 5, maxVolSzB: 32 * Ei, dirSzLog2: 7, dirSzMask: 127, maxBlocks: 32 * Gi},   // *
+		{blockSzB: int(1 * Mi), dirSz: 32, depth: 3, maxVolSzB: 32 * Gi, dirSzLog2: 5, dirSzMask: 31, maxBlocks: 32 * Ki},
+		{blockSzB: int(1 * Mi), dirSz: 64, depth: 3, maxVolSzB: 256 * Gi, dirSzLog2: 6, dirSzMask: 63, maxBlocks: 256 * Ki},
+		{blockSzB: int(1 * Mi), dirSz: 128, depth: 3, maxVolSzB: 2 * Ti, dirSzLog2: 7, dirSzMask: 127, maxBlocks: 2 * Mi},
+		{blockSzB: int(1 * Mi), dirSz: 256, depth: 3, maxVolSzB: 16 * Ti, dirSzLog2: 8, dirSzMask: 255, maxBlocks: 16 * Mi},   // *
+		{blockSzB: int(1 * Mi), dirSz: 512, depth: 3, maxVolSzB: 128 * Ti, dirSzLog2: 9, dirSzMask: 511, maxBlocks: 128 * Mi}, // *
+		{blockSzB: int(1 * Mi), dirSz: 128, depth: 4, maxVolSzB: 256 * Ti, dirSzLog2: 7, dirSzMask: 127, maxBlocks: 256 * Mi}, // *
+		{blockSzB: int(1 * Mi), dirSz: 256, depth: 4, maxVolSzB: 4 * Ei, dirSzLog2: 8, dirSzMask: 255, maxBlocks: 4 * Gi},     // *
+		{blockSzB: int(1 * Mi), dirSz: 32, depth: 5, maxVolSzB: 32 * Ti, dirSzLog2: 5, dirSzMask: 31, maxBlocks: 32 * Mi},     // *
+		{blockSzB: int(1 * Mi), dirSz: 64, depth: 5, maxVolSzB: 1 * Ei, dirSzLog2: 6, dirSzMask: 63, maxBlocks: 1 * Gi},       // *
+		{blockSzB: int(1 * Mi), dirSz: 128, depth: 5, maxVolSzB: 32 * Ei, dirSzLog2: 7, dirSzMask: 127, maxBlocks: 32 * Gi},   // *
 	}
 	for i, tc := range layoutTCs {
-		l := &layoutProperties{}
-		l.initLayoutProperties(tc.blockSzB, tc.dirSz, tc.depth)
+		f := &Filesystem{}
+		f.initLayoutProperties(tc.blockSzB, tc.dirSz, tc.depth)
 		tc.baseEncoding = baseEncoding
-		assert.Equal(tc, *l, "case %d", i)
+		assert.Equal(tc, f.layoutProperties, "case %d", i)
+
+		pp := f.newParsedPath()
+		assert.True(cap(pp) == tc.depth)
+		assert.True(len(pp) == 0)
+		assert.Equal("", pp.Last())
 	}
 
 	// Test address to path
@@ -86,7 +91,7 @@ func TestLayout(t *testing.T) {
 	}
 
 	addrTCs := []struct {
-		dirSz    int64
+		dirSz    int
 		depth    int
 		encoding int
 		cases    []addrPP
@@ -165,6 +170,13 @@ func TestLayout(t *testing.T) {
 			pp, err := f.addrToPath(tc.addr)
 			assert.NoError(err)
 			assert.Equal(tc.pp, pp)
+			assert.True(len(pp) == set.depth)
+			assert.Equal(pp[len(pp)-1], pp.Last())
+
+			cpp := pp.Child("child")
+			assert.True(len(cpp) == len(pp)+1)
+			assert.Equal("child", cpp.Last())
+			assert.Equal(pp, cpp[0:len(pp)])
 
 			addr := f.pathToAddr(tc.pp)
 			assert.Equal(tc.addr, addr, "case %d.%d pathToAddr %s=>%0x exp=%0x", i, j, pp.String(), addr, tc.addr)

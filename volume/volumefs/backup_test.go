@@ -1,164 +1,127 @@
 package volumefs
 
+import (
+	"context"
+	"io"
+	"testing"
+
+	"github.com/kopia/kopia/repo/object"
+	"github.com/kopia/kopia/snapshot"
+	"github.com/kopia/kopia/volume"
+	vmgr "github.com/kopia/kopia/volume/fake"
+
+	"github.com/stretchr/testify/assert"
+)
+
 // nolint:wsl,gocritic
-// func TestInitializeForBackupNoPreviousSnapshot(t *testing.T) {
-// 	assert := assert.New(t)
+func TestBackup(t *testing.T) {
+	assert := assert.New(t)
 
-// 	var err error
+	profile := &vmgr.ReaderProfile{
+		Ranges: []vmgr.BlockAddrRange{
+			{Start: 0, Count: 1},
+			{Start: 0x100, Count: 1},
+			{Start: 0x111ff, Count: 1},
+		},
+	}
 
-// 	ctx, th := newVolFsTestHarness(t)
-// 	defer th.cleanup()
+	for _, tc := range []string{
+		"invalid args",
+		"no gbr", "link error", "bb error default concurrency", "cr error non-default concurrency",
+		"cs error", "success",
+	} {
+		ctx, th := newVolFsTestHarness(t)
+		defer th.cleanup()
 
-// 	profile := &vmgr.ReaderProfile{
-// 		Ranges: []vmgr.BlockAddrRange{
-// 			{Start: 0, Count: 1},
-// 			{Start: 0x100, Count: 1},
-// 			{Start: 0x111ff, Count: 1},
-// 		},
-// 	}
-// 	expAddresses := []int64{0, 0x100, 0x111ff}
+		ba := BackupArgs{}
+		tbr := &testBR{}
+		tvm := &testVM{}
+		tvm.retGbrBR = tbr
+		cDm := &dirMeta{}
+		pDm := &dirMeta{}
+		rDm := &dirMeta{}
+		cMan := &snapshot.Manifest{}
+		pMan := &snapshot.Manifest{}
+		tbp := &testBackupProcessor{}
+		tbp.retLpsDm = pDm
+		tbp.retLpsS = pMan
+		tbp.retBbDm = cDm
+		tbp.retCrDm = rDm
+		tbp.retCsS = cMan
 
-// 	f := th.fsForBackupTests(profile)
-// 	f.blockSzB = 512 // HACK
+		f := th.fsForBackupTests(profile)
+		assert.Equal(f, f.bp)
+		f.VolumeManager = tvm
 
-// 	// Case: first backup
-// 	tB := time.Now()
-// 	root, err := f.InitializeForBackup(ctx, "", "")
-// 	tA := time.Now()
-// 	assert.NoError(err)
-// 	assert.WithinDuration(tA, f.epoch, tA.Sub(tB))
-// 	assert.NotNil(root)
-// 	assert.NotNil(f.rootDir)
-// 	de, ok := root.(*dirEntry)
-// 	assert.True(ok)
-// 	assert.Equal(f.rootDir, de.m)
+		f.bp = tbp
 
-// 	// check the hierarchy; all should have timestamp equal to f.epoch
-// 	dirCnt := 0
-// 	fileCnt := 0
-// 	f.rootDir.descend(func(dm *dirMeta, pp parsedPath, arg interface{}) {
-// 		assert.Equal(f.epoch, dm.mTime)
-// 		switch x := arg.(type) {
-// 		case bool:
-// 			if x {
-// 				dirCnt++
-// 			}
-// 		case *fileMeta:
-// 			fileCnt++
-// 			assert.Equal(f.epoch, x.mTime)
-// 		}
-// 	})
-// 	assert.Equal(len(expAddresses)+3, fileCnt) // includes meta
-// 	assert.Equal(6, dirCnt)
+		var expError error
+		// var argsInvalid bool
 
-// 	for _, ba := range expAddresses {
-// 		pp, err := f.addrToPath(ba)
-// 		assert.NoError(err, "addr[%s] parsed", ba)
+		switch tc {
+		case "invalid args":
+			ba.PreviousSnapshotID = "foo"
+			ba.PreviousVolumeSnapshotID = ""
+			expError = ErrInvalidArgs
+		case "no gbr":
+			expError = volume.ErrNotSupported
+			tvm.retGbrBR = nil
+			tvm.retGbrE = expError
+		case "link error":
+			ba.PreviousSnapshotID = "previousSnapshotID"
+			ba.PreviousVolumeSnapshotID = "previousVolumeSnapshotID"
+			expError = ErrInvalidSnapshot
+			tbp.retLpsE = expError
+			tbp.retLpsDm = nil
+			tbp.retLpsS = nil
+		case "bb error default concurrency":
+			expError = ErrInternalError
+			tbp.retBbE = expError
+		case "cr error non-default concurrency":
+			ba.PreviousSnapshotID = "previousSnapshotID"
+			ba.PreviousVolumeSnapshotID = "previousVolumeSnapshotID"
+			ba.BackupConcurrency = 2 * DefaultBackupConcurrency
+			expError = ErrOutOfRange
+			tbp.retCrE = expError
+		case "cs error":
+			expError = ErrInvalidSnapshot
+			tbp.retCsE = expError
+			tbp.retCsS = nil
+		case "success":
+			ba.PreviousSnapshotID = "previousSnapshotID"
+			ba.PreviousVolumeSnapshotID = "previousVolumeSnapshotID"
+		}
 
-// 		fm := f.lookupFile(ctx, pp)
-// 		assert.NotNil(fm, "file[%s] exists", pp)
-// 	}
+		snap, err := f.Backup(ctx, ba)
 
-// 	fn := fmt.Sprintf(metaFmtX, metaBlockSzB, f.blockSzB)
-// 	fm := f.lookupFile(ctx, parsedPath{fn})
-// 	assert.NotNil(fm, "meta %s", fn)
+		if expError == nil {
+			assert.NoError(err)
+			assert.NotNil(snap)
+		} else {
+			assert.Error(expError, err)
+			assert.Nil(snap)
+		}
 
-// 	fn = fmt.Sprintf(metaFmtX, metaDirSz, f.dirSz)
-// 	fm = f.lookupFile(ctx, parsedPath{fn})
-// 	assert.NotNil(fm, "meta %s", fn)
+		switch tc {
+		case "link error":
+			assert.Equal(ba.PreviousSnapshotID, tbp.inLpsPsID)
+			assert.Equal(ba.PreviousVolumeSnapshotID, tbp.inLpsPvsID)
+		case "bb error default concurrency":
+			assert.Equal(DefaultBackupConcurrency, tbp.inBbNw)
+			assert.Equal(tbr, tbp.inBbBR)
+		case "cr error non-default concurrency":
+			assert.Equal(2*DefaultBackupConcurrency, tbp.inBbNw)
+			assert.Equal(cDm, tbp.inCrCDm)
+			assert.Equal(pDm, tbp.inCrPDm)
+		case "cs error":
+			assert.Equal(rDm, tbp.inCsRDm)
+		case "success":
+			assert.Equal(pMan, tbp.inCsPS)
+			assert.Equal(cMan, snap.Current)
+		}
+	}
 
-// 	fn = fmt.Sprintf(metaFmtX, metaDepth, f.depth)
-// 	fm = f.lookupFile(ctx, parsedPath{fn})
-// 	assert.NotNil(fm, "meta %s", fn)
-
-// 	th.compareInternalAndExternalTrees(ctx, f, root)
-
-// 	// Case: failure
-// 	fm = f.lookupFile(ctx, parsedPath{"000", "123", "foo"})
-// 	assert.Nil(fm)
-// }
-
-// // nolint:wsl,gocritic
-// func TestInitializeForBackupWithPreviousSnapshot(t *testing.T) {
-// 	assert := assert.New(t)
-
-// 	var err error
-
-// 	ctx, th := newVolFsTestHarness(t)
-// 	defer th.cleanup()
-
-// 	profile := &vmgr.ReaderProfile{
-// 		Ranges: []vmgr.BlockAddrRange{ // 3 changed blocks
-// 			{Start: 0, Count: 1},
-// 			{Start: 0x100, Count: 1},
-// 			{Start: 0x111ff, Count: 1},
-// 		},
-// 	}
-// 	changedAddresses := []int64{0, 0x100, 0x111ff}
-// 	f := th.fsForBackupTests(profile)
-// 	defaultBlockSize := f.GetBlockSize()
-// 	f.blockSzB = defaultBlockSize * 2 // make a change that should be rolled back
-
-// 	prevAddresses := []int64{0, 1, 2, 0x1000, 0x50000} // fake a previous snapshot with some partially overlapping addresses
-// 	snap := th.addSnapshot(ctx, prevAddresses)
-// 	t.Log(string(snap.RootObjectID()))
-
-// 	// Case: trivial failure
-// 	root, err := f.InitializeForBackup(ctx, string(snap.RootObjectID())+"foo", "volSnapID0")
-// 	assert.Error(err)
-// 	assert.Nil(root)
-
-// 	// Case: subsequent backup
-// 	tB := time.Now()
-// 	root, err = f.InitializeForBackup(ctx, string(snap.RootObjectID()), "volSnapID0")
-// 	tA := time.Now()
-
-// 	assert.NoError(err)
-// 	assert.WithinDuration(tA, f.epoch, tA.Sub(tB))
-// 	assert.NotNil(root)
-// 	assert.NotNil(f.rootDir)
-
-// 	de, ok := root.(*dirEntry)
-// 	assert.True(ok)
-// 	assert.Equal(f.rootDir, de.m)
-
-// 	// check that the default block size was restored by the snapshot
-// 	assert.Equal(defaultBlockSize, f.GetBlockSize())
-
-// 	// determine what should have changed
-// 	prevUpdated := analyseAddresses(t, f, "prev", prevAddresses, nil)
-// 	changedUpdated := analyseAddresses(t, f, "changed", changedAddresses, prevUpdated)
-
-// 	// walk the internal tree and check the timestamps
-// 	updateCnt := 0
-// 	f.rootDir.descend(func(dm *dirMeta, pp parsedPath, arg interface{}) {
-// 		switch x := arg.(type) {
-// 		case bool:
-// 			if x {
-// 				if _, ok := changedUpdated[pp.String()]; ok {
-// 					updateCnt++
-// 					// t.Logf("Found updated dir [%s]", pp)
-// 					assert.Equal(f.epoch, dm.mTime, "dir [%s]", pp)
-// 				} else {
-// 					// t.Logf("Found older dir [%s]", pp)
-// 					assert.True(f.epoch.After(dm.mTime), "dir [%s]", pp)
-// 				}
-// 			}
-// 		case *fileMeta:
-// 			if _, ok := changedUpdated[pp.String()]; ok {
-// 				updateCnt++
-// 				// t.Logf("Found updated file [%s]", pp)
-// 				assert.Equal(f.epoch, x.mTime, "file [%s]", pp)
-// 			} else {
-// 				// t.Logf("Found older file [%s]", pp)
-// 				assert.True(f.epoch.After(x.mTime), "file [%s]", pp)
-// 			}
-// 		}
-// 	})
-// 	assert.Equal(len(changedUpdated), updateCnt)
-
-// 	th.compareInternalAndExternalTrees(ctx, f, root)
-// }
+}
 
 // nolint:wsl,gocritic
 // func analyseAddresses(t *testing.T, f *Filesystem, prefix string, bal []int64, prev map[string]struct{}) map[string]struct{} { // nolint:unparam
@@ -205,3 +168,86 @@ package volumefs
 
 // 	return updated
 // }
+
+type testBackupProcessor struct {
+	inLpsPsID  string
+	inLpsPvsID string
+	retLpsDm   *dirMeta
+	retLpsE    error
+	retLpsS    *snapshot.Manifest
+
+	inBbBR  volume.BlockReader
+	inBbNw  int
+	retBbDm *dirMeta
+	retBbE  error
+
+	inCrCDm *dirMeta
+	inCrPDm *dirMeta
+	retCrDm *dirMeta
+	retCrE  error
+
+	inCsRDm *dirMeta
+	inCsPS  *snapshot.Manifest
+	retCsS  *snapshot.Manifest
+	retCsE  error
+}
+
+var _ backupProcessor = (*testBackupProcessor)(nil)
+
+func (tbp *testBackupProcessor) linkPreviousSnapshot(ctx context.Context, previousSnapshotID, prevVolumeSnapshotID string) (*dirMeta, *snapshot.Manifest, error) {
+	tbp.inLpsPsID = previousSnapshotID
+	tbp.inLpsPvsID = prevVolumeSnapshotID
+
+	return tbp.retLpsDm, tbp.retLpsS, tbp.retLpsE
+}
+
+func (tbp *testBackupProcessor) backupBlocks(ctx context.Context, br volume.BlockReader, numWorkers int) (*dirMeta, error) {
+	tbp.inBbBR = br
+	tbp.inBbNw = numWorkers
+
+	return tbp.retBbDm, tbp.retBbE
+}
+
+func (tbp *testBackupProcessor) createRoot(ctx context.Context, curDm, prevRootDm *dirMeta) (*dirMeta, error) {
+	tbp.inCrCDm = curDm
+	tbp.inCrPDm = prevRootDm
+
+	return tbp.inCrCDm, tbp.retCrE
+}
+
+func (tbp *testBackupProcessor) commitSnapshot(ctx context.Context, rootDir *dirMeta, psm *snapshot.Manifest) (*snapshot.Manifest, error) {
+	tbp.inCsRDm = rootDir
+	tbp.inCsPS = psm
+
+	return tbp.retCsS, tbp.retCsE
+}
+
+type testUploader struct {
+	inWriteDirPP parsedPath
+	inWriteDirDm *dirMeta
+	inWriteDirST bool
+	retWriteDirE error
+
+	inWriteFilePP  parsedPath
+	inWriteFileRC  io.Reader
+	inWriteFileBuf []byte
+	retWriteFileID object.ID
+	retWriteFileSz int64
+	retWriteFileE  error
+}
+
+func (tu *testUploader) writeDirToRepo(ctx context.Context, pp parsedPath, dir *dirMeta, writeSubTree bool) error {
+	tu.inWriteDirPP = pp
+	tu.inWriteDirDm = dir
+	tu.inWriteDirST = writeSubTree
+
+	return tu.retWriteDirE
+}
+
+func (tu *testUploader) writeFileToRepo(ctx context.Context, pp parsedPath, src io.Reader, buf []byte) (object.ID, int64, error) {
+	tu.inWriteFilePP = pp
+	tu.inWriteFileRC = src
+	tu.inWriteFileBuf = buf
+
+	return tu.retWriteFileID, tu.retWriteFileSz, tu.retWriteFileE
+}

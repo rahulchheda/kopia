@@ -66,7 +66,7 @@ func (f *Filesystem) Backup(ctx context.Context, args BackupArgs) (*Snapshot, er
 	)
 
 	if args.PreviousSnapshotID != "" {
-		prevRootDm, prevMan, err = f.linkPreviousSnapshot(ctx, args.PreviousSnapshotID, args.PreviousVolumeSnapshotID)
+		prevRootDm, prevMan, err = f.bp.linkPreviousSnapshot(ctx, args.PreviousSnapshotID, args.PreviousVolumeSnapshotID)
 		if err != nil {
 			return nil, err
 		}
@@ -77,9 +77,9 @@ func (f *Filesystem) Backup(ctx context.Context, args BackupArgs) (*Snapshot, er
 		numWorkers = args.BackupConcurrency
 	}
 
-	if curDm, err = f.backupBlocks(ctx, br, numWorkers); err == nil {
-		if rootDir, err = f.createRoot(ctx, curDm, prevRootDm); err == nil {
-			curMan, err = f.commitSnapshot(ctx, rootDir, prevMan)
+	if curDm, err = f.bp.backupBlocks(ctx, br, numWorkers); err == nil {
+		if rootDir, err = f.bp.createRoot(ctx, curDm, prevRootDm); err == nil {
+			curMan, err = f.bp.commitSnapshot(ctx, rootDir, prevMan)
 		}
 	}
 
@@ -87,11 +87,15 @@ func (f *Filesystem) Backup(ctx context.Context, args BackupArgs) (*Snapshot, er
 		return nil, err
 	}
 
-	result := &Snapshot{
-		Current: curMan,
-	}
+	return &Snapshot{Current: curMan}, nil
+}
 
-	return result, nil
+// backupProcessor aids in unit testing
+type backupProcessor interface {
+	backupBlocks(ctx context.Context, br volume.BlockReader, numWorkers int) (*dirMeta, error)
+	commitSnapshot(ctx context.Context, rootDir *dirMeta, psm *snapshot.Manifest) (*snapshot.Manifest, error)
+	createRoot(ctx context.Context, curDm, prevRootDm *dirMeta) (*dirMeta, error)
+	linkPreviousSnapshot(ctx context.Context, previousSnapshotID, prevVolumeSnapshotID string) (*dirMeta, *snapshot.Manifest, error)
 }
 
 // createRoot creates the root directory with references to current, previous and meta.
@@ -155,7 +159,7 @@ func (f *Filesystem) commitSnapshot(ctx context.Context, rootDir *dirMeta, psm *
 		return nil, err
 	}
 
-	if err = f.Repo.Flush(ctx); err != nil {
+	if err = f.repo.Flush(ctx); err != nil {
 		f.logger.Debugf("repo.Flush: %v", err)
 		return nil, err
 	}

@@ -21,15 +21,15 @@ import (
 // depth maxTreeDepth.  See the unit test for illustration.
 
 const (
-	maxDirEntries     = int64(256) // nolint:gomnd // must be a power of 2
+	maxDirEntries     = 256 // nolint:gomnd // must be a power of 2
 	maxTreeDepth      = 4
-	snapshotBlockSize = int64(1024 * 16) // nolint:gomnd // this value actually comes from the device
+	snapshotBlockSize = 1024 * 16 // nolint:gomnd // this value actually comes from the device
 	baseEncoding      = 32
 )
 
 type layoutProperties struct {
-	blockSzB int64
-	dirSz    int64
+	blockSzB int
+	dirSz    int
 	depth    int
 	// the rest are computed or fixed
 	dirSzLog2    int
@@ -43,19 +43,19 @@ func (f *Filesystem) setDefaultLayoutProperties() {
 	f.layoutProperties.initLayoutProperties(snapshotBlockSize, maxDirEntries, maxTreeDepth)
 }
 
-func (l *layoutProperties) initLayoutProperties(snapshotBlockSize, maxDirEntries int64, maxTreeDepth int) {
+func (l *layoutProperties) initLayoutProperties(snapshotBlockSize, maxDirEntries int, maxTreeDepth int) {
 	l.blockSzB = snapshotBlockSize
 	l.dirSz = maxDirEntries
 	l.depth = maxTreeDepth
 	l.dirSzLog2 = int(math.Log2(float64(maxDirEntries)))
-	l.dirSzMask = maxDirEntries - 1
+	l.dirSzMask = int64(maxDirEntries - 1)
 	l.maxBlocks = 1 << (maxTreeDepth * l.dirSzLog2)
-	l.maxVolSzB = l.maxBlocks * l.blockSzB
+	l.maxVolSzB = l.maxBlocks * int64(l.blockSzB)
 	l.baseEncoding = baseEncoding
 }
 
 // GetBlockSize returns the snapshot block size
-func (f *Filesystem) GetBlockSize() int64 {
+func (f *Filesystem) GetBlockSize() int {
 	return f.blockSzB
 }
 
@@ -115,67 +115,4 @@ func (f *Filesystem) pathToAddr(pp parsedPath) (blockAddr int64) {
 	}
 
 	return
-}
-
-// lookupDir searches for a directory in a directory hierarchy
-func (f *Filesystem) lookupDir(pDir *dirMeta, pp parsedPath) *dirMeta {
-	for i := 0; i < len(pp); i++ {
-		sdm := pDir.findSubdir(pp[i])
-		if sdm == nil {
-			f.logger.Debugf("dir not found [%s]", pp[:i])
-			return nil
-		}
-
-		pDir = sdm
-	}
-
-	return pDir
-}
-
-// lookupFile searches for a file in the directory hierarchy
-func (f *Filesystem) lookupFile(pDir *dirMeta, pp parsedPath) *fileMeta {
-	fileIdx := len(pp) - 1
-	if pDir = f.lookupDir(pDir, pp[:fileIdx]); pDir != nil {
-		if fm := pDir.findFile(pp[fileIdx]); fm != nil {
-			return fm
-		}
-
-		f.logger.Debugf("file not found [%s]", pp)
-	}
-
-	return nil
-}
-
-// ensureFile adds a new file to the specified directory hierarchy if it does not exist.
-// It returns the fileMeta.
-func (f *Filesystem) ensureFileInTree(pDir *dirMeta, pp parsedPath) *fileMeta {
-	fileIdx := len(pp) - 1
-
-	for i := 0; i < fileIdx; i++ {
-		sdm := pDir.findSubdir(pp[i])
-		if sdm == nil {
-			sdm = &dirMeta{
-				name: pp[i],
-			}
-
-			pDir.insertSubdir(sdm)
-			f.logger.Debugf("inserted directory(%s)", pp[:i+1])
-		}
-
-		pDir = sdm
-	}
-
-	fm := pDir.findFile(pp[fileIdx])
-	if fm == nil {
-		fm = &fileMeta{
-			name: pp[fileIdx],
-		}
-
-		pDir.insertFile(fm)
-		f.logger.Debugf("inserted file(%s)", pp)
-
-		return fm
-	}
-
-	return fm
 }

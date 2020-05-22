@@ -18,6 +18,7 @@ import (
 	"github.com/kopia/kopia/repo"
 	"github.com/kopia/kopia/repo/blob/filesystem"
 	"github.com/kopia/kopia/repo/manifest"
+	"github.com/kopia/kopia/repo/object"
 	"github.com/kopia/kopia/snapshot"
 	"github.com/kopia/kopia/snapshot/policy"
 	"github.com/kopia/kopia/snapshot/snapshotfs"
@@ -64,16 +65,6 @@ func TestFilesystemArgs(t *testing.T) {
 	assert.Equal(th.repo.Hostname(), si.Host)
 	assert.Equal(th.repo.Username(), si.UserName)
 	assert.Equal(path.Join("/volumefs", fa.VolumeID), si.Path)
-
-	f, err := New(&fa)
-	assert.NoError(err)
-	assert.NotNil(f)
-	assert.NotNil(f.blockPool.New)
-	bPtr := f.blockPool.Get()
-	assert.NotNil(bPtr)
-	b, ok := bPtr.(*block)
-	assert.True(ok)
-	f.blockPool.Put(b)
 }
 
 // nolint:wsl,gocritic
@@ -398,16 +389,51 @@ func (th *volFsTestHarness) fsForBackupTests(profile interface{}) *Filesystem {
 // 	checkNode(rootEntry, nil)
 // }
 
+type testVM struct {
+	retGbrBR volume.BlockReader
+	retGbrE  error
+	gbrA     volume.GetBlockReaderArgs
+}
+
+// Type returns the volume type.
+func (vm *testVM) Type() string {
+	return "testVM"
+}
+
+// GetBlockReader returns a BlockReader for a particular volume.
+// Optional - will return ErrNotSupported if unavailable.
+func (vm *testVM) GetBlockReader(args volume.GetBlockReaderArgs) (volume.BlockReader, error) {
+	vm.gbrA = args
+	return vm.retGbrBR, vm.retGbrE
+}
+
+// GetBlockWriter returns a BlockWriter for a particular volume.
+// Optional - will return ErrNotSupported if unavailable.
+func (vm *testVM) GetBlockWriter(args volume.GetBlockWriterArgs) (volume.BlockWriter, error) {
+	return nil, nil
+}
+
 type testBW struct {
-	putBlocksBI  volume.BlockIterator
-	putBlocksErr error
+	inPutBlocksBI   volume.BlockIterator
+	retPutBlocksErr error
 }
 
 var _ volume.BlockWriter = (*testBW)(nil)
 
 func (bw *testBW) PutBlocks(ctx context.Context, bi volume.BlockIterator) error {
-	bw.putBlocksBI = bi
-	return bw.putBlocksErr
+	bw.inPutBlocksBI = bi
+	return bw.retPutBlocksErr
+}
+
+type testBR struct {
+	retGetBlocksE  error
+	retGetBlocksBI volume.BlockIterator
+}
+
+var _ volume.BlockReader = (*testBR)(nil)
+
+func (br *testBR) GetBlocks(ctx context.Context) (volume.BlockIterator, error) {
+	return br.retGetBlocksBI, br.retGetBlocksE
 }
 
 type testDirEntry struct {
@@ -516,6 +542,7 @@ type testReader struct {
 }
 
 var _ fs.Reader = (*testReader)(nil)
+var _ object.Reader = (*testReader)(nil)
 
 func (tr *testReader) Close() error {
 	tr.closeCalled = true
@@ -558,6 +585,10 @@ func (tr *testReader) Entry() (fs.Entry, error) {
 	return tr.retEntryE, tr.retEntryErr
 }
 
+func (tr *testReader) Length() int64 {
+	return 0
+}
+
 type testWC struct {
 	t *testing.T
 
@@ -583,6 +614,31 @@ func (wc *testWC) Write(b []byte) (int, error) {
 	}
 
 	return retN, wc.retWriteErr
+}
+
+type testRepo struct {
+	inOoID object.ID
+	retOoR object.Reader
+	retOoE error
+
+	inNowO  object.WriterOptions
+	retNowW object.Writer
+
+	retFE error
+}
+
+func (r *testRepo) OpenObject(ctx context.Context, id object.ID) (object.Reader, error) {
+	r.inOoID = id
+	return r.retOoR, r.retOoE
+}
+
+func (r *testRepo) NewObjectWriter(ctx context.Context, opt object.WriterOptions) object.Writer {
+	r.inNowO = opt
+	return r.retNowW
+}
+
+func (r *testRepo) Flush(ctx context.Context) error {
+	return r.retFE
 }
 
 // func (dm *dirMeta) descend(cb func(*dirMeta, parsedPath, interface{})) {

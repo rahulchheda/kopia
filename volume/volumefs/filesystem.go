@@ -16,6 +16,7 @@
 package volumefs
 
 import (
+	"context"
 	"fmt"
 	"path"
 	"sync"
@@ -23,6 +24,7 @@ import (
 
 	"github.com/kopia/kopia/repo"
 	"github.com/kopia/kopia/repo/logging"
+	"github.com/kopia/kopia/repo/object"
 	"github.com/kopia/kopia/snapshot"
 	"github.com/kopia/kopia/volume"
 )
@@ -78,6 +80,16 @@ type Filesystem struct {
 	epoch                time.Time // all changes stamped with this time
 	logger               logging.Logger
 	blockPool            sync.Pool
+	bp                   backupProcessor
+	up                   uploader
+	repo                 repository
+}
+
+// repository is the subset of repo.Repository commands used
+type repository interface {
+	OpenObject(ctx context.Context, id object.ID) (object.Reader, error)
+	NewObjectWriter(ctx context.Context, opt object.WriterOptions) object.Writer
+	Flush(ctx context.Context) error
 }
 
 // New returns a new volume filesystem
@@ -93,6 +105,10 @@ func New(args *FilesystemArgs) (*Filesystem, error) {
 	}
 
 	f.setDefaultLayoutProperties() // block size may be reset from previous repo snapshot
+
+	f.bp = f
+	f.up = f
+	f.repo = f.Repo
 
 	return f, nil
 }

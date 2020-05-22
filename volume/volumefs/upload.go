@@ -13,11 +13,17 @@ import (
 	"github.com/pkg/errors"
 )
 
+// uploader aids in unit testing
+type uploader interface {
+	writeDirToRepo(ctx context.Context, pp parsedPath, dir *dirMeta, writeSubTree bool) error
+	writeFileToRepo(ctx context.Context, pp parsedPath, src io.Reader, buf []byte) (object.ID, int64, error)
+}
+
 // writeFileToRepo writes a file to the repo.
 // The src io.Reader is optional if the file is empty.
 // The pp argument is for the description and diagnostic purposes.
 func (f *Filesystem) writeFileToRepo(ctx context.Context, pp parsedPath, src io.Reader, buf []byte) (object.ID, int64, error) {
-	writer := f.Repo.NewObjectWriter(ctx, object.WriterOptions{
+	writer := f.repo.NewObjectWriter(ctx, object.WriterOptions{
 		Description: "FILE:" + pp.Last(),
 		Compressor:  "", // @TODO Determine file compression policy
 		AsyncWrites: 1,  // No sub-block concurrency
@@ -113,12 +119,12 @@ func (f *Filesystem) writeDirToRepo(ctx context.Context, pp parsedPath, dir *dir
 		dirManifest.Entries = append(dirManifest.Entries, fm.snapshotDirEntry())
 
 		if !fm.isMeta() {
-			summary.TotalFileSize += f.blockSzB // all files have the same size
+			summary.TotalFileSize += int64(f.blockSzB) // all files have the same size
 			summary.TotalFileCount++
 		}
 	}
 
-	writer := f.Repo.NewObjectWriter(ctx, object.WriterOptions{
+	writer := f.repo.NewObjectWriter(ctx, object.WriterOptions{
 		Description: "DIR:" + dir.name,
 		Prefix:      "k",
 	})

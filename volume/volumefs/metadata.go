@@ -65,8 +65,8 @@ func (f *Filesystem) createMetadataFiles(ctx context.Context, dir *dirMeta) erro
 
 // metadata contains values that are recorded in the names of special files in a directory.
 type metadata struct {
-	BlockSzB      int64
-	DirSz         int64
+	BlockSzB      int
+	DirSz         int
 	Depth         int
 	VolSnapID     string
 	VolPrevSnapID string
