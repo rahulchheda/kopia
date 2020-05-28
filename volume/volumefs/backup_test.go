@@ -123,52 +123,6 @@ func TestBackup(t *testing.T) {
 
 }
 
-// nolint:wsl,gocritic
-// func analyseAddresses(t *testing.T, f *Filesystem, prefix string, bal []int64, prev map[string]struct{}) map[string]struct{} { // nolint:unparam
-// 	assert := assert.New(t)
-// 	updated := map[string]struct{}{}
-
-// 	for _, ba := range bal {
-// 		pp, err := f.addrToPath(ba)
-// 		assert.NoError(err)
-
-// 		for i := 0; i < len(pp)-1; i++ { // don't consider the file in this loop
-// 			dir := pp[0 : i+1].String()
-// 			if _, ok := updated[dir]; ok {
-// 				continue
-// 			}
-
-// 			if prev != nil { // don't count if present in prev
-// 				if _, ok := prev[dir]; ok {
-// 					// t.Logf("%s: Dir in previous [%s]", prefix, dir)
-// 					continue
-// 				}
-// 				// if not in prev then parent must be modified too
-// 				pDir := pp[0:i].String()
-// 				// t.Logf("%s: dir pDir updated [%s]", prefix, pDir)
-// 				updated[pDir] = struct{}{}
-// 			}
-
-// 			// t.Logf("%s: Dir updated [%s]", prefix, dir)
-// 			updated[dir] = struct{}{}
-// 		}
-
-// 		fn := pp.String()
-// 		if prev != nil { // if file not in prev then parent must be modified too
-// 			if _, ok := prev[fn]; !ok {
-// 				pDir := pp[0 : len(pp)-1].String()
-// 				// t.Logf("%s: file pDir updated [%s]", prefix, pDir)
-// 				updated[pDir] = struct{}{}
-// 			}
-// 		}
-
-// 		// t.Logf("%s: File updated [%s]", prefix, fn)
-// 		updated[fn] = struct{}{}
-// 	}
-
-// 	return updated
-// }
-
 type testBackupProcessor struct {
 	inLpsPsID  string
 	inLpsPvsID string

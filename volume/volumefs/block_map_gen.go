@@ -9,7 +9,7 @@ import (
 	"github.com/kopia/kopia/repo/object"
 )
 
-// makeEffectiveBlockMap recovers the effective block map, a mapping of block address to
+// effectiveBlockMap recovers the effective block map, a mapping of block address to
 // the file objectID containing the block data.
 //
 // Essentially the process of building the block map involves the following:
@@ -23,7 +23,7 @@ import (
 // Concurrently scanning individual leaf directories can speed up the process of generating
 // the map, as long as the scan in any snapshot filesystem does not "get ahead" of the
 // earlier filesystem scans of the corresponding leaf directory addresses.
-func (f *Filesystem) makeEffectiveBlockMap(ctx context.Context, chainLen int, rootEntry fs.Directory, concurrency int) (BlockMap, error) {
+func (f *Filesystem) effectiveBlockMap(ctx context.Context, chainLen int, rootEntry fs.Directory, concurrency int) (BlockMap, error) {
 	bmg := &blockMapGenerator{}
 	bmg.Init(f, chainLen, concurrency)
 
@@ -40,7 +40,13 @@ type blockMapGenerator struct {
 	roots       []fs.Directory // latest is first
 	mux         sync.Mutex
 	curChain    int
-	queue       *parallelwork.Queue
+	queue       parallelWorkQueue
+}
+
+// parallelWorkQueue is the abstraction of parallelWork.Queue methods used.
+type parallelWorkQueue interface {
+	EnqueueBack(callback parallelwork.CallbackFunc)
+	Process(workers int) error
 }
 
 func (bmg *blockMapGenerator) Init(f *Filesystem, chainLen, concurrency int) {
@@ -52,10 +58,6 @@ func (bmg *blockMapGenerator) Init(f *Filesystem, chainLen, concurrency int) {
 }
 
 func (bmg *blockMapGenerator) Run(ctx context.Context, rootEntry fs.Directory) error {
-	if bmg.roots == nil {
-		return ErrInternalError
-	}
-
 	var err error
 
 	if err = bmg.findRoots(ctx, rootEntry, bmg.chainLen); err == nil {
@@ -121,7 +123,9 @@ func (bmg *blockMapGenerator) processChain(ctx context.Context, rootEntry fs.Dir
 	return bmg.queue.Process(bmg.concurrency)
 }
 
-func (bmg *blockMapGenerator) enqueue(ctx context.Context, de fs.Directory, pp parsedPath) {
+// enqueue adds an element to the end of the work queue.
+// It returns the queue element to aid in unit testing.
+func (bmg *blockMapGenerator) enqueue(ctx context.Context, de fs.Directory, pp parsedPath) *bmQueueElement {
 	el := &bmQueueElement{
 		bmg: bmg,
 		ctx: ctx,
@@ -129,8 +133,20 @@ func (bmg *blockMapGenerator) enqueue(ctx context.Context, de fs.Directory, pp p
 		de:  de,
 	}
 	bmg.queue.EnqueueBack(el.processDir)
+
+	return el
 }
 
+// unblockWorkers addresses an issue in parallelwork.NewQueue() where it can block forever
+// if the max queue length never exceeds the concurrency.
+// The method pushes empty queue elements to unblock workers.
+func (bmg *blockMapGenerator) unblockWorkers() {
+	for i := 0; i < bmg.concurrency-1; i++ {
+		bmg.queue.EnqueueBack(nil)
+	}
+}
+
+// bmQueueElement is the closure for the parallel work queue callback function
 type bmQueueElement struct {
 	bmg *blockMapGenerator
 	ctx context.Context
@@ -138,6 +154,7 @@ type bmQueueElement struct {
 	de  fs.Directory
 }
 
+// processDir is the parallel work queue callback function
 func (bqe *bmQueueElement) processDir() error {
 	pp := bqe.pp
 	f := bqe.bmg.f
@@ -145,6 +162,7 @@ func (bqe *bmQueueElement) processDir() error {
 	entries, err := bqe.de.Readdir(bqe.ctx)
 	if err != nil {
 		f.logger.Debugf("Chain[%d] %s readdir: %v", bqe.bmg.curChain, pp.String(), err)
+		bqe.bmg.unblockWorkers()
 
 		return err
 	}

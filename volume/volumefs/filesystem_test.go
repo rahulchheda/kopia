@@ -439,6 +439,7 @@ func (br *testBR) GetBlocks(ctx context.Context) (volume.BlockIterator, error) {
 type testDirEntry struct {
 	name string
 
+	retReadDirE   fs.Entries
 	retReadDirErr error
 }
 
@@ -481,12 +482,12 @@ func (e *testDirEntry) Child(ctx context.Context, name string) (fs.Entry, error)
 }
 
 func (e *testDirEntry) Readdir(ctx context.Context) (fs.Entries, error) {
-	// Mixed entries only found in the top directory
-	return nil, e.retReadDirErr
+	return e.retReadDirE, e.retReadDirErr
 }
 
 type testFileEntry struct {
 	name       string
+	oid        object.ID
 	size       int64
 	retOpenR   fs.Reader
 	retOpenErr error
@@ -524,6 +525,10 @@ func (e *testFileEntry) Owner() fs.OwnerInfo {
 
 func (e *testFileEntry) Open(ctx context.Context) (fs.Reader, error) {
 	return e.retOpenR, e.retOpenErr
+}
+
+func (e *testFileEntry) ObjectID() object.ID {
+	return e.oid
 }
 
 type testReader struct {

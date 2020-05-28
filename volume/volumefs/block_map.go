@@ -54,6 +54,17 @@ func (bmi *blockMapIter) Next() BlockAddressMapping {
 	return <-bmi.mChan
 }
 
+// trySend attempts to send on the channel and returns false when stopped.
+// Caller _must_ close the mChan to indicate end of source data.
+func (bmi *blockMapIter) trySend(bam BlockAddressMapping) bool {
+	select {
+	case <-bmi.stopChan:
+		return false
+	case bmi.mChan <- bam:
+		return true
+	}
+}
+
 func (bmi *blockMapIter) Close() {
 	bmi.mux.Lock()
 
@@ -131,14 +142,7 @@ type bTreeIter struct {
 
 func (bmi *bTreeIter) dispatch(i btree.Item) bool {
 	item := i.(*bTreeItem)
-
-	select {
-	case <-bmi.stopChan:
-		return false
-	case bmi.mChan <- item.BlockAddressMapping:
-	}
-
-	return true
+	return bmi.trySend(item.BlockAddressMapping)
 }
 
 // HashMap is simplistic: does not have a sorted iterator

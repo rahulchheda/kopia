@@ -62,7 +62,7 @@ func (f *Filesystem) Restore(ctx context.Context, args RestoreArgs) (*RestoreRes
 		concurrency = args.RestoreConcurrency
 	}
 
-	bm, err := f.makeEffectiveBlockMap(ctx, chainLen, rootEntry, concurrency)
+	bm, err := f.effectiveBlockMap(ctx, chainLen, rootEntry, concurrency)
 	if err != nil {
 		return nil, err
 	}

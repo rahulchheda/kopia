@@ -96,6 +96,19 @@ func TestLayout(t *testing.T) {
 		encoding int
 		cases    []addrPP
 	}{
+		{2048, 3, 32, []addrPP{ // max 8 Gi
+			{0x000000000000, parsedPath{"0", "0", "0"}},
+			{0x0000000000ff, parsedPath{"0", "0", "7v"}},
+			{0x000000000100, parsedPath{"0", "0", "80"}},
+			{0x0000000003ff, parsedPath{"0", "0", "vv"}},
+			{0x000000000400, parsedPath{"0", "0", "100"}},
+			{0x0000000007ff, parsedPath{"0", "0", "1vv"}},
+			{0x000000000800, parsedPath{"0", "1", "0"}},
+			{0x0000000fffff, parsedPath{"0", "fv", "1vv"}},
+			{0x0000007fffff, parsedPath{"1", "1vv", "1vv"}},
+			{0x000000ffffff, parsedPath{"3", "1vv", "1vv"}},
+			{0x0001ffffffff, parsedPath{"1vv", "1vv", "1vv"}},
+		}},
 		{1024, 3, 16, []addrPP{ // max 1 Gi
 			{0x000000000000, parsedPath{"0", "0", "0"}},
 			{0x0000000000ff, parsedPath{"0", "0", "ff"}},
@@ -208,6 +221,7 @@ func TestEncoding(t *testing.T) {
 		{512, "g0"},
 		{1023, "vv"},
 		{1024, "100"}, // >= 3 chars
+		{2047, "1vv"},
 		{2048, "200"},
 		{4096, "400"},
 	} {
