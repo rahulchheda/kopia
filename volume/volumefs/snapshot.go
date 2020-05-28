@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/kopia/kopia/fs"
+	"github.com/kopia/kopia/repo"
 	"github.com/kopia/kopia/repo/object"
 	"github.com/kopia/kopia/snapshot"
 	"github.com/kopia/kopia/snapshot/snapshotfs"
@@ -15,6 +16,17 @@ const (
 	previousSnapshotDirName = "p"
 	directoryStreamType     = "kopia:directory" // copied from snapshot
 )
+
+func (f *Filesystem) initFromSnapshot(ctx context.Context, snapshotID string) (*snapshot.Manifest, fs.Directory, metadata, error) {
+	man, rootEntry, md, err := f.findPreviousSnapshot(ctx, snapshotID)
+	if err != nil {
+		return nil, nil, md, err
+	}
+
+	f.layoutProperties.initLayoutProperties(md.BlockSzB, md.DirSz, md.Depth)
+
+	return man, rootEntry, md, err
+}
 
 // findPreviousSnapshot searches for the previous snapshot and parses it.
 func (f *Filesystem) findPreviousSnapshot(ctx context.Context, prevSnapID string) (*snapshot.Manifest, fs.Directory, metadata, error) {
@@ -46,23 +58,21 @@ func (f *Filesystem) findPreviousSnapshot(ctx context.Context, prevSnapID string
 
 // findSnapshotManifest returns the latest complete manifest containing the specified snapshot ID.
 func (f *Filesystem) findSnapshotManifest(ctx context.Context, oid object.ID) (*snapshot.Manifest, error) {
-	man, err := snapshot.ListSnapshots(ctx, f.Repo, f.SourceInfo())
+	man, err := snapshotLister(ctx, f.Repo, f.SourceInfo())
 	if err != nil {
 		return nil, err
 	}
 
-	var latest *snapshot.Manifest
-
 	for _, m := range man {
-		if m.RootObjectID() == oid && m.IncompleteReason == "" && (latest == nil || m.StartTime.After(latest.StartTime)) {
-			latest = m
+		if m.RootObjectID() == oid {
+			log(ctx).Debugf("found manifest %s startTime:%s", m.ID, m.StartTime)
+			return m, nil
 		}
 	}
 
-	if latest != nil {
-		log(ctx).Debugf("found manifest %s startTime:%s", latest.ID, latest.StartTime)
-		return latest, nil
-	}
-
-	return nil, fmt.Errorf("manifest not found")
+	return nil, ErrSnapshotNotFound
 }
+
+type snapshotListerFn func(context.Context, repo.Repository, snapshot.SourceInfo) ([]*snapshot.Manifest, error)
+
+var snapshotLister snapshotListerFn = snapshot.ListSnapshots // for UT interception

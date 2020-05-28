@@ -91,7 +91,7 @@ func (f *Filesystem) writeDirToRepo(ctx context.Context, pp parsedPath, dir *dir
 		if writeSubTree {
 			err := f.writeDirToRepo(ctx, dpp, dm, writeSubTree)
 			if err != nil {
-				f.logger.Debugf("failed to upload dir [%s]: %v", dpp.String())
+				f.logger.Debugf("failed to upload dir [%s]: %v", dpp.String(), err)
 
 				return err
 			}

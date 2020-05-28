@@ -13,15 +13,11 @@ import (
 
 	"github.com/kopia/kopia/fs"
 	"github.com/kopia/kopia/internal/faketime"
-	"github.com/kopia/kopia/internal/mockfs"
 	"github.com/kopia/kopia/internal/testlogging"
 	"github.com/kopia/kopia/repo"
 	"github.com/kopia/kopia/repo/blob/filesystem"
-	"github.com/kopia/kopia/repo/manifest"
 	"github.com/kopia/kopia/repo/object"
 	"github.com/kopia/kopia/snapshot"
-	"github.com/kopia/kopia/snapshot/policy"
-	"github.com/kopia/kopia/snapshot/snapshotfs"
 	"github.com/kopia/kopia/volume"
 	vmgr "github.com/kopia/kopia/volume/fake"
 
@@ -107,8 +103,7 @@ func TestSnapshotAnalysis(t *testing.T) {
 
 // Test harness based on upload_test.go, repotesting_test.go, snapshot_test.go, etc.
 const (
-	masterPassword     = "foofoofoofoofoofoofoofoo"
-	defaultPermissions = 0777
+	masterPassword = "foofoofoofoofoofoofoofoo"
 )
 
 type volFsTestHarness struct {
@@ -171,70 +166,6 @@ func (th *volFsTestHarness) cleanup() {
 }
 
 // nolint:wsl,gocritic
-func (th *volFsTestHarness) addSnapshot(ctx context.Context, bal []int64) *snapshot.Manifest {
-	assert := assert.New(th.t)
-	sourceDir := mockfs.NewDirectory()
-
-	f := th.fsForBackupTests(nil) // for utility methods
-
-	// create directories first
-	dirMap := map[string]struct{}{}
-	for _, ba := range bal {
-		pp, err := f.addrToPath(ba)
-		assert.NoError(err)
-		// th.t.Logf("Looking at %s", pp)
-		for i := 0; i < len(pp)-1; i++ { // not including the file
-			dir := pp[0 : i+1].String()
-			if _, ok := dirMap[dir]; ok {
-				continue
-			}
-			// th.t.Logf("%d: Creating dir %s", i, dir)
-			sourceDir.AddDir(dir, defaultPermissions)
-			dirMap[dir] = struct{}{}
-		}
-	}
-	// create files
-	// Assumption here is that if does not matter if the size does not match the dir entry size
-	for _, ba := range bal {
-		pp, err := f.addrToPath(ba)
-		assert.NoError(err)
-		sourceDir.AddFile(pp.String(), []byte(fmt.Sprintf("File at %s", pp)), defaultPermissions)
-	}
-
-	// Add the metadata files
-	md := f.metadata()
-	for _, pp := range md.metadataFiles() { // TBD handle previous snap id
-		sourceDir.AddFile(pp.String(), []byte{}, defaultPermissions)
-	}
-
-	th.ft.Advance(1 * time.Hour)
-	u := snapshotfs.NewUploader(th.repo)
-	policyTree := policy.BuildTree(nil, policy.DefaultPolicy)
-	snapManifest, err := u.Upload(ctx, sourceDir, policyTree, f.SourceInfo())
-	if err != nil {
-		th.t.Fatalf("failed to create snapshot: %v", err.Error())
-	}
-	th.t.Logf("snapshot manifest: %#v", snapManifest)
-
-	// Save the manifest
-	manID := th.mustSaveSnapshot(snapManifest)
-	th.t.Logf("manifestID: %s", manID)
-
-	return snapManifest
-}
-
-func (th *volFsTestHarness) mustSaveSnapshot(snapManifest *snapshot.Manifest) manifest.ID {
-	th.t.Helper()
-
-	manID, err := snapshot.SaveSnapshot(testlogging.Context(th.t), th.repo, snapManifest)
-	if err != nil {
-		th.t.Fatalf("error saving snapshot: %v", err)
-	}
-
-	return manID
-}
-
-// nolint:wsl,gocritic
 func (th *volFsTestHarness) fsForBackupTests(profile interface{}) *Filesystem {
 	if th.retFS != nil {
 		return th.retFS
@@ -288,105 +219,6 @@ func (th *volFsTestHarness) fsForBackupTests(profile interface{}) *Filesystem {
 // 	assert.NotNil(f)
 
 // 	return f
-// }
-
-// nolint:wsl,gocritic
-// func (th *volFsTestHarness) compareInternalAndExternalTrees(ctx context.Context, f *Filesystem, rootEntry fs.Directory) {
-// 	assert := assert.New(th.t)
-
-// 	var checkNode func(dir fs.Directory, ppp parsedPath)
-
-// 	checkNode = func(dir fs.Directory, ppp parsedPath) {
-// 		msg := fmt.Sprintf("node [%s]", ppp)
-// 		th.t.Logf("Entered dir [%s]", ppp)
-// de, ok := dir.(*dirEntry)
-// assert.True(ok, msg)
-// assert.NotNil(de, msg)
-// assert.NotNil(de.m, msg)
-// assert.Equal(f, de.f, msg)
-// assert.Equal(0555|os.ModeDir, dir.Mode(), msg)
-// assert.Equal(de.m.mTime, dir.ModTime(), msg)
-// if ppp != nil {
-// must be in the metadata tree
-// ldm := f.lookupDir(ctx, ppp)
-// assert.Equal(de.m, ldm, msg)
-// th.t.Logf("Found [%s] in meta", ppp)
-// } else {
-// 	assert.Equal(f.rootDir, de.m)
-// 	th.t.Logf("Found [%s] in meta", ppp)
-// }
-// 		entries, err := dir.Readdir(ctx)
-// 		assert.NoError(err, msg)
-// 		th.t.Logf("Dir [%s] has %d entries", ppp, len(entries))
-// 		// assert.Equal(len(de.m.subdirs)+len(de.m.files), len(entries), msg)
-// 		cnt := 0
-// 		for _, entry := range entries {
-// 			epp := append(ppp, entry.Name())
-// 			msg := fmt.Sprintf("node [%s]", epp) // nolint:govet
-// 			if fsd, ok := entry.(fs.Directory); ok {
-// 				cnt++
-// 				assert.True(entry.IsDir(), msg)
-// 				checkNode(fsd, epp)
-// 			} else {
-// 				assert.False(entry.IsDir(), msg)
-// 			}
-// 		}
-// 		for _, entry := range entries {
-// 			epp := append(ppp, entry.Name())
-// 			msg := fmt.Sprintf("node %s", epp) // nolint:govet
-// 			if fsf, ok := entry.(fs.File); ok {
-// 				cnt++
-// 				assert.NotNil(fsf, msg)
-// 				assert.False(entry.IsDir(), msg)
-// 				// fe, ok := fsf.(*fileEntry)
-// 				// assert.True(ok, msg)
-// 				// assert.NotNil(fe, msg)
-// 				// assert.Equal(f, fe.f, msg)
-// 				// assert.NotNil(fe.m, msg)
-// 				// lfm := f.lookupFile(f.rootDir, epp)
-// 				// // assert.Equal(fe.m, lfm, msg)
-// 				// th.t.Logf("Found [%s] in meta", epp)
-// 				// if lfm.isMeta() {
-// 				// 	assert.Equal(int64(0), fsf.Size())
-// 				// } else {
-// 				// 	assert.Equal(f.blockSzB, fsf.Size())
-// 				// }
-// 				// assert.Equal(os.FileMode(0555), fsf.Mode(), msg)
-// 				// assert.Equal(fe.m.mTime, fsf.ModTime(), msg)
-
-// 				// fsr, err := fsf.Open(ctx)
-// 				// assert.NoError(err, msg)
-// 				// defer fsr.Close()
-
-// 				// assert.NotNil(fsr, msg)
-// 				// fr, ok := fsr.(*fileReader)
-// 				// assert.True(ok, msg)
-// 				// assert.NotNil(fr, msg)
-// 				// assert.Equal(fe, fr.fe, msg)
-// 				// le, err := fsr.Entry()
-// 				// assert.NoError(err)
-// 				// assert.Equal(fsf, le, msg)
-// 				// buf := make([]byte, f.blockSzB/4)
-// 				// bytesRead := 0
-// 				// for {
-// 				// 	var n int
-// 				// 	n, err = fsr.Read(buf)
-// 				// 	if err != nil {
-// 				// 		break
-// 				// 	}
-// 				// 	bytesRead += n
-// 				// }
-// 				// assert.True(err == io.EOF, msg)
-// 				// if lfm.isMeta(f) {
-// 				// 	assert.Equal(0, bytesRead)
-// 				// }
-// 			} else {
-// 				assert.True(entry.IsDir(), msg)
-// 			}
-// 		}
-// 		assert.Equal(len(entries), cnt, msg)
-// 	}
-// 	checkNode(rootEntry, nil)
 // }
 
 type testVM struct {
@@ -594,17 +426,54 @@ func (tr *testReader) Length() int64 {
 	return 0
 }
 
-type testWC struct {
-	t *testing.T
+type testRC struct {
+	retCloseErr error
+	closeCalled bool
 
+	retReadN   []int
+	retReadErr []error
+	readB      []byte
+}
+
+func (rc *testRC) Read(b []byte) (int, error) {
+	rc.readB = b
+	n := 0
+
+	if len(rc.retReadN) > 0 {
+		n, rc.retReadN = rc.retReadN[0], rc.retReadN[1:]
+	}
+
+	var err error
+
+	if len(rc.retReadErr) > 0 {
+		err, rc.retReadErr = rc.retReadErr[0], rc.retReadErr[1:]
+	}
+
+	return n, err
+}
+
+func (rc *testRC) Close() error {
+	rc.closeCalled = true
+	return rc.retCloseErr
+}
+
+type testWC struct {
 	retCloseErr error
 	closeCalled bool
 
 	retWriteN   int
 	retWriteErr error
+	sumWriteN   int
+
+	retResultID object.ID
+	retResultE  error
+
+	isDir bool
+	desc  string
 }
 
 var _ io.WriteCloser = (*testWC)(nil)
+var _ object.Writer = (*testWC)(nil)
 
 func (wc *testWC) Close() error {
 	wc.closeCalled = true
@@ -615,10 +484,14 @@ func (wc *testWC) Write(b []byte) (int, error) {
 	retN := wc.retWriteN
 	if wc.retWriteErr == nil && retN == 0 {
 		retN = len(b)
-		wc.t.Logf("*** Write(%d)", len(b))
+		wc.sumWriteN += retN
 	}
 
 	return retN, wc.retWriteErr
+}
+
+func (wc *testWC) Result() (object.ID, error) {
+	return wc.retResultID, wc.retResultE
 }
 
 type testRepo struct {
@@ -626,19 +499,44 @@ type testRepo struct {
 	retOoR object.Reader
 	retOoE error
 
-	inNowO  object.WriterOptions
-	retNowW object.Writer
+	inNowO   object.WriterOptions
+	retNowW  object.Writer
+	genNowW  bool
+	genIDCnt int
+	genW     []*testWC // effective
+	genUseW  []*testWC // specified; sparse
 
 	retFE error
 }
+
+var _ repository = (*testRepo)(nil)
 
 func (r *testRepo) OpenObject(ctx context.Context, id object.ID) (object.Reader, error) {
 	r.inOoID = id
 	return r.retOoR, r.retOoE
 }
 
+// nolint:wsl
 func (r *testRepo) NewObjectWriter(ctx context.Context, opt object.WriterOptions) object.Writer {
 	r.inNowO = opt
+	if r.genNowW { // generate writers on the fly based on option
+		isDir := opt.Prefix == "k"
+		tw := &testWC{retResultID: r.genID(isDir), isDir: isDir, desc: opt.Description}
+		idx := r.genIDCnt
+		if len(r.genUseW) > idx && r.genUseW[idx] != nil {
+			w := r.genUseW[idx]
+			w.isDir = isDir
+			w.desc = opt.Description
+			if w.retResultE == nil {
+				w.retResultID = tw.retResultID
+			}
+			tw = w
+		}
+		r.genW = append(r.genW, tw)
+
+		return tw
+	}
+
 	return r.retNowW
 }
 
@@ -646,27 +544,14 @@ func (r *testRepo) Flush(ctx context.Context) error {
 	return r.retFE
 }
 
-// func (dm *dirMeta) descend(cb func(*dirMeta, parsedPath, interface{})) {
-// 	dm.postOrderWalk(nil, cb)
-// }
+func (r *testRepo) genID(isDir bool) object.ID {
+	var id string
+	if isDir {
+		id = fmt.Sprintf("kc7b05277dfab817d3c4c5e945d09%04x", r.genIDCnt)
+	} else {
+		id = fmt.Sprintf("c7b05277dfab817d3c4c5e945d09%04x", r.genIDCnt)
+	}
+	r.genIDCnt++
 
-// func (dm *dirMeta) postOrderWalk(ppp parsedPath, cb func(*dirMeta, parsedPath, interface{})) {
-// 	pp := parsedPath{}
-// 	if ppp != nil {
-// 		pp = append(ppp, dm.name) // nolint:gocritic
-// 	}
-
-// 	cb(dm, pp, true)
-
-// 	for _, sdm := range dm.subdirs {
-// 		sdm.postOrderWalk(pp, cb)
-// 	}
-
-// 	for _, fm := range dm.files {
-// 		pp = append(pp, fm.name)
-// 		cb(dm, pp, fm)
-// 		pp = pp[:len(pp)-1]
-// 	}
-
-// 	cb(dm, pp, false)
-// }
+	return object.ID(id)
+}

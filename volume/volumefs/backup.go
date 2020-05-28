@@ -37,6 +37,7 @@ func (a *BackupArgs) Validate() error {
 }
 
 // Backup a volume.
+// The volume manager must provide a BlockReader interface.
 func (f *Filesystem) Backup(ctx context.Context, args BackupArgs) (*Snapshot, error) {
 	if err := args.Validate(); err != nil {
 		return nil, err

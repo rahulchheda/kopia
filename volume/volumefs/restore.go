@@ -3,6 +3,8 @@ package volumefs
 import (
 	"context"
 
+	"github.com/kopia/kopia/fs"
+	"github.com/kopia/kopia/snapshot"
 	"github.com/kopia/kopia/volume"
 )
 
@@ -34,7 +36,7 @@ type RestoreResult struct {
 }
 
 // Restore extracts a snapshot to a volume.
-// The provided volume manager must provide a BlockWriter interface.
+// The volume manager must provide a BlockWriter interface.
 func (f *Filesystem) Restore(ctx context.Context, args RestoreArgs) (*RestoreResult, error) {
 	if err := args.Validate(); err != nil {
 		return nil, err
@@ -47,12 +49,10 @@ func (f *Filesystem) Restore(ctx context.Context, args RestoreArgs) (*RestoreRes
 		return nil, err
 	}
 
-	man, rootEntry, md, err := f.findPreviousSnapshot(ctx, args.PreviousSnapshotID)
+	man, rootEntry, md, err := f.rp.initFromSnapshot(ctx, args.PreviousSnapshotID)
 	if err != nil {
 		return nil, err
 	}
-
-	f.layoutProperties.initLayoutProperties(md.BlockSzB, md.DirSz, md.Depth)
 
 	chainLen := int(man.Stats.NonCachedFiles)
 	f.logger.Debugf("md: %#v l=%d", md, chainLen)
@@ -62,7 +62,7 @@ func (f *Filesystem) Restore(ctx context.Context, args RestoreArgs) (*RestoreRes
 		concurrency = args.RestoreConcurrency
 	}
 
-	bm, err := f.effectiveBlockMap(ctx, chainLen, rootEntry, concurrency)
+	bm, err := f.rp.effectiveBlockMap(ctx, chainLen, rootEntry, concurrency)
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +81,7 @@ func (f *Filesystem) Restore(ctx context.Context, args RestoreArgs) (*RestoreRes
 		return nil, err
 	}
 
-	bi := f.newBlockIter(bm.Iterator())
+	bi := f.rp.newBlockIter(bm.Iterator())
 	defer bi.Close() // nolint:errcheck // no error returned
 
 	err = bw.PutBlocks(ctx, bi)
@@ -94,4 +94,10 @@ func (f *Filesystem) Restore(ctx context.Context, args RestoreArgs) (*RestoreRes
 	}
 
 	return ret, nil
+}
+
+type restoreProcessor interface {
+	initFromSnapshot(ctx context.Context, snapshotID string) (*snapshot.Manifest, fs.Directory, metadata, error)
+	effectiveBlockMap(ctx context.Context, chainLen int, rootEntry fs.Directory, concurrency int) (BlockMap, error)
+	newBlockIter(bmi BlockMapIterator) *blockIter
 }

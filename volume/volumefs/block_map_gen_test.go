@@ -231,21 +231,21 @@ func TestEffectiveBlockMap(t *testing.T) {
 		&testDirEntry{name: currentSnapshotDirName, retReadDirE: p0},
 	}
 
-	d0_0_0 := fs.Entries{
+	c0_0_0 := fs.Entries{
 		&testFileEntry{name: "0", oid: "oid0c"},
 	}
-	d0_0_1 := fs.Entries{
+	c0_0_1 := fs.Entries{
 		&testFileEntry{name: "3", oid: "oid11c"},
 	}
-	d0_0 := fs.Entries{
-		&testDirEntry{name: "0", retReadDirE: d0_0_0},
-		&testDirEntry{name: "1", retReadDirE: d0_0_1},
+	c0_0 := fs.Entries{
+		&testDirEntry{name: "0", retReadDirE: c0_0_0},
+		&testDirEntry{name: "1", retReadDirE: c0_0_1},
 	}
-	d0 := fs.Entries{
-		&testDirEntry{name: "0", retReadDirE: d0_0},
+	c0 := fs.Entries{
+		&testDirEntry{name: "0", retReadDirE: c0_0},
 	}
 	cRoot := fs.Entries{
-		&testDirEntry{name: currentSnapshotDirName, retReadDirE: d0},
+		&testDirEntry{name: currentSnapshotDirName, retReadDirE: c0},
 		&testDirEntry{name: previousSnapshotDirName, retReadDirE: pRoot},
 	}
 

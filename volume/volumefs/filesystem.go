@@ -33,10 +33,11 @@ var log = logging.GetContextLoggerFunc("volume/filesystem")
 
 // package errors.
 var (
-	ErrOutOfRange      = fmt.Errorf("block address out of range")
-	ErrInvalidArgs     = fmt.Errorf("invalid arguments")
-	ErrInternalError   = fmt.Errorf("internal error")
-	ErrInvalidSnapshot = fmt.Errorf("invalid snapshot")
+	ErrOutOfRange       = fmt.Errorf("block address out of range")
+	ErrInvalidArgs      = fmt.Errorf("invalid arguments")
+	ErrInternalError    = fmt.Errorf("internal error")
+	ErrInvalidSnapshot  = fmt.Errorf("invalid snapshot")
+	ErrSnapshotNotFound = fmt.Errorf("snapshot not found")
 )
 
 // FilesystemArgs contains arguments to create a filesystem
@@ -81,6 +82,7 @@ type Filesystem struct {
 	logger               logging.Logger
 	blockPool            sync.Pool
 	bp                   backupProcessor
+	rp                   restoreProcessor
 	up                   uploader
 	repo                 repository
 }
@@ -107,6 +109,7 @@ func New(args *FilesystemArgs) (*Filesystem, error) {
 	f.setDefaultLayoutProperties() // block size may be reset from previous repo snapshot
 
 	f.bp = f
+	f.rp = f
 	f.up = f
 	f.repo = f.Repo
 
