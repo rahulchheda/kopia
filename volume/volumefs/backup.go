@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/kopia/kopia/snapshot"
-	"github.com/kopia/kopia/snapshot/policy"
 	"github.com/kopia/kopia/volume"
 )
 
@@ -147,30 +146,16 @@ func (f *Filesystem) linkPreviousSnapshot(ctx context.Context, previousSnapshotI
 
 // backupBlocks writes the volume blocks and the block map hierarchy to the repo.
 func (f *Filesystem) backupBlocks(ctx context.Context, br volume.BlockReader, numWorkers int) (*dirMeta, error) {
-	policyTree, err := policy.TreeForSource(ctx, f.Repo, f.SourceInfo())
-	if err != nil {
-		f.logger.Debugf("policy.TreeForSource: %v", err)
-		return nil, err
-	}
-
 	bi, err := br.GetBlocks(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	bbh := &backupBlocksHelper{f: f}
+	bbh := &backupBlocksHelper{}
+	bbh.init(f)
 	bbh.bp.Iter = bi
 	bbh.bp.Worker = bbh.worker
 	bbh.bp.NumWorkers = numWorkers
-	bbh.bufPool.New = func() interface{} {
-		buf := make([]byte, bbh.blockSize) // size determined at runtime
-
-		return &buf
-	}
-	bbh.pol = policyTree.Child("").EffectivePolicy()
-	bbh.curRoot = &dirMeta{
-		name: currentSnapshotDirName,
-	}
 
 	// process the snapshot blocks
 	err = bbh.bp.Run(ctx)
@@ -191,11 +176,22 @@ func (f *Filesystem) backupBlocks(ctx context.Context, br volume.BlockReader, nu
 type backupBlocksHelper struct {
 	bp        volume.BlockProcessor
 	f         *Filesystem
-	pol       *policy.Policy
 	mux       sync.Mutex
 	blockSize int
 	bufPool   sync.Pool
 	curRoot   *dirMeta
+}
+
+func (bbh *backupBlocksHelper) init(f *Filesystem) {
+	bbh.f = f
+	bbh.bufPool.New = func() interface{} {
+		buf := make([]byte, bbh.blockSize) // size determined at runtime
+
+		return &buf
+	}
+	bbh.curRoot = &dirMeta{
+		name: currentSnapshotDirName,
+	}
 }
 
 func (bbh *backupBlocksHelper) worker(ctx context.Context, block volume.Block) error {

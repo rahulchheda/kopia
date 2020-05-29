@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/kopia/kopia/fs"
+	"github.com/kopia/kopia/repo/object"
 	"github.com/kopia/kopia/snapshot"
 	"github.com/kopia/kopia/volume"
 	vmgr "github.com/kopia/kopia/volume/fake"
@@ -236,6 +237,119 @@ func TestBackupLinkPreviousSnapshot(t *testing.T) {
 			assert.Regexp(expError.Error(), err.Error())
 			assert.Nil(dm)
 			assert.Nil(man)
+		}
+	}
+}
+
+// nolint:wsl,gocritic
+func TestBackupBlocks(t *testing.T) {
+	assert := assert.New(t)
+
+	ctx, th := newVolFsTestHarness(t)
+	defer th.cleanup()
+
+	for _, tc := range []string{
+		// helper tests
+		"invalid addr", "block get error", "file write error", "size mismatch + close error", "no error",
+		// bb tests
+		"GetBlocks error", "run error", "write dir error", "success",
+	} {
+		t.Logf("Case: %s", tc)
+
+		f := th.fsForBackupTests(nil)
+		f.logger = log(ctx)
+		f.blockSzB = 4096
+
+		tR := &testReader{}
+		tR.retReadN = f.blockSzB
+		tRepo := &testRepo{}
+		tRepo.retOoR = tR
+		f.repo = tRepo
+		tU := &testUploader{}
+		tU.retWriteFileID = object.ID("file-oid")
+		f.up = tU
+		bmi := &blockMapIter{}
+		bmi.init()
+		close(bmi.mChan)
+		bi := &blockIter{f: f, atEnd: true, bmi: bmi} // already at end
+		tBR := &testBR{}
+		tBR.retGetBlocksBI = bi
+
+		b := &block{
+			f:                   f,
+			BlockAddressMapping: BlockAddressMapping{BlockAddr: 1},
+		}
+
+		var expError, err error
+		var dm *dirMeta
+		expRClose := true
+		bbhTest := true
+		numWorkers := 1
+
+		switch tc {
+		case "invalid addr":
+			b.BlockAddr = -1
+			expError = ErrOutOfRange
+			expRClose = false
+		case "block get error":
+			expError = ErrInternalError
+			tRepo.retOoE = expError
+			tRepo.retOoR = nil
+			expRClose = false
+		case "file write error":
+			expError = ErrOutOfRange
+			tU.retWriteFileE = expError
+			tU.retWriteFileID = object.ID("")
+		case "size mismatch + close error":
+			expError = ErrInvalidArgs
+			tR.retCloseErr = expError
+			tU.retWriteFileSz = int64(b.Size() - 1)
+		case "GetBlocks error":
+			bbhTest = false
+			expError = ErrInvalidArgs
+			tBR.retGetBlocksE = expError
+		case "run error":
+			bbhTest = false
+			expError = ErrInvalidArgs
+			numWorkers = -1
+		case "write dir error":
+			bbhTest = false
+			expError = ErrInvalidArgs
+			tU.retWriteDirE = expError
+		case "success":
+			bbhTest = false
+		}
+
+		bbh := &backupBlocksHelper{}
+		if bbhTest {
+			bbh.init(f)
+			assert.Equal(f, bbh.f)
+			assert.Equal(&dirMeta{name: bbh.curRoot.name}, bbh.curRoot)
+			assert.NotNil(bbh.bufPool.New)
+			err = bbh.worker(ctx, b)
+		} else {
+			dm, err = f.backupBlocks(ctx, tBR, numWorkers)
+		}
+
+		if expError == nil {
+			assert.NoError(err)
+			if bbhTest {
+				pp, err := f.addrToPath(b.Address()) // nolint:govet
+				assert.NoError(err)
+				fm := f.lookupFile(bbh.curRoot, pp)
+				assert.NotNil(fm)
+				assert.Equal(tU.retWriteFileID, fm.oid)
+			} else {
+				assert.NotNil(dm)
+				assert.Equal(&dirMeta{name: currentSnapshotDirName}, dm)
+			}
+		} else {
+			assert.Error(err)
+			assert.Regexp(expError.Error(), err.Error())
+		}
+
+		if bbhTest {
+			assert.Equal(expRClose, tR.closeCalled)
 		}
 	}
 }

@@ -86,6 +86,10 @@ func TestBlockIter(t *testing.T) {
 	assert.Equal(int64(1), bi.MaxBlockAddr)
 	assert.Equal(2, bi.NumBlocks)
 
+	// eof again
+	b = bi.Next(ctx)
+	assert.Nil(b)
+
 	// close
 	assert.NoError(bi.Close())
 	assert.True(bi.AtEnd())

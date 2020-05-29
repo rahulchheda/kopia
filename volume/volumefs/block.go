@@ -48,7 +48,7 @@ func (b *block) Get(ctx context.Context) (io.ReadCloser, error) {
 		return nil, err
 	}
 
-	b.f.logger.Debugf("block[%x] OpenObject(%s)", b.BlockAddr, b.Oid, err)
+	b.f.logger.Debugf("block[%x] OpenObject(%s)", b.BlockAddr, b.Oid)
 
 	return rc, nil
 }

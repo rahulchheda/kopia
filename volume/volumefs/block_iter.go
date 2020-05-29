@@ -24,6 +24,10 @@ func (f *Filesystem) newBlockIter(bmi BlockMapIterator) *blockIter {
 
 // Next returns the next block. It may return nil without implying exhaustion - AtEnd() must be checked.
 func (bi *blockIter) Next(ctx context.Context) volume.Block {
+	if bi.atEnd {
+		return nil
+	}
+
 	bam := bi.bmi.Next()
 	if bam.Oid == "" {
 		bi.atEnd = true
