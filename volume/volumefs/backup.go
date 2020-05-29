@@ -145,62 +145,6 @@ func (f *Filesystem) linkPreviousSnapshot(ctx context.Context, previousSnapshotI
 	return prevRootDm, prevMan, nil
 }
 
-func (f *Filesystem) commitSnapshot(ctx context.Context, rootDir *dirMeta, psm *snapshot.Manifest) (*snapshot.Manifest, error) {
-	// write the root directory manifest
-	err := f.writeDirToRepo(ctx, parsedPath{}, rootDir, false)
-	if err != nil {
-		return nil, err
-	}
-
-	curManifest := f.createSnapshotManifest(rootDir, psm)
-
-	_, err = snapshot.SaveSnapshot(ctx, f.Repo, curManifest)
-	if err != nil {
-		f.logger.Debugf("snapshot.SaveSnapshot: %v", err)
-		return nil, err
-	}
-
-	if err = f.repo.Flush(ctx); err != nil {
-		f.logger.Debugf("repo.Flush: %v", err)
-		return nil, err
-	}
-
-	return curManifest, nil
-}
-
-func (f *Filesystem) createSnapshotManifest(rootDir *dirMeta, psm *snapshot.Manifest) *snapshot.Manifest {
-	summary := rootDir.summary
-	sm := &snapshot.Manifest{
-		Source:      f.SourceInfo(),
-		Description: "volumefs snapshot", // TBD: put a magic string here + provided description
-		StartTime:   f.epoch,
-		EndTime:     time.Now(),
-		Stats: snapshot.Stats{
-			TotalDirectoryCount: int(summary.TotalDirCount),
-			TotalFileCount:      int(summary.TotalFileCount),
-			TotalFileSize:       summary.TotalFileSize,
-			CachedFiles:         int32(f.blockSzB),
-		},
-		RootEntry: &snapshot.DirEntry{
-			Name:        rootDir.name,
-			Type:        snapshot.EntryTypeDirectory,
-			ModTime:     f.epoch,
-			Permissions: 0700, // nolint:gomnd
-			ObjectID:    rootDir.oid,
-			DirSummary:  summary,
-		},
-	}
-
-	if psm != nil {
-		sm.Stats.ExcludedDirCount = psm.Stats.TotalDirectoryCount
-		sm.Stats.ExcludedFileCount = psm.Stats.TotalFileCount
-		sm.Stats.ExcludedTotalFileSize = psm.Stats.TotalFileSize
-		sm.Stats.NonCachedFiles = psm.Stats.NonCachedFiles + 1 // chain length
-	}
-
-	return sm
-}
-
 // backupBlocks writes the volume blocks and the block map hierarchy to the repo.
 func (f *Filesystem) backupBlocks(ctx context.Context, br volume.BlockReader, numWorkers int) (*dirMeta, error) {
 	policyTree, err := policy.TreeForSource(ctx, f.Repo, f.SourceInfo())
@@ -235,7 +179,7 @@ func (f *Filesystem) backupBlocks(ctx context.Context, br volume.BlockReader, nu
 	}
 
 	// upload the block map directory hierarchy
-	err = f.writeDirToRepo(ctx, parsedPath{currentSnapshotDirName}, bbh.curRoot, true)
+	err = f.up.writeDirToRepo(ctx, parsedPath{currentSnapshotDirName}, bbh.curRoot, true)
 	if err != nil {
 		return nil, err
 	}
@@ -272,7 +216,7 @@ func (bbh *backupBlocksHelper) worker(ctx context.Context, block volume.Block) e
 		return err
 	}
 
-	oid, sz, err := bbh.f.writeFileToRepo(ctx, pp, rc, *bufPtr)
+	oid, sz, err := bbh.f.up.writeFileToRepo(ctx, pp, rc, *bufPtr)
 	if err == nil {
 		fm.oid = oid
 

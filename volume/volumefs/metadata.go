@@ -29,6 +29,14 @@ func (f *Filesystem) metadata() metadata {
 	}
 }
 
+func (f *Filesystem) setMetadata(md metadata) {
+	f.blockSzB = md.BlockSzB
+	f.dirSz = md.DirSz
+	f.depth = md.Depth
+	f.VolumeSnapshotID = md.VolSnapID
+	f.prevVolumeSnapshotID = md.VolPrevSnapID
+}
+
 // recoverMetadataFromDirEntry scans a directory and parses metadata file names.
 // It does not modify the filesystem.
 func (f *Filesystem) recoverMetadataFromDirEntry(ctx context.Context, dir fs.Directory) (metadata, error) {
@@ -51,7 +59,7 @@ func (f *Filesystem) createMetadataFiles(ctx context.Context, dir *dirMeta) erro
 	for _, pp := range md.metadataFiles() {
 		f.ensureFileInTree(dir, pp)
 
-		oid, _, err := f.writeFileToRepo(ctx, pp, nil, nil)
+		oid, _, err := f.up.writeFileToRepo(ctx, pp, nil, nil)
 		if err != nil {
 			return err
 		}

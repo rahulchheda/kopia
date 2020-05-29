@@ -13,6 +13,12 @@ import (
 func TestMetadataRecovery(t *testing.T) {
 	assert := assert.New(t)
 
+	ctx, th := newVolFsTestHarness(t)
+	defer th.cleanup()
+
+	f := th.fsForBackupTests(nil)
+	f.logger = log(ctx)
+
 	for _, tc := range []struct {
 		name string
 		md   metadata
@@ -52,14 +58,37 @@ func TestMetadataRecovery(t *testing.T) {
 	assert.Equal(expMD, md)
 	assert.Equal(expPPs, md.metadataFiles())
 
-	f := &Filesystem{}
 	de := &testDirEntry{retReadDirE: entries}
 	md2, err := f.recoverMetadataFromDirEntry(context.Background(), de)
 	assert.NoError(err)
 	assert.Equal(expMD, md2)
+
+	// test creation of metadata files
+	dm := &dirMeta{}
+	f.setMetadata(expMD) // so no empty fields
+	err = f.createMetadataFiles(ctx, dm)
+	assert.NoError(err)
+	for _, n := range md.metadataFiles() {
+		foundFile := false
+		for _, fm := range dm.files {
+			if fm.name == n.Last() {
+				foundFile = true
+				break
+			}
+		}
+		assert.True(foundFile, "file: %s", n)
+	}
+
+	// test failure to create metadata file
+	tU := &testUploader{}
+	tU.retWriteFileE = ErrInternalError
+	f.up = tU
+	err = f.createMetadataFiles(ctx, dm)
+	assert.Equal(ErrInternalError, err)
 }
 
 func generateTestMetaData() (metadata, []parsedPath, fs.Entries) {
+	// Must set all fields
 	md := metadata{
 		BlockSzB:      0x8000,
 		DirSz:         0xff,

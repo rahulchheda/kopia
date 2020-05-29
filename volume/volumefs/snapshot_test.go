@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/kopia/kopia/fs"
 	"github.com/kopia/kopia/repo"
+	"github.com/kopia/kopia/repo/manifest"
 	"github.com/kopia/kopia/snapshot"
 	vmgr "github.com/kopia/kopia/volume/fake"
 
@@ -22,6 +24,7 @@ func TestInitFromSnapshot(t *testing.T) {
 
 	f := th.fsForBackupTests(&vmgr.ReaderProfile{})
 	f.logger = log(ctx)
+	assert.NotNil(f.sp)
 
 	manifests := []*snapshot.Manifest{
 		{RootEntry: &snapshot.DirEntry{ObjectID: "k2313ef907f3b250b331aed988802e4c5", Type: snapshot.EntryTypeDirectory}},
@@ -84,6 +87,112 @@ func TestInitFromSnapshot(t *testing.T) {
 	}
 }
 
+// nolint:gocritic
+func TestCommitSnapshot(t *testing.T) {
+	assert := assert.New(t)
+
+	ctx, th := newVolFsTestHarness(t)
+	defer th.cleanup()
+
+	f := th.fsForBackupTests(nil)
+	f.logger = log(ctx)
+	f.VolumeID = "VolumeID"
+	f.VolumeSnapshotID = "VolumeSnapshotID"
+
+	prevManifest := &snapshot.Manifest{
+		RootEntry: &snapshot.DirEntry{
+			ObjectID:   "k2313ef907f3b250b331aed988802e4c5",
+			Type:       snapshot.EntryTypeDirectory,
+			DirSummary: &fs.DirectorySummary{},
+		},
+		Stats: snapshot.Stats{
+			TotalDirectoryCount: 1,
+			TotalFileCount:      1,
+			TotalFileSize:       1,
+			CachedFiles:         int32(f.blockSzB),
+		},
+	}
+	summary := &fs.DirectorySummary{
+		TotalFileSize:  100,
+		TotalFileCount: 10,
+		TotalDirCount:  2,
+	}
+
+	for _, tc := range []string{
+		"write root error", "save snapshot error", "repo flush error", "committed no prev", "committed with prev",
+	} {
+		t.Logf("Case: %s", tc)
+
+		tU := &testUploader{}
+		f.up = tU
+		tSP := &testSnapshotProcessor{}
+		f.sp = tSP
+		tRepo := &testRepo{}
+		f.repo = tRepo
+
+		rootDir := &dirMeta{name: "/", summary: summary, oid: "root-dir-oid"}
+		expMan := &snapshot.Manifest{
+			Source:      f.SourceInfo(),
+			Description: "volume:VolumeID:VolumeSnapshotID",
+			StartTime:   f.epoch,
+			Stats: snapshot.Stats{
+				TotalDirectoryCount: 2,
+				TotalFileCount:      10,
+				TotalFileSize:       100,
+				CachedFiles:         int32(f.blockSzB),
+			},
+			RootEntry: &snapshot.DirEntry{
+				Name:        "/",
+				Type:        snapshot.EntryTypeDirectory,
+				ModTime:     f.epoch,
+				Permissions: 0700, // nolint:gomnd
+				ObjectID:    rootDir.oid,
+				DirSummary:  summary,
+			},
+		}
+
+		var expError error
+
+		dm := rootDir
+		psm := prevManifest
+
+		switch tc {
+		case "write root error":
+			expError = ErrOutOfRange
+			tU.retWriteDirE = expError
+		case "save snapshot error":
+			expError = ErrInvalidSnapshot
+			tSP.retSsE = expError
+		case "repo flush error":
+			expError = ErrInternalError
+			tRepo.retFE = expError
+		case "committed no prev":
+			psm = nil
+		case "committed with prev":
+			expMan.Stats.ExcludedDirCount = psm.Stats.TotalDirectoryCount
+			expMan.Stats.ExcludedFileCount = psm.Stats.TotalFileCount
+			expMan.Stats.ExcludedTotalFileSize = psm.Stats.TotalFileSize
+			expMan.Stats.NonCachedFiles = psm.Stats.NonCachedFiles + 1
+		}
+
+		tB := time.Now()
+		man, err := f.commitSnapshot(ctx, dm, psm)
+		tA := time.Now()
+
+		if expError == nil {
+			assert.NoError(err)
+			assert.NotNil(man)
+			assert.True(man.EndTime.After(tB))
+			assert.True(man.EndTime.Before(tA))
+			man.EndTime = expMan.EndTime
+			assert.Equal(expMan, man)
+		} else {
+			assert.Error(err)
+			assert.Regexp(expError.Error(), err.Error())
+		}
+	}
+}
+
 type testSnapshotProcessor struct {
 	inLsR  repo.Repository
 	inLsS  snapshot.SourceInfo
@@ -91,6 +200,11 @@ type testSnapshotProcessor struct {
 	retLsE error
 
 	retSrEntry fs.Entry
+
+	inSsR   repo.Repository
+	inSsM   *snapshot.Manifest
+	retSsID manifest.ID
+	retSsE  error
 }
 
 var _ snapshotProcessor = (*testSnapshotProcessor)(nil)
@@ -124,4 +238,19 @@ func (tsp *testSnapshotProcessor) SnapshotRoot(rep repo.Repository, man *snapsho
 	sh := &snapshotHelper{} // call the real thing
 
 	return sh.SnapshotRoot(rep, man)
+}
+
+// nolint:gocritic
+func (tsp *testSnapshotProcessor) SaveSnapshot(ctx context.Context, rep repo.Repository, man *snapshot.Manifest) (manifest.ID, error) {
+	tsp.inSsR = rep
+	tsp.inSsM = man
+
+	if tsp.retSsE != nil {
+		sh := &snapshotHelper{}        // call the real thing to check that it works
+		sh.SaveSnapshot(ctx, rep, man) // does not fail
+
+		return "", tsp.retSsE
+	}
+
+	return tsp.retSsID, tsp.retSsE
 }

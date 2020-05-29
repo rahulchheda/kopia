@@ -2,9 +2,12 @@ package volumefs
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"github.com/kopia/kopia/fs"
 	"github.com/kopia/kopia/repo"
+	"github.com/kopia/kopia/repo/manifest"
 	"github.com/kopia/kopia/repo/object"
 	"github.com/kopia/kopia/snapshot"
 	"github.com/kopia/kopia/snapshot/snapshotfs"
@@ -16,6 +19,33 @@ const (
 	directoryStreamType     = "kopia:directory" // copied from snapshot
 )
 
+// snapshotProcessor aids in unit testing
+type snapshotProcessor interface {
+	ListSnapshots(ctx context.Context, repo repo.Repository, si snapshot.SourceInfo) ([]*snapshot.Manifest, error)
+	SnapshotRoot(rep repo.Repository, man *snapshot.Manifest) (fs.Entry, error)
+	SaveSnapshot(ctx context.Context, rep repo.Repository, man *snapshot.Manifest) (manifest.ID, error)
+}
+
+type snapshotHelper struct{}
+
+var _ snapshotProcessor = (*snapshotHelper)(nil)
+
+// nolint:gocritic
+func (sh *snapshotHelper) ListSnapshots(ctx context.Context, repo repo.Repository, si snapshot.SourceInfo) ([]*snapshot.Manifest, error) {
+	return snapshot.ListSnapshots(ctx, repo, si)
+}
+
+// nolint:gocritic
+func (sh *snapshotHelper) SnapshotRoot(rep repo.Repository, man *snapshot.Manifest) (fs.Entry, error) {
+	return snapshotfs.SnapshotRoot(rep, man)
+}
+
+// nolint:gocritic
+func (sh *snapshotHelper) SaveSnapshot(ctx context.Context, rep repo.Repository, man *snapshot.Manifest) (manifest.ID, error) {
+	return snapshot.SaveSnapshot(ctx, rep, man)
+}
+
+// initFromSnapshot retrieves a snapshot and initializes the filesystem with the previous metadata.
 func (f *Filesystem) initFromSnapshot(ctx context.Context, snapshotID string) (*snapshot.Manifest, fs.Directory, metadata, error) {
 	man, rootEntry, md, err := f.findPreviousSnapshot(ctx, snapshotID)
 	if err != nil {
@@ -73,19 +103,63 @@ func (f *Filesystem) findSnapshotManifest(ctx context.Context, oid object.ID) (*
 	return nil, ErrSnapshotNotFound
 }
 
-type snapshotProcessor interface {
-	ListSnapshots(ctx context.Context, repo repo.Repository, si snapshot.SourceInfo) ([]*snapshot.Manifest, error)
-	SnapshotRoot(rep repo.Repository, man *snapshot.Manifest) (fs.Entry, error)
+// commitSnapshot writes a snapshot manifest to the repository
+func (f *Filesystem) commitSnapshot(ctx context.Context, rootDir *dirMeta, psm *snapshot.Manifest) (*snapshot.Manifest, error) {
+	// write the root directory manifest
+	err := f.up.writeDirToRepo(ctx, parsedPath{}, rootDir, false)
+	if err != nil {
+		return nil, err
+	}
+
+	curManifest := f.createSnapshotManifest(rootDir, psm)
+
+	_, err = f.sp.SaveSnapshot(ctx, f.Repo, curManifest)
+	if err != nil {
+		f.logger.Debugf("snapshot.SaveSnapshot: %v", err)
+		return nil, err
+	}
+
+	if err = f.repo.Flush(ctx); err != nil {
+		f.logger.Debugf("repo.Flush: %v", err)
+		return nil, err
+	}
+
+	return curManifest, nil
 }
 
-type snapshotHelper struct{}
+func (f *Filesystem) createSnapshotManifest(rootDir *dirMeta, psm *snapshot.Manifest) *snapshot.Manifest {
+	summary := rootDir.summary
+	sm := &snapshot.Manifest{
+		Source:      f.SourceInfo(),
+		Description: f.snapshotDescription(),
+		StartTime:   f.epoch,
+		EndTime:     time.Now(),
+		Stats: snapshot.Stats{
+			TotalDirectoryCount: int(summary.TotalDirCount),
+			TotalFileCount:      int(summary.TotalFileCount),
+			TotalFileSize:       summary.TotalFileSize,
+			CachedFiles:         int32(f.blockSzB),
+		},
+		RootEntry: &snapshot.DirEntry{
+			Name:        rootDir.name,
+			Type:        snapshot.EntryTypeDirectory,
+			ModTime:     f.epoch,
+			Permissions: 0700, // nolint:gomnd
+			ObjectID:    rootDir.oid,
+			DirSummary:  summary,
+		},
+	}
 
-// nolint:gocritic
-func (sh *snapshotHelper) ListSnapshots(ctx context.Context, repo repo.Repository, si snapshot.SourceInfo) ([]*snapshot.Manifest, error) {
-	return snapshot.ListSnapshots(ctx, repo, si)
+	if psm != nil {
+		sm.Stats.ExcludedDirCount = psm.Stats.TotalDirectoryCount
+		sm.Stats.ExcludedFileCount = psm.Stats.TotalFileCount
+		sm.Stats.ExcludedTotalFileSize = psm.Stats.TotalFileSize
+		sm.Stats.NonCachedFiles = psm.Stats.NonCachedFiles + 1 // chain length
+	}
+
+	return sm
 }
 
-// nolint:gocritic
-func (sh *snapshotHelper) SnapshotRoot(rep repo.Repository, man *snapshot.Manifest) (fs.Entry, error) {
-	return snapshotfs.SnapshotRoot(rep, man)
+func (f *Filesystem) snapshotDescription() string {
+	return fmt.Sprintf("volume:%s:%s", f.VolumeID, f.VolumeSnapshotID)
 }

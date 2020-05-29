@@ -1,6 +1,7 @@
 package volumefs
 
 import (
+	"context"
 	"io"
 	"testing"
 
@@ -200,6 +201,34 @@ func TestWriteDirToRepo(t *testing.T) {
 			assert.Regexp(expError.Error(), err.Error())
 		}
 	}
+}
 
-	// assert.False(true)
+type testUploader struct {
+	inWriteDirPP parsedPath
+	inWriteDirDm *dirMeta
+	inWriteDirST bool
+	retWriteDirE error
+
+	inWriteFilePP  parsedPath
+	inWriteFileRC  io.Reader
+	inWriteFileBuf []byte
+	retWriteFileID object.ID
+	retWriteFileSz int64
+	retWriteFileE  error
+}
+
+func (tu *testUploader) writeDirToRepo(ctx context.Context, pp parsedPath, dir *dirMeta, writeSubTree bool) error {
+	tu.inWriteDirPP = pp
+	tu.inWriteDirDm = dir
+	tu.inWriteDirST = writeSubTree
+
+	return tu.retWriteDirE
+}
+
+func (tu *testUploader) writeFileToRepo(ctx context.Context, pp parsedPath, src io.Reader, buf []byte) (object.ID, int64, error) {
+	tu.inWriteFilePP = pp
+	tu.inWriteFileRC = src
+	tu.inWriteFileBuf = buf
+
+	return tu.retWriteFileID, tu.retWriteFileSz, tu.retWriteFileE
 }
