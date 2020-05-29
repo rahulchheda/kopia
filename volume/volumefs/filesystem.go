@@ -84,6 +84,7 @@ type Filesystem struct {
 	bp                   backupProcessor
 	rp                   restoreProcessor
 	up                   uploader
+	sp                   snapshotProcessor
 	repo                 repository
 }
 
@@ -111,6 +112,7 @@ func New(args *FilesystemArgs) (*Filesystem, error) {
 	f.bp = f
 	f.rp = f
 	f.up = f
+	f.sp = &snapshotHelper{}
 	f.repo = f.Repo
 
 	return f, nil

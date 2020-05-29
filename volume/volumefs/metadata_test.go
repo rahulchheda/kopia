@@ -1,6 +1,7 @@
 package volumefs
 
 import (
+	"context"
 	"testing"
 
 	"github.com/kopia/kopia/fs"
@@ -43,14 +44,30 @@ func TestMetadataRecovery(t *testing.T) {
 		}
 	}
 
-	expMD := metadata{
+	expMD, expPPs, entries := generateTestMetaData()
+	assert.Equal(expPPs, expMD.metadataFiles())
+
+	var md metadata
+	md.recoverMetadataFromEntries(entries)
+	assert.Equal(expMD, md)
+	assert.Equal(expPPs, md.metadataFiles())
+
+	f := &Filesystem{}
+	de := &testDirEntry{retReadDirE: entries}
+	md2, err := f.recoverMetadataFromDirEntry(context.Background(), de)
+	assert.NoError(err)
+	assert.Equal(expMD, md2)
+}
+
+func generateTestMetaData() (metadata, []parsedPath, fs.Entries) {
+	md := metadata{
 		BlockSzB:      0x8000,
 		DirSz:         0xff,
 		Depth:         6,
 		VolSnapID:     "volumeXXX:999",
 		VolPrevSnapID: "volumeXXX:998",
 	}
-	expPPs := []parsedPath{
+	pps := []parsedPath{ // match the above
 		parsedPath([]string{"meta:BlockSzB:8000"}),
 		parsedPath([]string{"meta:DirSz:ff"}),
 		parsedPath([]string{"meta:Depth:6"}),
@@ -59,14 +76,9 @@ func TestMetadataRecovery(t *testing.T) {
 	}
 
 	entries := fs.Entries{}
-	for _, pp := range expPPs {
+	for _, pp := range pps {
 		entries = append(entries, &testFileEntry{name: pp[0]})
 	}
 
-	var md metadata
-
-	assert.Equal(expPPs, expMD.metadataFiles())
-	md.recoverMetadataFromEntries(entries)
-	assert.Equal(expMD, md)
-	assert.Equal(expPPs, md.metadataFiles())
+	return md, pps, entries
 }

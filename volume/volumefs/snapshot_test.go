@@ -2,8 +2,10 @@ package volumefs
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
+	"github.com/kopia/kopia/fs"
 	"github.com/kopia/kopia/repo"
 	"github.com/kopia/kopia/snapshot"
 	vmgr "github.com/kopia/kopia/volume/fake"
@@ -12,54 +14,68 @@ import (
 )
 
 // nolint:gocritic
-func TestFindSnapshotManifest(t *testing.T) {
+func TestInitFromSnapshot(t *testing.T) {
 	assert := assert.New(t)
-
-	saveSL := snapshotLister
-
-	defer func() {
-		snapshotLister = saveSL
-	}()
 
 	ctx, th := newVolFsTestHarness(t)
 	defer th.cleanup()
 
 	f := th.fsForBackupTests(&vmgr.ReaderProfile{})
+	f.logger = log(ctx)
 
 	manifests := []*snapshot.Manifest{
-		{RootEntry: &snapshot.DirEntry{ObjectID: "snap0"}},
-		{RootEntry: &snapshot.DirEntry{ObjectID: "snap1"}},
-		{RootEntry: &snapshot.DirEntry{ObjectID: "snap2"}},
+		{RootEntry: &snapshot.DirEntry{ObjectID: "k2313ef907f3b250b331aed988802e4c5", Type: snapshot.EntryTypeDirectory}},
+		{RootEntry: &snapshot.DirEntry{ObjectID: "k72d04e1f67ac38946b29c146fbea44fc", Type: snapshot.EntryTypeDirectory}},
+		{RootEntry: &snapshot.DirEntry{ObjectID: "kf9fb0e450bba821a1c35585d48eaff04", Type: snapshot.EntryTypeFile}}, // not-a-dir
 	}
 
+	expMD, _, expEntries := generateTestMetaData()
+
 	for _, tc := range []string{
-		"list error", "not found", "found",
+		"invalid-snapid", "list error", "not found", "not-a-dir", "metadata error", "initialized",
 	} {
 		t.Logf("Case: %s", tc)
 
-		tsl := &testSnapshotLister{}
-		tsl.retM = manifests
-		snapshotLister = tsl.ListSnapshots
+		tsp := &testSnapshotProcessor{}
+		tsp.retLsM = manifests
+		f.sp = tsp
 
 		var expError error
 
-		oid := manifests[1].RootObjectID()
+		oid := string(manifests[1].RootObjectID())
 
 		switch tc {
+		case "invalid-snapid":
+			oid = "not-a-snap-id"
+			expError = fmt.Errorf("invalid contentID suffix")
 		case "list error":
 			expError = ErrInternalError
-			tsl.retM = nil
-			tsl.retE = expError
+			tsp.retLsM = nil
+			tsp.retLsE = expError
 		case "not found":
-			oid = "not-in-list"
+			oid = "k785f33b8bcccffa4aac1dabb89cf5a71"
 			expError = ErrSnapshotNotFound
+		case "not-a-dir":
+			oid = "kf9fb0e450bba821a1c35585d48eaff04"
+			expError = ErrInvalidSnapshot
+		case "metadata error":
+			expError = ErrOutOfRange
+			tsp.retSrEntry = &testDirEntry{retReadDirErr: expError}
+		case "initialized":
+			tsp.retSrEntry = &testDirEntry{retReadDirE: expEntries}
 		}
 
-		m, err := f.findSnapshotManifest(ctx, oid)
+		m, de, md, err := f.initFromSnapshot(ctx, oid)
 
 		if expError == nil {
 			assert.NoError(err)
-			assert.Equal(oid, m.RootObjectID())
+			assert.NotNil(m)
+			assert.NotNil(de)
+			assert.EqualValues(oid, m.RootObjectID())
+
+			if tc == "initialized" {
+				assert.Equal(expMD, md)
+			}
 		} else {
 			assert.Error(err)
 			assert.Regexp(expError.Error(), err.Error())
@@ -68,18 +84,44 @@ func TestFindSnapshotManifest(t *testing.T) {
 	}
 }
 
-type testSnapshotLister struct {
-	inR repo.Repository
-	inS snapshot.SourceInfo
+type testSnapshotProcessor struct {
+	inLsR  repo.Repository
+	inLsS  snapshot.SourceInfo
+	retLsM []*snapshot.Manifest
+	retLsE error
 
-	retM []*snapshot.Manifest
-	retE error
+	retSrEntry fs.Entry
+}
+
+var _ snapshotProcessor = (*testSnapshotProcessor)(nil)
+
+// nolint:gocritic
+func (tsp *testSnapshotProcessor) ListSnapshots(ctx context.Context, repo repo.Repository, si snapshot.SourceInfo) ([]*snapshot.Manifest, error) {
+	tsp.inLsR = repo
+	tsp.inLsS = si
+
+	if tsp.retLsE != nil {
+		sh := &snapshotHelper{} // call the real thing to check that it works
+
+		m, err := sh.ListSnapshots(ctx, repo, snapshot.SourceInfo{})
+
+		if err != nil || len(m) == 0 { // appears to never fail!
+			return nil, tsp.retLsE
+		}
+
+		panic("failed to fail")
+	}
+
+	return tsp.retLsM, tsp.retLsE
 }
 
 // nolint:gocritic
-func (sl *testSnapshotLister) ListSnapshots(ctx context.Context, repo repo.Repository, si snapshot.SourceInfo) ([]*snapshot.Manifest, error) {
-	sl.inR = repo
-	sl.inS = si
+func (tsp *testSnapshotProcessor) SnapshotRoot(rep repo.Repository, man *snapshot.Manifest) (fs.Entry, error) {
+	if tsp.retSrEntry != nil {
+		return tsp.retSrEntry, nil
+	}
 
-	return sl.retM, sl.retE
+	sh := &snapshotHelper{} // call the real thing
+
+	return sh.SnapshotRoot(rep, man)
 }
