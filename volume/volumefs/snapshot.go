@@ -19,6 +19,46 @@ const (
 	directoryStreamType     = "kopia:directory" // copied from snapshot
 )
 
+// Snapshot returns a snapshot manifest.
+type Snapshot struct {
+	Current *snapshot.Manifest
+}
+
+// SnapshotAnalysis analyzes the data in a snapshot manifest.
+type SnapshotAnalysis struct {
+	BlockSizeBytes   int
+	Bytes            int64
+	NumBlocks        int
+	NumDirs          int
+	ChainLength      int
+	ChainedBytes     int64
+	ChainedNumBlocks int
+	ChainedNumDirs   int
+}
+
+// Analyze analyzes a snapshot
+func (s *Snapshot) Analyze() SnapshotAnalysis {
+	var sa SnapshotAnalysis
+
+	if s.Current == nil {
+		return sa
+	}
+
+	cs := s.Current.Stats
+
+	sa.BlockSizeBytes = int(cs.CachedFiles)
+	sa.Bytes = cs.TotalFileSize - cs.ExcludedTotalFileSize
+	sa.NumBlocks = cs.TotalFileCount - cs.ExcludedFileCount
+	sa.NumDirs = cs.TotalDirectoryCount - cs.ExcludedDirCount
+
+	sa.ChainLength = int(cs.NonCachedFiles)
+	sa.ChainedBytes = cs.ExcludedTotalFileSize
+	sa.ChainedNumBlocks = cs.ExcludedFileCount
+	sa.ChainedNumDirs = cs.ExcludedDirCount
+
+	return sa
+}
+
 // snapshotProcessor aids in unit testing
 type snapshotProcessor interface {
 	ListSnapshots(ctx context.Context, repo repo.Repository, si snapshot.SourceInfo) ([]*snapshot.Manifest, error)
@@ -162,4 +202,31 @@ func (f *Filesystem) createSnapshotManifest(rootDir *dirMeta, psm *snapshot.Mani
 
 func (f *Filesystem) snapshotDescription() string {
 	return fmt.Sprintf("volume:%s:%s", f.VolumeID, f.VolumeSnapshotID)
+}
+
+// linkToPreviousSnapshot finds the previous snapshot and returns its dirMeta entry.
+func (f *Filesystem) linkPreviousSnapshot(ctx context.Context, previousSnapshotID, prevVolumeSnapshotID string) (*dirMeta, *snapshot.Manifest, error) {
+	prevMan, _, prevMd, err := f.findPreviousSnapshot(ctx, previousSnapshotID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if prevMd.VolSnapID != prevVolumeSnapshotID {
+		f.logger.Debugf("previous volume snapshot exp[%s] got[%s]", prevVolumeSnapshotID, prevMd.VolSnapID)
+		return nil, nil, ErrInvalidSnapshot
+	}
+
+	// import previous data
+	f.logger.Debugf("found snapshot [%s, %s] %#v %#v", previousSnapshotID, prevVolumeSnapshotID, prevMd, prevMan)
+	f.layoutProperties.initLayoutProperties(prevMd.BlockSzB, prevMd.DirSz, prevMd.Depth)
+	f.prevVolumeSnapshotID = prevMd.VolSnapID
+
+	// add the previous directory object to the root directory
+	prevRootDm := &dirMeta{
+		name:    previousSnapshotDirName,
+		oid:     prevMan.RootObjectID(),
+		summary: prevMan.RootEntry.DirSummary,
+	}
+
+	return prevRootDm, prevMan, nil
 }

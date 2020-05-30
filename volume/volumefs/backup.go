@@ -98,52 +98,6 @@ type backupProcessor interface {
 	linkPreviousSnapshot(ctx context.Context, previousSnapshotID, prevVolumeSnapshotID string) (*dirMeta, *snapshot.Manifest, error)
 }
 
-// createRoot creates the root directory with references to current, previous and meta.
-func (f *Filesystem) createRoot(ctx context.Context, curDm, prevRootDm *dirMeta) (*dirMeta, error) {
-	rootDir := &dirMeta{
-		name: "/",
-	}
-
-	rootDir.insertSubdir(curDm)
-
-	if prevRootDm != nil {
-		rootDir.insertSubdir(prevRootDm)
-	}
-
-	if err := f.createMetadataFiles(ctx, rootDir); err != nil {
-		return nil, err
-	}
-
-	return rootDir, nil
-}
-
-// linkToPreviousSnapshot finds the previous snapshot and returns its dirMeta entry.
-func (f *Filesystem) linkPreviousSnapshot(ctx context.Context, previousSnapshotID, prevVolumeSnapshotID string) (*dirMeta, *snapshot.Manifest, error) {
-	prevMan, _, prevMd, err := f.findPreviousSnapshot(ctx, previousSnapshotID)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	if prevMd.VolSnapID != prevVolumeSnapshotID {
-		f.logger.Debugf("previous volume snapshot exp[%s] got[%s]", prevVolumeSnapshotID, prevMd.VolSnapID)
-		return nil, nil, ErrInvalidSnapshot
-	}
-
-	// import previous data
-	f.logger.Debugf("found snapshot [%s, %s] %#v %#v", previousSnapshotID, prevVolumeSnapshotID, prevMd, prevMan)
-	f.layoutProperties.initLayoutProperties(prevMd.BlockSzB, prevMd.DirSz, prevMd.Depth)
-	f.prevVolumeSnapshotID = prevMd.VolSnapID
-
-	// add the previous directory object to the root directory
-	prevRootDm := &dirMeta{
-		name:    previousSnapshotDirName,
-		oid:     prevMan.RootObjectID(),
-		summary: prevMan.RootEntry.DirSummary,
-	}
-
-	return prevRootDm, prevMan, nil
-}
-
 // backupBlocks writes the volume blocks and the block map hierarchy to the repo.
 func (f *Filesystem) backupBlocks(ctx context.Context, br volume.BlockReader, numWorkers int) (*dirMeta, error) {
 	bi, err := br.GetBlocks(ctx)

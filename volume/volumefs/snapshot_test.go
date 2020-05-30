@@ -15,6 +15,44 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// nolint:wsl,gocritic
+func TestSnapshotAnalysis(t *testing.T) {
+	assert := assert.New(t)
+
+	expSA := SnapshotAnalysis{
+		BlockSizeBytes:   1000,
+		Bytes:            20000,
+		NumBlocks:        1000,
+		NumDirs:          100,
+		ChainLength:      2,
+		ChainedBytes:     80000,
+		ChainedNumBlocks: 2000,
+		ChainedNumDirs:   200,
+	}
+
+	curStats := snapshot.Stats{
+		TotalDirectoryCount: expSA.NumDirs + expSA.ChainedNumDirs,
+		TotalFileCount:      expSA.NumBlocks + expSA.ChainedNumBlocks,
+		TotalFileSize:       expSA.Bytes + expSA.ChainedBytes,
+
+		ExcludedFileCount:     expSA.ChainedNumBlocks,
+		ExcludedTotalFileSize: expSA.ChainedBytes,
+		ExcludedDirCount:      expSA.ChainedNumDirs,
+
+		CachedFiles:    int32(expSA.BlockSizeBytes),
+		NonCachedFiles: int32(expSA.ChainLength),
+	}
+	curSM := &snapshot.Manifest{
+		Stats: curStats,
+	}
+	s := Snapshot{
+		Current: curSM,
+	}
+
+	assert.Equal(expSA, s.Analyze())
+	assert.Equal(SnapshotAnalysis{}, (&Snapshot{}).Analyze())
+}
+
 // nolint:gocritic
 func TestInitFromSnapshot(t *testing.T) {
 	assert := assert.New(t)
@@ -189,6 +227,69 @@ func TestCommitSnapshot(t *testing.T) {
 		} else {
 			assert.Error(err)
 			assert.Regexp(expError.Error(), err.Error())
+		}
+	}
+}
+
+// nolint:wsl,gocritic
+func TestLinkPreviousSnapshot(t *testing.T) {
+	assert := assert.New(t)
+
+	ctx, th := newVolFsTestHarness(t)
+	defer th.cleanup()
+
+	manifests := []*snapshot.Manifest{
+		{RootEntry: &snapshot.DirEntry{ObjectID: "k2313ef907f3b250b331aed988802e4c5", Type: snapshot.EntryTypeDirectory, DirSummary: &fs.DirectorySummary{}}},
+	}
+	expMD, _, expEntries := generateTestMetaData()
+
+	for _, tc := range []string{
+		"previous snapshot not found", "volSnapID mismatch", "linked",
+	} {
+		t.Logf("Case: %s", tc)
+
+		tsp := &testSnapshotProcessor{}
+		tsp.retLsM = manifests
+		tsp.retSrEntry = &testDirEntry{retReadDirE: expEntries}
+
+		f := th.fsForBackupTests(nil)
+		f.logger = log(ctx)
+		f.sp = tsp
+		f.setMetadata(metadata{}) // clear all
+
+		var expError error
+		oid := string(manifests[0].RootObjectID())
+		prevVolSnapshotID := expMD.VolSnapID
+
+		switch tc {
+		case "previous snapshot not found":
+			oid = "k785f33b8bcccffa4aac1dabb89cf5a71"
+			expError = ErrSnapshotNotFound
+		case "volSnapID mismatch":
+			prevVolSnapshotID += "foo"
+			expError = ErrInvalidSnapshot
+		}
+
+		dm, man, err := f.linkPreviousSnapshot(ctx, oid, prevVolSnapshotID)
+
+		if expError == nil {
+			assert.NoError(err)
+			assert.Equal(manifests[0], man)
+			expDM := &dirMeta{
+				name:    previousSnapshotDirName,
+				oid:     manifests[0].RootEntry.ObjectID,
+				summary: manifests[0].RootEntry.DirSummary,
+			}
+			assert.Equal(expDM, dm)
+			assert.Equal(prevVolSnapshotID, f.prevVolumeSnapshotID)
+			assert.Equal(expMD.BlockSzB, f.blockSzB)
+			assert.Equal(expMD.DirSz, f.dirSz)
+			assert.Equal(expMD.Depth, f.depth)
+		} else {
+			assert.Error(err)
+			assert.Regexp(expError.Error(), err.Error())
+			assert.Nil(dm)
+			assert.Nil(man)
 		}
 	}
 }

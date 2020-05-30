@@ -66,7 +66,7 @@ func (a *FilesystemArgs) Validate() error {
 // SourceInfo generates a snapshotSourceInfo
 func (a *FilesystemArgs) SourceInfo() snapshot.SourceInfo {
 	return snapshot.SourceInfo{
-		Path:     path.Join("/volumefs", a.VolumeID),
+		Path:     path.Join("/volume", a.VolumeID),
 		Host:     a.Repo.Hostname(),
 		UserName: a.Repo.Username(),
 	}
@@ -118,42 +118,21 @@ func New(args *FilesystemArgs) (*Filesystem, error) {
 	return f, nil
 }
 
-// Snapshot returns a snapshot manifest.
-type Snapshot struct {
-	Current *snapshot.Manifest
-}
-
-// SnapshotAnalysis analyzes the data in a snapshot manifest.
-type SnapshotAnalysis struct {
-	BlockSizeBytes   int
-	Bytes            int64
-	NumBlocks        int
-	NumDirs          int
-	ChainLength      int
-	ChainedBytes     int64
-	ChainedNumBlocks int
-	ChainedNumDirs   int
-}
-
-// Analyze analyzes a snapshot
-func (s *Snapshot) Analyze() SnapshotAnalysis {
-	var sa SnapshotAnalysis
-
-	if s.Current == nil {
-		return sa
+// createRoot creates the root directory with references to current, previous and meta.
+func (f *Filesystem) createRoot(ctx context.Context, curDm, prevRootDm *dirMeta) (*dirMeta, error) {
+	rootDir := &dirMeta{
+		name: "/",
 	}
 
-	cs := s.Current.Stats
+	rootDir.insertSubdir(curDm)
 
-	sa.BlockSizeBytes = int(cs.CachedFiles)
-	sa.Bytes = cs.TotalFileSize - cs.ExcludedTotalFileSize
-	sa.NumBlocks = cs.TotalFileCount - cs.ExcludedFileCount
-	sa.NumDirs = cs.TotalDirectoryCount - cs.ExcludedDirCount
+	if prevRootDm != nil {
+		rootDir.insertSubdir(prevRootDm)
+	}
 
-	sa.ChainLength = int(cs.NonCachedFiles)
-	sa.ChainedBytes = cs.ExcludedTotalFileSize
-	sa.ChainedNumBlocks = cs.ExcludedFileCount
-	sa.ChainedNumDirs = cs.ExcludedDirCount
+	if err := f.createMetadataFiles(ctx, rootDir); err != nil {
+		return nil, err
+	}
 
-	return sa
+	return rootDir, nil
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/kopia/kopia/fs"
 	"github.com/kopia/kopia/repo/object"
 	"github.com/kopia/kopia/snapshot"
 	"github.com/kopia/kopia/volume"
@@ -121,124 +120,6 @@ func TestBackup(t *testing.T) {
 		}
 	}
 
-}
-
-// nolint:wsl,gocritic
-func TestBackupCreateRoot(t *testing.T) {
-	assert := assert.New(t)
-
-	ctx, th := newVolFsTestHarness(t)
-	defer th.cleanup()
-
-	f := th.fsForBackupTests(nil)
-	f.logger = log(ctx)
-
-	cur := &dirMeta{name: currentSnapshotDirName}
-	prev := &dirMeta{name: previousSnapshotDirName}
-
-	// case: success, no prev
-	dm, err := f.createRoot(ctx, cur, nil)
-	assert.NoError(err)
-	assert.NotNil(dm)
-	assert.Equal("/", dm.name)
-	foundCur := false
-	for _, e := range dm.subdirs {
-		if e.name == cur.name {
-			foundCur = true
-			break
-		}
-	}
-	assert.True(foundCur)
-
-	// case: success, with prev
-	dm, err = f.createRoot(ctx, cur, prev)
-	assert.NoError(err)
-	assert.NotNil(dm)
-	foundCur = false
-	foundPrev := false
-	for _, e := range dm.subdirs {
-		if e.name == cur.name {
-			foundCur = true
-		}
-		if e.name == prev.name {
-			foundPrev = true
-		}
-	}
-	assert.True(foundCur)
-	assert.True(foundPrev)
-
-	// case: metadata write failure
-	tWC := &testWC{}
-	tWC.retResultE = ErrInternalError
-	tRepo := &testRepo{}
-	tRepo.retNowW = tWC
-	f.repo = tRepo
-	dm, err = f.createRoot(ctx, cur, prev)
-	assert.Equal(ErrInternalError, err)
-	assert.Nil(dm)
-}
-
-// nolint:wsl,gocritic
-func TestBackupLinkPreviousSnapshot(t *testing.T) {
-	assert := assert.New(t)
-
-	ctx, th := newVolFsTestHarness(t)
-	defer th.cleanup()
-
-	manifests := []*snapshot.Manifest{
-		{RootEntry: &snapshot.DirEntry{ObjectID: "k2313ef907f3b250b331aed988802e4c5", Type: snapshot.EntryTypeDirectory, DirSummary: &fs.DirectorySummary{}}},
-	}
-	expMD, _, expEntries := generateTestMetaData()
-
-	for _, tc := range []string{
-		"previous snapshot not found", "volSnapID mismatch", "linked",
-	} {
-		t.Logf("Case: %s", tc)
-
-		tsp := &testSnapshotProcessor{}
-		tsp.retLsM = manifests
-		tsp.retSrEntry = &testDirEntry{retReadDirE: expEntries}
-
-		f := th.fsForBackupTests(nil)
-		f.logger = log(ctx)
-		f.sp = tsp
-		f.setMetadata(metadata{}) // clear all
-
-		var expError error
-		oid := string(manifests[0].RootObjectID())
-		prevVolSnapshotID := expMD.VolSnapID
-
-		switch tc {
-		case "previous snapshot not found":
-			oid = "k785f33b8bcccffa4aac1dabb89cf5a71"
-			expError = ErrSnapshotNotFound
-		case "volSnapID mismatch":
-			prevVolSnapshotID += "foo"
-			expError = ErrInvalidSnapshot
-		}
-
-		dm, man, err := f.linkPreviousSnapshot(ctx, oid, prevVolSnapshotID)
-
-		if expError == nil {
-			assert.NoError(err)
-			assert.Equal(manifests[0], man)
-			expDM := &dirMeta{
-				name:    previousSnapshotDirName,
-				oid:     manifests[0].RootEntry.ObjectID,
-				summary: manifests[0].RootEntry.DirSummary,
-			}
-			assert.Equal(expDM, dm)
-			assert.Equal(prevVolSnapshotID, f.prevVolumeSnapshotID)
-			assert.Equal(expMD.BlockSzB, f.blockSzB)
-			assert.Equal(expMD.DirSz, f.dirSz)
-			assert.Equal(expMD.Depth, f.depth)
-		} else {
-			assert.Error(err)
-			assert.Regexp(expError.Error(), err.Error())
-			assert.Nil(dm)
-			assert.Nil(man)
-		}
-	}
 }
 
 // nolint:wsl,gocritic
