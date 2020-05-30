@@ -227,24 +227,35 @@ func TestEstimateDirManifestSizes(t *testing.T) {
 	defer th.cleanup()
 
 	oneKi := 1024
-	for _, tc := range []struct{ numEntries, avgSzPerEntry, orderKi int }{
-		{256, 183, 46},
-		{512, 183, 92},
-		{1024, 183, 183},
-		{2048, 183, 366},
-		{4096, 183, 732},
+	for _, tc := range []struct{ encoding, numEntries, avgSzPerEntry, orderKi int }{
+		{16, 256, 183, 46},
+		{16, 512, 183, 92},
+		{16, 1024, 183, 183},
+		{16, 2048, 183, 366},
+		{16, 4096, 183, 732},
+
+		{32, 256, 183, 46},
+		{32, 512, 183, 92},
+		{32, 1024, 183, 183},
+		{32, 2048, 183, 366},
+		{32, 4096, 183, 732},
+
+		{36, 256, 183, 46},
+		{36, 512, 183, 92},
+		{36, 1024, 183, 183},
+		{36, 2048, 183, 365}, // slight O reduction
+		{36, 4096, 183, 731}, // slight O reduction
 	} {
 		t.Logf("Case: %d", tc.numEntries)
 
-		f := th.fsForBackupTests(nil)
+		f := &Filesystem{}
 		f.logger = log(ctx)
-		f.layoutProperties.initLayoutProperties(f.blockSzB, tc.numEntries, f.depth) // reset for this test
 
 		// Only use directory entries: they have a larger oid than for files + dir summary
 		dm := &dirMeta{name: fmt.Sprintf("%x", tc.numEntries)}
 		for i := 0; i < tc.numEntries; i++ {
 			sdm := &dirMeta{
-				name:    strconv.FormatInt(int64(i), f.baseEncoding),
+				name:    strconv.FormatInt(int64(i), tc.encoding),
 				oid:     "k52f18655d20ab0ba242af328d4a966be",
 				summary: &fs.DirectorySummary{},
 			}
@@ -268,7 +279,7 @@ func TestEstimateDirManifestSizes(t *testing.T) {
 		actualBytes := tWC.savedWrites.Len()
 		avg := (actualBytes + tc.numEntries - 1) / tc.numEntries // round up
 		order := (actualBytes + oneKi - 1) / oneKi               // round up
-		t.Logf("%d AB=%d Avg=%d O=%d", tc.numEntries, actualBytes, avg, order)
+		t.Logf("E:%d #:%d AB=%d Avg=%d O=%d", tc.encoding, tc.numEntries, actualBytes, avg, order)
 		assert.Equal(tc.avgSzPerEntry, avg)
 		assert.Equal(tc.orderKi, order)
 	}
