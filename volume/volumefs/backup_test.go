@@ -12,6 +12,32 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// nolint:wsl,gocritic
+func TestBackupArgs(t *testing.T) {
+	assert := assert.New(t)
+
+	badTcs := []BackupArgs{
+		{BackupConcurrency: -1},
+		{PreviousSnapshotID: "snapID"},
+		{PreviousVolumeSnapshotID: "volSnapID"},
+	}
+	for i, tc := range badTcs {
+		t.Logf("Case: %d", i)
+		assert.Equal(ErrInvalidArgs, tc.Validate())
+	}
+
+	goodTcs := []BackupArgs{
+		{},
+		{BackupConcurrency: 10},
+		{PreviousSnapshotID: "snapID", PreviousVolumeSnapshotID: "volSnapID"},
+		{PreviousSnapshotID: "snapID", PreviousVolumeSnapshotID: "volSnapID", BackupConcurrency: 10},
+	}
+	for i, tc := range goodTcs {
+		t.Logf("Case: %d", i)
+		assert.NoError(tc.Validate())
+	}
+}
+
 // nolint:wsl,gocritic,goconst
 func TestBackup(t *testing.T) {
 	assert := assert.New(t)
@@ -51,11 +77,9 @@ func TestBackup(t *testing.T) {
 		f := th.fsForBackupTests(profile)
 		assert.Equal(f, f.bp)
 		f.VolumeManager = tvm
-
 		f.bp = tbp
 
 		var expError error
-		// var argsInvalid bool
 
 		switch tc {
 		case "invalid args":
@@ -119,7 +143,6 @@ func TestBackup(t *testing.T) {
 			assert.Equal(cMan, snap.Current)
 		}
 	}
-
 }
 
 // nolint:wsl,gocritic

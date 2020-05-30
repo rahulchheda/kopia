@@ -96,6 +96,8 @@ type bTreeMap struct {
 	tree *btree.BTree
 }
 
+var _ BlockMap = (*bTreeMap)(nil)
+
 type bTreeItem struct {
 	BlockAddressMapping
 }

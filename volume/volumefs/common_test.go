@@ -17,6 +17,7 @@ import (
 	"github.com/kopia/kopia/repo/blob/filesystem"
 	"github.com/kopia/kopia/repo/object"
 	"github.com/kopia/kopia/volume"
+	"github.com/kopia/kopia/volume/blockfile"
 	vmgr "github.com/kopia/kopia/volume/fake"
 
 	"github.com/stretchr/testify/assert"
@@ -105,7 +106,7 @@ func (th *volFsTestHarness) fsForBackupTests(profile interface{}) *Filesystem {
 		Repo:                th.repo,
 		VolumeManager:       mgr,
 		VolumeID:            "volID",
-		VolumeSnapshotID:    "volSnapID1",
+		VolumeSnapshotID:    "volSnapID",
 		VolumeAccessProfile: profile,
 	}
 	th.t.Logf("%#v", fa)
@@ -118,34 +119,38 @@ func (th *volFsTestHarness) fsForBackupTests(profile interface{}) *Filesystem {
 	return f
 }
 
-// // nolint:wsl,gocritic
-// func (th *volFsTestHarness) fsForRestoreTests(p *blockfile.Profile) *Filesystem {
-// 	assert := assert.New(th.t)
+// nolint:wsl,gocritic
+func (th *volFsTestHarness) fsForRestoreTests(p *blockfile.Profile) *Filesystem {
+	assert := assert.New(th.t)
 
-// 	mgr := volume.FindManager(blockfile.VolumeType)
-// 	assert.NotNil(mgr)
+	mgr := volume.FindManager(blockfile.VolumeType)
+	assert.NotNil(mgr)
 
-// 	fa := &FilesystemArgs{
-// 		Repo:                th.repo,
-// 		VolumeManager:       mgr,
-// 		VolumeID:            "volID",
-// 		VolumeSnapshotID:    "volSnapID1",
-// 		VolumeAccessProfile: p,
-// 	}
-// 	th.t.Logf("%#v", fa)
-// 	assert.NoError(fa.Validate())
+	fa := &FilesystemArgs{
+		Repo:                th.repo,
+		VolumeManager:       mgr,
+		VolumeID:            "volID",
+		VolumeSnapshotID:    "volSnapID1",
+		VolumeAccessProfile: p,
+	}
+	th.t.Logf("%#v", fa)
+	assert.NoError(fa.Validate())
 
-// 	f, err := New(fa)
-// 	assert.NoError(err)
-// 	assert.NotNil(f)
+	f, err := New(fa)
+	assert.NoError(err)
+	assert.NotNil(f)
 
-// 	return f
-// }
+	return f
+}
 
 type testVM struct {
 	retGbrBR volume.BlockReader
 	retGbrE  error
 	gbrA     volume.GetBlockReaderArgs
+
+	retGbwBW []volume.BlockWriter
+	retGbwE  []error
+	gbwA     volume.GetBlockWriterArgs
 }
 
 // Type returns the volume type.
@@ -162,8 +167,18 @@ func (vm *testVM) GetBlockReader(args volume.GetBlockReaderArgs) (volume.BlockRe
 
 // GetBlockWriter returns a BlockWriter for a particular volume.
 // Optional - will return ErrNotSupported if unavailable.
+// nolint:wsl
 func (vm *testVM) GetBlockWriter(args volume.GetBlockWriterArgs) (volume.BlockWriter, error) {
-	return nil, nil
+	vm.gbwA = args
+	var bw volume.BlockWriter
+	var err error
+	if len(vm.retGbwBW) > 0 {
+		bw, vm.retGbwBW = vm.retGbwBW[0], vm.retGbwBW[1:]
+	}
+	if len(vm.retGbwE) > 0 {
+		err, vm.retGbwE = vm.retGbwE[0], vm.retGbwE[1:]
+	}
+	return bw, err
 }
 
 type testBW struct {
@@ -475,4 +490,20 @@ func (r *testRepo) genID(isDir bool) object.ID {
 	r.genIDCnt++
 
 	return object.ID(id)
+}
+
+type testBlockMap struct {
+	inFindBa  int64
+	retFindID object.ID
+
+	retIteratorBmi BlockMapIterator
+}
+
+func (bm *testBlockMap) Find(blockAddr int64) object.ID {
+	bm.inFindBa = blockAddr
+	return bm.retFindID
+}
+
+func (bm *testBlockMap) Iterator() BlockMapIterator {
+	return bm.retIteratorBmi
 }
