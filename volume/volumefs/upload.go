@@ -68,7 +68,6 @@ func (f *Filesystem) writeDirToRepo(ctx context.Context, pp parsedPath, dir *dir
 		StreamType: directoryStreamType,
 		Summary: &fs.DirectorySummary{
 			TotalDirCount: 1,
-			MaxModTime:    f.epoch,
 		},
 	}
 	summary := dirManifest.Summary

@@ -180,12 +180,10 @@ func TestCommitSnapshot(t *testing.T) {
 				CachedFiles:         int32(f.blockSzB),
 			},
 			RootEntry: &snapshot.DirEntry{
-				Name:        "/",
-				Type:        snapshot.EntryTypeDirectory,
-				ModTime:     f.epoch,
-				Permissions: 0700, // nolint:gomnd
-				ObjectID:    rootDir.oid,
-				DirSummary:  summary,
+				Name:       "/",
+				Type:       snapshot.EntryTypeDirectory,
+				ObjectID:   rootDir.oid,
+				DirSummary: summary,
 			},
 		}
 

@@ -2,11 +2,15 @@ package volumefs
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"io"
+	"strconv"
 	"testing"
 
 	"github.com/kopia/kopia/fs"
 	"github.com/kopia/kopia/repo/object"
+	"github.com/kopia/kopia/snapshot"
 	vmgr "github.com/kopia/kopia/volume/fake"
 
 	"github.com/stretchr/testify/assert"
@@ -133,14 +137,15 @@ func TestWriteDirToRepo(t *testing.T) {
 				dm.subdirs[i].oid = tRepo.genID(true)
 				dm.subdirs[i].summary = &fs.DirectorySummary{}
 			}
+			tRepo.saveWrites = true
 		case "subtree":
 			writeSubTree = true
 			expW += 4 // number c* dirs
 		case "subtree error":
 			writeSubTree = true
 			expError = ErrOutOfRange
-			tRepo.genUseW = make([]*testWC, expW+4)
-			tRepo.genUseW[expW+3] = &testWC{retResultE: expError}
+			tRepo.genUseW = make([]*testWC, tRepo.genIDCnt+2)
+			tRepo.genUseW[tRepo.genIDCnt+1] = &testWC{retResultE: expError}
 		case "subdir missing oid":
 			expError = ErrInternalError
 			for i := range dm.subdirs {
@@ -196,10 +201,76 @@ func TestWriteDirToRepo(t *testing.T) {
 			}
 			assert.NotNil(dm.summary)
 			assert.NotEmpty(dm.oid)
+			if tc == "root only" {
+				tw := tRepo.genW[len(tRepo.genW)-1]
+				assert.True(tw.saveWrites)
+				var dirMan *snapshot.DirManifest
+				err = json.NewDecoder(&tw.savedWrites).Decode(&dirMan)
+				assert.NoError(err)
+				assert.Equal(directoryStreamType, dirMan.StreamType)
+				assert.Equal(expW, len(dirMan.Entries))
+			}
 		} else {
 			assert.Error(err)
 			assert.Regexp(expError.Error(), err.Error())
 		}
+	}
+}
+
+// this is not really a test but a measurement of directory manifest JSON encoding for various
+// directory sizes.
+// nolint:wsl,gocritic
+func TestEstimateDirManifestSizes(t *testing.T) {
+	assert := assert.New(t)
+
+	ctx, th := newVolFsTestHarness(t)
+	defer th.cleanup()
+
+	oneKi := 1024
+	for _, tc := range []struct{ numEntries, avgSzPerEntry, orderKi int }{
+		{256, 183, 46},
+		{512, 183, 92},
+		{1024, 183, 183},
+		{2048, 183, 366},
+		{4096, 183, 732},
+	} {
+		t.Logf("Case: %d", tc.numEntries)
+
+		f := th.fsForBackupTests(nil)
+		f.logger = log(ctx)
+		f.layoutProperties.initLayoutProperties(f.blockSzB, tc.numEntries, f.depth) // reset for this test
+
+		// Only use directory entries: they have a larger oid than for files + dir summary
+		dm := &dirMeta{name: fmt.Sprintf("%x", tc.numEntries)}
+		for i := 0; i < tc.numEntries; i++ {
+			sdm := &dirMeta{
+				name:    strconv.FormatInt(int64(i), f.baseEncoding),
+				oid:     "k52f18655d20ab0ba242af328d4a966be",
+				summary: &fs.DirectorySummary{},
+			}
+			dm.insertSubdir(sdm)
+		}
+		sde := dm.snapshotDirEntry()
+		sde.DirSummary = &fs.DirectorySummary{ // fake with large numbers
+			TotalFileSize:  1 << 62,
+			TotalFileCount: 1 << 40,
+			TotalDirCount:  1 << 10,
+		}
+		// construct the manifest and intercept the byte stream after JSON encoding
+		tWC := &testWC{}
+		tWC.saveWrites = true
+		tRepo := &testRepo{}
+		tRepo.retNowW = tWC
+		f.repo = tRepo
+		err := f.writeDirToRepo(ctx, parsedPath{}, dm, false)
+		assert.NoError(err)
+
+		actualBytes := tWC.savedWrites.Len()
+		avg := (actualBytes + tc.numEntries - 1) / tc.numEntries // round up
+		order := (actualBytes + oneKi - 1) / oneKi               // round up
+		t.Logf("%d AB=%d Avg=%d O=%d", tc.numEntries, actualBytes, avg, order)
+		assert.Equal(tc.avgSzPerEntry, avg)
+		assert.Equal(tc.orderKi, order)
 	}
 }
 

@@ -1,6 +1,7 @@
 package volumefs
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -400,6 +401,8 @@ type testWC struct {
 	retWriteN   int
 	retWriteErr error
 	sumWriteN   int
+	saveWrites  bool
+	savedWrites bytes.Buffer
 
 	retResultID object.ID
 	retResultE  error
@@ -421,6 +424,10 @@ func (wc *testWC) Write(b []byte) (int, error) {
 	if wc.retWriteErr == nil && retN == 0 {
 		retN = len(b)
 		wc.sumWriteN += retN
+
+		if wc.saveWrites {
+			io.Copy(&wc.savedWrites, bytes.NewBuffer(b))
+		}
 	}
 
 	return retN, wc.retWriteErr
@@ -435,12 +442,13 @@ type testRepo struct {
 	retOoR object.Reader
 	retOoE error
 
-	inNowO   object.WriterOptions
-	retNowW  object.Writer
-	genNowW  bool
-	genIDCnt int
-	genW     []*testWC // effective
-	genUseW  []*testWC // specified; sparse
+	inNowO     object.WriterOptions
+	retNowW    object.Writer
+	genNowW    bool
+	genIDCnt   int
+	genW       []*testWC // effective
+	genUseW    []*testWC // specified; sparse
+	saveWrites bool
 
 	retFE error
 }
@@ -457,7 +465,7 @@ func (r *testRepo) NewObjectWriter(ctx context.Context, opt object.WriterOptions
 	r.inNowO = opt
 	if r.genNowW { // generate writers on the fly based on option
 		isDir := opt.Prefix == "k"
-		tw := &testWC{retResultID: r.genID(isDir), isDir: isDir, desc: opt.Description}
+		tw := &testWC{retResultID: r.genID(isDir), isDir: isDir, desc: opt.Description, saveWrites: r.saveWrites}
 		idx := r.genIDCnt
 		if len(r.genUseW) > idx && r.genUseW[idx] != nil {
 			w := r.genUseW[idx]

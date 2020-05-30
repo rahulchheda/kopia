@@ -181,12 +181,10 @@ func (f *Filesystem) createSnapshotManifest(rootDir *dirMeta, psm *snapshot.Mani
 			CachedFiles:         int32(f.blockSzB),
 		},
 		RootEntry: &snapshot.DirEntry{
-			Name:        rootDir.name,
-			Type:        snapshot.EntryTypeDirectory,
-			ModTime:     f.epoch,
-			Permissions: 0700, // nolint:gomnd
-			ObjectID:    rootDir.oid,
-			DirSummary:  summary,
+			Name:       rootDir.name,
+			Type:       snapshot.EntryTypeDirectory,
+			ObjectID:   rootDir.oid,
+			DirSummary: summary,
 		},
 	}
 
