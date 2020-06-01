@@ -6,7 +6,6 @@ import (
 	"github.com/kopia/kopia/fs"
 	"github.com/kopia/kopia/internal/parallelwork"
 	"github.com/kopia/kopia/repo/object"
-	vmgr "github.com/kopia/kopia/volume/fake"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -36,13 +35,9 @@ func TestBmgFindRoots(t *testing.T) {
 	ctx, th := newVolFsTestHarness(t)
 	defer th.cleanup()
 
-	profile := &vmgr.ReaderProfile{
-		Ranges: []vmgr.BlockAddrRange{},
-	}
-
 	tRepo := &testRepo{}
 
-	f := th.fsForBackupTests(profile)
+	f := th.fs()
 	f.repo = tRepo
 	f.dirSz = 256
 	f.logger = log(ctx)
@@ -111,13 +106,9 @@ func TestBmgProcessChain(t *testing.T) {
 	ctx, th := newVolFsTestHarness(t)
 	defer th.cleanup()
 
-	profile := &vmgr.ReaderProfile{
-		Ranges: []vmgr.BlockAddrRange{},
-	}
-
 	tRepo := &testRepo{}
 
-	f := th.fsForBackupTests(profile)
+	f := th.fs()
 	f.repo = tRepo
 	f.dirSz = 8
 	f.depth = 2
@@ -206,13 +197,9 @@ func TestEffectiveBlockMap(t *testing.T) {
 	ctx, th := newVolFsTestHarness(t)
 	defer th.cleanup()
 
-	profile := &vmgr.ReaderProfile{
-		Ranges: []vmgr.BlockAddrRange{},
-	}
-
 	tRepo := &testRepo{}
 
-	f := th.fsForBackupTests(profile)
+	f := th.fs()
 	f.repo = tRepo
 	f.initLayoutProperties(4096, 8, 2) // reset for UT
 	f.logger = log(ctx)

@@ -22,13 +22,17 @@ type BackupArgs struct {
 	PreviousVolumeSnapshotID string
 	// TThe amount of concurrency during backup. 0 assigns a default value.
 	BackupConcurrency int
+	// The volume manager.
+	VolumeManager volume.Manager
+	// Profile containing location and credential information for the volume manager.
+	VolumeAccessProfile interface{}
 }
 
 // Validate checks the arguments for correctness.
 func (a *BackupArgs) Validate() error {
 	if (a.PreviousSnapshotID == "" && a.PreviousVolumeSnapshotID != "") ||
 		(a.PreviousSnapshotID != "" && a.PreviousVolumeSnapshotID == "") ||
-		a.BackupConcurrency < 0 {
+		a.BackupConcurrency < 0 || a.VolumeManager == nil || a.VolumeAccessProfile == nil {
 		return ErrInvalidArgs
 	}
 
@@ -44,15 +48,16 @@ func (f *Filesystem) Backup(ctx context.Context, args BackupArgs) (*Snapshot, er
 
 	f.logger = log(ctx)
 	f.epoch = time.Now()
+	f.logger.Debugf("backup volumeID[%s] VolumeSnapshotID[%s] PreviousSnapshotID[%s] PreviousVolumeSnapshotID[%s]", f.VolumeID, f.VolumeSnapshotID, args.PreviousVolumeSnapshotID, args.PreviousVolumeSnapshotID)
 
 	gbrArgs := volume.GetBlockReaderArgs{
 		VolumeID:           f.VolumeID,
 		SnapshotID:         f.VolumeSnapshotID,
 		PreviousSnapshotID: args.PreviousVolumeSnapshotID,
-		Profile:            f.VolumeAccessProfile,
+		Profile:            args.VolumeAccessProfile,
 	}
 
-	br, err := f.VolumeManager.GetBlockReader(gbrArgs)
+	br, err := args.VolumeManager.GetBlockReader(gbrArgs)
 	if err != nil {
 		return nil, err
 	}

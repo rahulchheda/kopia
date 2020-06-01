@@ -4,9 +4,6 @@ import (
 	"path"
 	"testing"
 
-	"github.com/kopia/kopia/volume"
-	vmgr "github.com/kopia/kopia/volume/fake"
-
 	"github.com/stretchr/testify/assert"
 )
 
@@ -17,15 +14,10 @@ func TestFilesystemArgs(t *testing.T) {
 	_, th := newVolFsTestHarness(t)
 	defer th.cleanup()
 
-	mgr := volume.FindManager(vmgr.VolumeType)
-	assert.NotNil(mgr)
-
 	tcs := []FilesystemArgs{
 		{},
 		{Repo: th.repo},
-		{Repo: th.repo, VolumeManager: mgr},
-		{Repo: th.repo, VolumeManager: mgr, VolumeID: "volid"},
-		{Repo: th.repo, VolumeManager: mgr, VolumeID: "volid", VolumeSnapshotID: "volSnapID"},
+		{Repo: th.repo, VolumeID: "volid"},
 	}
 	for i, tc := range tcs {
 		assert.Error(tc.Validate(), "case %d", i)
@@ -35,11 +27,9 @@ func TestFilesystemArgs(t *testing.T) {
 	}
 
 	fa := FilesystemArgs{
-		Repo:                th.repo,
-		VolumeManager:       mgr,
-		VolumeID:            "volID",
-		VolumeSnapshotID:    "volSnapID1",
-		VolumeAccessProfile: &mgr, // just to make it not-nil
+		Repo:             th.repo,
+		VolumeID:         "volID",
+		VolumeSnapshotID: "volSnapID1",
 	}
 	t.Logf("%#v", fa)
 	assert.NoError(fa.Validate())
@@ -56,7 +46,7 @@ func TestCreateRoot(t *testing.T) {
 	ctx, th := newVolFsTestHarness(t)
 	defer th.cleanup()
 
-	f := th.fsForBackupTests(nil)
+	f := th.fs()
 	f.logger = log(ctx)
 
 	cur := &dirMeta{name: currentSnapshotDirName}

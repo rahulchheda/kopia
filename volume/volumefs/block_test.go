@@ -3,8 +3,6 @@ package volumefs
 import (
 	"testing"
 
-	vmgr "github.com/kopia/kopia/volume/fake"
-
 	"github.com/stretchr/testify/assert"
 )
 
@@ -15,13 +13,9 @@ func TestBlock(t *testing.T) {
 	ctx, th := newVolFsTestHarness(t)
 	defer th.cleanup()
 
-	profile := &vmgr.ReaderProfile{
-		Ranges: []vmgr.BlockAddrRange{},
-	}
-
 	tRepo := &testRepo{}
 
-	f := th.fsForBackupTests(profile)
+	f := th.fs()
 	assert.NotNil(f.blockPool.New)
 	assert.Equal(f.Repo, f.repo)
 	f.repo = tRepo

@@ -16,7 +16,7 @@ func TestMetadataRecovery(t *testing.T) {
 	ctx, th := newVolFsTestHarness(t)
 	defer th.cleanup()
 
-	f := th.fsForBackupTests(nil)
+	f := th.fs()
 	f.logger = log(ctx)
 
 	for _, tc := range []struct {

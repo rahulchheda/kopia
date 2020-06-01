@@ -16,10 +16,15 @@ import (
 func TestBackupArgs(t *testing.T) {
 	assert := assert.New(t)
 
+	mgr := volume.FindManager(vmgr.VolumeType)
+	assert.NotNil(mgr)
+
 	badTcs := []BackupArgs{
+		{},
 		{BackupConcurrency: -1},
 		{PreviousSnapshotID: "snapID"},
 		{PreviousVolumeSnapshotID: "volSnapID"},
+		{VolumeManager: mgr},
 	}
 	for i, tc := range badTcs {
 		t.Logf("Case: %d", i)
@@ -27,13 +32,15 @@ func TestBackupArgs(t *testing.T) {
 	}
 
 	goodTcs := []BackupArgs{
-		{},
+		{}, // not really empty - manager/profile added in loop
 		{BackupConcurrency: 10},
 		{PreviousSnapshotID: "snapID", PreviousVolumeSnapshotID: "volSnapID"},
 		{PreviousSnapshotID: "snapID", PreviousVolumeSnapshotID: "volSnapID", BackupConcurrency: 10},
 	}
 	for i, tc := range goodTcs {
 		t.Logf("Case: %d", i)
+		tc.VolumeManager = mgr
+		tc.VolumeAccessProfile = &mgr // just has to be not-nil for Validate()
 		assert.NoError(tc.Validate())
 	}
 }
@@ -42,6 +49,8 @@ func TestBackupArgs(t *testing.T) {
 func TestBackup(t *testing.T) {
 	assert := assert.New(t)
 
+	mgr := volume.FindManager(vmgr.VolumeType)
+	assert.NotNil(mgr)
 	profile := &vmgr.ReaderProfile{
 		Ranges: []vmgr.BlockAddrRange{
 			{Start: 0, Count: 1},
@@ -58,7 +67,10 @@ func TestBackup(t *testing.T) {
 		ctx, th := newVolFsTestHarness(t)
 		defer th.cleanup()
 
-		ba := BackupArgs{}
+		ba := BackupArgs{
+			VolumeManager:       mgr,
+			VolumeAccessProfile: profile,
+		}
 		tbr := &testBR{}
 		tvm := &testVM{}
 		tvm.retGbrBR = tbr
@@ -74,9 +86,9 @@ func TestBackup(t *testing.T) {
 		tbp.retCrDm = rDm
 		tbp.retCsS = cMan
 
-		f := th.fsForBackupTests(profile)
+		f := th.fs()
 		assert.Equal(f, f.bp)
-		f.VolumeManager = tvm
+		ba.VolumeManager = tvm
 		f.bp = tbp
 
 		var expError error
@@ -160,7 +172,7 @@ func TestBackupBlocks(t *testing.T) {
 	} {
 		t.Logf("Case: %s", tc)
 
-		f := th.fsForBackupTests(nil)
+		f := th.fs()
 		f.logger = log(ctx)
 		f.blockSzB = 4096
 

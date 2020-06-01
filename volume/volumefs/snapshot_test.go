@@ -10,7 +10,6 @@ import (
 	"github.com/kopia/kopia/repo"
 	"github.com/kopia/kopia/repo/manifest"
 	"github.com/kopia/kopia/snapshot"
-	vmgr "github.com/kopia/kopia/volume/fake"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -60,7 +59,7 @@ func TestInitFromSnapshot(t *testing.T) {
 	ctx, th := newVolFsTestHarness(t)
 	defer th.cleanup()
 
-	f := th.fsForBackupTests(&vmgr.ReaderProfile{})
+	f := th.fs()
 	f.logger = log(ctx)
 	assert.NotNil(f.sp)
 
@@ -132,7 +131,7 @@ func TestCommitSnapshot(t *testing.T) {
 	ctx, th := newVolFsTestHarness(t)
 	defer th.cleanup()
 
-	f := th.fsForBackupTests(nil)
+	f := th.fs()
 	f.logger = log(ctx)
 	f.VolumeID = "VolumeID"
 	f.VolumeSnapshotID = "VolumeSnapshotID"
@@ -250,7 +249,7 @@ func TestLinkPreviousSnapshot(t *testing.T) {
 		tsp.retLsM = manifests
 		tsp.retSrEntry = &testDirEntry{retReadDirE: expEntries}
 
-		f := th.fsForBackupTests(nil)
+		f := th.fs()
 		f.logger = log(ctx)
 		f.sp = tsp
 		f.setMetadata(metadata{}) // clear all

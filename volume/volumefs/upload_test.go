@@ -11,7 +11,6 @@ import (
 	"github.com/kopia/kopia/fs"
 	"github.com/kopia/kopia/repo/object"
 	"github.com/kopia/kopia/snapshot"
-	vmgr "github.com/kopia/kopia/volume/fake"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -22,10 +21,6 @@ func TestWriteFileToRepo(t *testing.T) {
 
 	ctx, th := newVolFsTestHarness(t)
 	defer th.cleanup()
-
-	profile := &vmgr.ReaderProfile{
-		Ranges: []vmgr.BlockAddrRange{},
-	}
 
 	for _, tc := range []string{
 		"no src", "src", "copy err", "writer err",
@@ -46,7 +41,7 @@ func TestWriteFileToRepo(t *testing.T) {
 		tWC.retResultID = object.ID("oid")
 		tRepo := &testRepo{}
 		tRepo.retNowW = tWC
-		f := th.fsForBackupTests(profile)
+		f := th.fs()
 		f.repo = tRepo
 		f.logger = log(ctx)
 		f.layoutProperties.initLayoutProperties(expSz, 8, 2) // reset for this test
@@ -92,10 +87,6 @@ func TestWriteDirToRepo(t *testing.T) {
 	ctx, th := newVolFsTestHarness(t)
 	defer th.cleanup()
 
-	profile := &vmgr.ReaderProfile{
-		Ranges: []vmgr.BlockAddrRange{},
-	}
-
 	for _, tc := range []string{
 		"root only", "subtree", "subtree error",
 		"subdir missing oid", "subdir missing summary", "file missing oid",
@@ -105,7 +96,7 @@ func TestWriteDirToRepo(t *testing.T) {
 
 		tRepo := &testRepo{}
 		tRepo.genNowW = true
-		f := th.fsForBackupTests(profile)
+		f := th.fs()
 		f.repo = tRepo
 		f.logger = log(ctx)
 		f.layoutProperties.initLayoutProperties(4096, 8, 2) // reset for this test

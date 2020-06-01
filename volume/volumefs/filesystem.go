@@ -26,7 +26,6 @@ import (
 	"github.com/kopia/kopia/repo/logging"
 	"github.com/kopia/kopia/repo/object"
 	"github.com/kopia/kopia/snapshot"
-	"github.com/kopia/kopia/volume"
 )
 
 var log = logging.GetContextLoggerFunc("volume/filesystem")
@@ -44,19 +43,15 @@ var (
 type FilesystemArgs struct {
 	// The repository.
 	Repo repo.Repository
-	// The volume manager.
-	VolumeManager volume.Manager
-	// The identifier of the volume being backed up or restored.
+	// The identifier of the volume.
 	VolumeID string
-	// The identifier of the volume snapshot being backed up or restored.
+	// The identifier of the volume snapshot.
 	VolumeSnapshotID string
-	// Profile containing location and credential information needed to access the volume.
-	VolumeAccessProfile interface{}
 }
 
 // Validate checks for required fields
 func (a *FilesystemArgs) Validate() error {
-	if a.Repo == nil || a.VolumeManager == nil || a.VolumeID == "" || a.VolumeSnapshotID == "" || a.VolumeAccessProfile == nil {
+	if a.Repo == nil || a.VolumeID == "" || a.VolumeSnapshotID == "" {
 		return ErrInvalidArgs
 	}
 

@@ -43,18 +43,24 @@ func runVolBackupCommand(ctx context.Context, rep repo.Repository) error {
 		VolumeSnapshotID: *volBackupCommandVolSnapID,
 	}
 
-	fsArgs.VolumeManager = volume.FindManager(*volBackupCommandType)
-	if fsArgs.VolumeManager == nil {
+	backupArgs := volumefs.BackupArgs{
+		PreviousSnapshotID:       *volBackupCommandPrevSnapID,
+		PreviousVolumeSnapshotID: *volBackupCommandPrevVolSnapID,
+		BackupConcurrency:        *volBackupCommandConcurrency,
+	}
+
+	backupArgs.VolumeManager = volume.FindManager(*volBackupCommandType)
+	if backupArgs.VolumeManager == nil {
 		return fmt.Errorf("volume type not supported")
 	}
 
-	switch fsArgs.VolumeManager.Type() { // setup manager type specific profiles
+	switch backupArgs.VolumeManager.Type() { // setup manager type specific profiles
 	case fmgr.VolumeType:
-		fsArgs.VolumeAccessProfile = *volBackupCommandFakeProfile
+		backupArgs.VolumeAccessProfile = *volBackupCommandFakeProfile
 	case blockfile.VolumeType:
 		bfp := &blockfile.Profile{}
 		bfp.Name = *volBackupCommandBlockfile
-		fsArgs.VolumeAccessProfile = bfp
+		backupArgs.VolumeAccessProfile = bfp
 	default:
 		break
 	}
@@ -62,12 +68,6 @@ func runVolBackupCommand(ctx context.Context, rep repo.Repository) error {
 	f, err := volumefs.New(fsArgs)
 	if err != nil {
 		return err
-	}
-
-	backupArgs := volumefs.BackupArgs{
-		PreviousSnapshotID:       *volBackupCommandPrevSnapID,
-		PreviousVolumeSnapshotID: *volBackupCommandPrevVolSnapID,
-		BackupConcurrency:        *volBackupCommandConcurrency,
 	}
 
 	result, err := f.Backup(ctx, backupArgs)

@@ -28,11 +28,15 @@ func runVolRestoreCommand(ctx context.Context, rep repo.Repository) error {
 	fsArgs := &volumefs.FilesystemArgs{
 		Repo:             rep,
 		VolumeID:         *volRestoreCommandVolID,
-		VolumeSnapshotID: "snapID", // required for Validate() only
+		VolumeSnapshotID: *volRestoreCommandSnapID,
 	}
 
-	fsArgs.VolumeManager = volume.FindManager(blockfile.VolumeType)
-	if fsArgs.VolumeManager == nil {
+	restoreArgs := volumefs.RestoreArgs{
+		RestoreConcurrency: *volRestoreCommandConcurrency,
+	}
+
+	restoreArgs.VolumeManager = volume.FindManager(blockfile.VolumeType)
+	if restoreArgs.VolumeManager == nil {
 		return fmt.Errorf("blockfile not found")
 	}
 
@@ -41,19 +45,14 @@ func runVolRestoreCommand(ctx context.Context, rep repo.Repository) error {
 		CreateIfMissing:      *volRestoreCommandCreate,
 		DeviceBlockSizeBytes: *volRestoreCommandBlockSize,
 	}
-	fsArgs.VolumeAccessProfile = wp
+	restoreArgs.VolumeAccessProfile = wp
 
 	f, err := volumefs.New(fsArgs)
 	if err != nil {
 		return err
 	}
 
-	args := volumefs.RestoreArgs{
-		PreviousSnapshotID: *volRestoreCommandSnapID,
-		RestoreConcurrency: *volRestoreCommandConcurrency,
-	}
-
-	res, err := f.Restore(ctx, args)
+	res, err := f.Restore(ctx, restoreArgs)
 
 	if err == nil {
 		fmt.Printf("%#v\n", res)

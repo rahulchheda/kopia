@@ -73,7 +73,7 @@ func TestLayout(t *testing.T) {
 	}
 
 	// Test address to path
-	f := th.fsForBackupTests(nil)
+	f := th.fs()
 	assert.Equal(snapshotBlockSize, f.GetBlockSize())
 	assert.Equal(snapshotBlockSize, f.blockSzB)
 	assert.Equal(maxDirEntries, f.dirSz)

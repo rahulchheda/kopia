@@ -18,8 +18,6 @@ import (
 	"github.com/kopia/kopia/repo/blob/filesystem"
 	"github.com/kopia/kopia/repo/object"
 	"github.com/kopia/kopia/volume"
-	"github.com/kopia/kopia/volume/blockfile"
-	vmgr "github.com/kopia/kopia/volume/fake"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -89,50 +87,17 @@ func (th *volFsTestHarness) cleanup() {
 }
 
 // nolint:wsl,gocritic
-func (th *volFsTestHarness) fsForBackupTests(profile interface{}) *Filesystem {
+func (th *volFsTestHarness) fs() *Filesystem {
 	if th.retFS != nil {
 		return th.retFS
 	}
 
 	assert := assert.New(th.t)
 
-	mgr := volume.FindManager(vmgr.VolumeType)
-	assert.NotNil(mgr)
-
-	if profile == nil { // test does not need the profile but validate does
-		profile = &mgr
-	}
-
 	fa := &FilesystemArgs{
-		Repo:                th.repo,
-		VolumeManager:       mgr,
-		VolumeID:            "volID",
-		VolumeSnapshotID:    "volSnapID",
-		VolumeAccessProfile: profile,
-	}
-	th.t.Logf("%#v", fa)
-	assert.NoError(fa.Validate())
-
-	f, err := New(fa)
-	assert.NoError(err)
-	assert.NotNil(f)
-
-	return f
-}
-
-// nolint:wsl,gocritic
-func (th *volFsTestHarness) fsForRestoreTests(p *blockfile.Profile) *Filesystem {
-	assert := assert.New(th.t)
-
-	mgr := volume.FindManager(blockfile.VolumeType)
-	assert.NotNil(mgr)
-
-	fa := &FilesystemArgs{
-		Repo:                th.repo,
-		VolumeManager:       mgr,
-		VolumeID:            "volID",
-		VolumeSnapshotID:    "volSnapID1",
-		VolumeAccessProfile: p,
+		Repo:             th.repo,
+		VolumeID:         "volID",
+		VolumeSnapshotID: "volSnapID",
 	}
 	th.t.Logf("%#v", fa)
 	assert.NoError(fa.Validate())

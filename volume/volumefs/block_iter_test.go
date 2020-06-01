@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/kopia/kopia/repo/object"
-	vmgr "github.com/kopia/kopia/volume/fake"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -17,11 +16,7 @@ func TestBlockIter(t *testing.T) {
 	ctx, th := newVolFsTestHarness(t)
 	defer th.cleanup()
 
-	profile := &vmgr.ReaderProfile{
-		Ranges: []vmgr.BlockAddrRange{},
-	}
-
-	f := th.fsForBackupTests(profile)
+	f := th.fs()
 	f.logger = log(ctx)
 
 	// prime the block map iter with some values and run it in the background

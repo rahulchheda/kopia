@@ -16,9 +16,13 @@ import (
 func TestRestoreArgs(t *testing.T) {
 	assert := assert.New(t)
 
+	mgr := volume.FindManager(blockfile.VolumeType)
+	assert.NotNil(mgr)
+
 	badTcs := []RestoreArgs{
 		{},
-		{PreviousSnapshotID: "snapID", RestoreConcurrency: -1},
+		{RestoreConcurrency: -1},
+		{VolumeManager: mgr},
 	}
 	for i, tc := range badTcs {
 		t.Logf("Case: %d", i)
@@ -26,11 +30,13 @@ func TestRestoreArgs(t *testing.T) {
 	}
 
 	goodTcs := []RestoreArgs{
-		{PreviousSnapshotID: "snapID"},
-		{PreviousSnapshotID: "snapID", RestoreConcurrency: 10},
+		{}, // not really empty - manager/profile added in loop
+		{RestoreConcurrency: 10},
 	}
 	for i, tc := range goodTcs {
 		t.Logf("Case: %d", i)
+		tc.VolumeManager = mgr
+		tc.VolumeAccessProfile = &mgr // just has to be not-nil for Validate()
 		assert.NoError(tc.Validate())
 	}
 }
@@ -39,6 +45,8 @@ func TestRestoreArgs(t *testing.T) {
 func TestRestore(t *testing.T) {
 	assert := assert.New(t)
 
+	mgr := volume.FindManager(blockfile.VolumeType)
+	assert.NotNil(mgr)
 	profile := &blockfile.Profile{}
 	man := &snapshot.Manifest{
 		RootEntry: &snapshot.DirEntry{
@@ -56,10 +64,12 @@ func TestRestore(t *testing.T) {
 		"invalid args", "no gbw", "ifs error", "ebm error", "gbw error",
 		"PutBlocks error", "success default concurrency", "success explicit concurrency",
 	} {
+		t.Logf("Case: %s", tc)
+
 		ctx, th := newVolFsTestHarness(t)
 		defer th.cleanup()
 
-		ra := RestoreArgs{PreviousSnapshotID: "snapID"}
+		ra := RestoreArgs{VolumeAccessProfile: profile}
 		tbw := &testBW{}
 		tvm := &testVM{}
 		tvm.retGbwBW = []volume.BlockWriter{nil, tbw}
@@ -75,9 +85,9 @@ func TestRestore(t *testing.T) {
 		trp.retEbmBm = tbm
 		trp.retNbiBi = bi
 
-		f := th.fsForRestoreTests(profile)
+		f := th.fs()
 		assert.Equal(f, f.bp)
-		f.VolumeManager = tvm
+		ra.VolumeManager = tvm
 		f.rp = trp
 
 		var expError error
@@ -117,12 +127,12 @@ func TestRestore(t *testing.T) {
 			assert.Equal(bi.BlockIterStats, res.BlockIterStats)
 			assert.Equal(bi, tbw.inPutBlocksBI)
 			assert.Equal(bmi, trp.inNbiB)
-			expGbwArgs := volume.GetBlockWriterArgs{VolumeID: f.VolumeID, Profile: f.VolumeAccessProfile}
+			expGbwArgs := volume.GetBlockWriterArgs{VolumeID: f.VolumeID, Profile: ra.VolumeAccessProfile}
 			assert.Equal(expGbwArgs, tvm.gbwA)
 			assert.Equal(int(man.Stats.NonCachedFiles), trp.inEbmCl)
 			assert.Equal(rootEntry, trp.inEbmR)
 			assert.Equal(expConcurrency, trp.inEbmC)
-			assert.Equal(ra.PreviousSnapshotID, trp.inIfsS)
+			assert.Equal(f.VolumeSnapshotID, trp.inIfsS)
 		} else {
 			assert.Error(expError, err)
 			assert.Nil(res)

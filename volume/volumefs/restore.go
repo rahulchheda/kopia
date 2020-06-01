@@ -15,15 +15,17 @@ const (
 
 // RestoreArgs contain arguments to the Restore method.
 type RestoreArgs struct {
-	// The identifier of the previous snapshot if this is an incremental.
-	PreviousSnapshotID string
 	// The amount of concurrency during restore. 0 assigns a default value.
 	RestoreConcurrency int
+	// The volume manager.
+	VolumeManager volume.Manager
+	// Profile containing location and credential information for the volume manager.
+	VolumeAccessProfile interface{}
 }
 
 // Validate checks the arguments for correctness.
 func (a *RestoreArgs) Validate() error {
-	if a.PreviousSnapshotID == "" || a.RestoreConcurrency < 0 {
+	if a.RestoreConcurrency < 0 || a.VolumeManager == nil || a.VolumeAccessProfile == nil {
 		return ErrInvalidArgs
 	}
 
@@ -43,19 +45,19 @@ func (f *Filesystem) Restore(ctx context.Context, args RestoreArgs) (*RestoreRes
 	}
 
 	f.logger = log(ctx)
+	f.logger.Debugf("restore volumeID[%s] VolumeSnapshotID[%s]", f.VolumeID, f.VolumeSnapshotID)
 
 	// early check that the volume manager has a block writer
-	if _, err := f.VolumeManager.GetBlockWriter(volume.GetBlockWriterArgs{}); err == volume.ErrNotSupported {
+	if _, err := args.VolumeManager.GetBlockWriter(volume.GetBlockWriterArgs{}); err == volume.ErrNotSupported {
 		return nil, err
 	}
 
-	man, rootEntry, md, err := f.rp.initFromSnapshot(ctx, args.PreviousSnapshotID)
+	man, rootEntry, _, err := f.rp.initFromSnapshot(ctx, f.VolumeSnapshotID)
 	if err != nil {
 		return nil, err
 	}
 
 	chainLen := int(man.Stats.NonCachedFiles)
-	f.logger.Debugf("md: %#v l=%d", md, chainLen)
 
 	concurrency := DefaultRestoreConcurrency
 	if args.RestoreConcurrency > 0 {
@@ -70,14 +72,11 @@ func (f *Filesystem) Restore(ctx context.Context, args RestoreArgs) (*RestoreRes
 	// initialize the block writer for real
 	gbwArgs := volume.GetBlockWriterArgs{
 		VolumeID: f.VolumeID,
-		Profile:  f.VolumeAccessProfile,
+		Profile:  args.VolumeAccessProfile,
 	}
 
-	f.logger.Debugf("gbw: %#v=%#v", gbwArgs, gbwArgs.Profile)
-
-	bw, err := f.VolumeManager.GetBlockWriter(gbwArgs)
+	bw, err := args.VolumeManager.GetBlockWriter(gbwArgs)
 	if err != nil {
-		f.logger.Debugf("get block writer: %v", err)
 		return nil, err
 	}
 
