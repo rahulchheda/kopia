@@ -13,6 +13,16 @@
 // with underlying support for change-block-tracking: only the snapshot blocks changed
 // since the previous volume snapshot need be considered, as the filesystem recovers
 // its previous state from the repository.
+//
+// The exposed methods of this package are:
+// - ListSnapshots - returns volume snapshots
+// - New - creates an instance of this filesystem.
+//
+// The filesystem exposes the following methods:
+// - Backup
+// - Restore
+// - Compact
+// - ListSnapshots
 package volumefs
 
 import (
@@ -113,23 +123,4 @@ func New(args *FilesystemArgs) (*Filesystem, error) {
 	f.repo = f.Repo
 
 	return f, nil
-}
-
-// createRoot creates the root directory with references to current, previous and meta.
-func (f *Filesystem) createRoot(ctx context.Context, curDm, prevRootDm *dirMeta) (*dirMeta, error) {
-	rootDir := &dirMeta{
-		name: "/",
-	}
-
-	rootDir.insertSubdir(curDm)
-
-	if prevRootDm != nil {
-		rootDir.insertSubdir(prevRootDm)
-	}
-
-	if err := f.createMetadataFiles(ctx, rootDir); err != nil {
-		return nil, err
-	}
-
-	return rootDir, nil
 }

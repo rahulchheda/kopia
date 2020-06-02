@@ -288,10 +288,20 @@ func TestLinkPreviousSnapshot(t *testing.T) {
 }
 
 type testSnapshotProcessor struct {
+	inLsmR  repo.Repository
+	inLsmS  *snapshot.SourceInfo
+	retLsmM []manifest.ID
+	retLsmE error
+
 	inLsR  repo.Repository
 	inLsS  snapshot.SourceInfo
 	retLsM []*snapshot.Manifest
 	retLsE error
+
+	inLosR  repo.Repository
+	inLosM  []manifest.ID
+	retLosM []*snapshot.Manifest
+	retLosE error
 
 	retSrEntry fs.Entry
 
@@ -302,6 +312,26 @@ type testSnapshotProcessor struct {
 }
 
 var _ snapshotProcessor = (*testSnapshotProcessor)(nil)
+
+// nolint:gocritic
+func (tsp *testSnapshotProcessor) ListSnapshotManifests(ctx context.Context, repo repo.Repository, src *snapshot.SourceInfo) ([]manifest.ID, error) {
+	tsp.inLsmR = repo
+	tsp.inLsmS = src
+
+	if tsp.retLsmE != nil {
+		sh := &snapshotHelper{} // call the real thing to check that it works
+
+		m, err := sh.ListSnapshotManifests(ctx, repo, src)
+
+		if err != nil || len(m) == 0 { // behavior?
+			return nil, tsp.retLsE
+		}
+
+		panic("failed to fail")
+	}
+
+	return tsp.retLsmM, tsp.retLsmE
+}
 
 // nolint:gocritic
 func (tsp *testSnapshotProcessor) ListSnapshots(ctx context.Context, repo repo.Repository, si snapshot.SourceInfo) ([]*snapshot.Manifest, error) {
@@ -321,6 +351,26 @@ func (tsp *testSnapshotProcessor) ListSnapshots(ctx context.Context, repo repo.R
 	}
 
 	return tsp.retLsM, tsp.retLsE
+}
+
+// nolint:gocritic
+func (tsp *testSnapshotProcessor) LoadSnapshots(ctx context.Context, repo repo.Repository, manifestIDs []manifest.ID) ([]*snapshot.Manifest, error) {
+	tsp.inLosR = repo
+	tsp.inLosM = manifestIDs
+
+	if tsp.retLsmE != nil {
+		sh := &snapshotHelper{} // call the real thing to check that it works
+
+		m, err := sh.LoadSnapshots(ctx, repo, manifestIDs)
+
+		if err != nil || len(m) == 0 { // behavior?
+			return nil, tsp.retLsE
+		}
+
+		panic("failed to fail")
+	}
+
+	return tsp.retLosM, tsp.retLosE
 }
 
 // nolint:gocritic

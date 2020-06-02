@@ -35,9 +35,9 @@ func (a *CompactArgs) Validate() error {
 // Note that this cannot operate concurrently with an incremental snapshot that references the
 // snapshot being compacted (i.e. the "head" snapshot), but is safe for concurrent use if the
 // latest incremental references a later snapshot.
-func (f *Filesystem) Compact(ctx context.Context, args CompactArgs) (*Snapshot, error) {
-	if err := args.Validate(); err != nil {
-		return nil, err
+func (f *Filesystem) Compact(ctx context.Context, args CompactArgs) (current, previous *Snapshot, err error) {
+	if err := args.Validate(); err != nil { // nolint: govet
+		return nil, nil, err
 	}
 
 	f.logger = log(ctx)
@@ -46,7 +46,7 @@ func (f *Filesystem) Compact(ctx context.Context, args CompactArgs) (*Snapshot, 
 
 	man, rootEntry, _, err := f.cp.initFromSnapshot(ctx, f.VolumeSnapshotID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	chainLen := int(man.Stats.NonCachedFiles)
@@ -58,7 +58,7 @@ func (f *Filesystem) Compact(ctx context.Context, args CompactArgs) (*Snapshot, 
 
 	bm, err := f.cp.effectiveBlockMap(ctx, chainLen, rootEntry, concurrency)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	var (
@@ -76,10 +76,13 @@ func (f *Filesystem) Compact(ctx context.Context, args CompactArgs) (*Snapshot, 
 	}
 
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return &Snapshot{Current: curMan, Previous: man}, nil
+	current = &Snapshot{Manifest: curMan}
+	previous = &Snapshot{Manifest: man}
+
+	return // nolint:nakedret
 }
 
 type compactProcessor interface {

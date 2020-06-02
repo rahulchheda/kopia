@@ -88,7 +88,7 @@ func (f *Filesystem) Backup(ctx context.Context, args BackupArgs) (*Snapshot, er
 		return nil, err
 	}
 
-	return &Snapshot{Current: curMan, Previous: prevMan}, nil
+	return &Snapshot{Manifest: curMan}, nil
 }
 
 // backupProcessor aids in unit testing

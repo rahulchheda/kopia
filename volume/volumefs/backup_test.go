@@ -147,7 +147,7 @@ func TestBackup(t *testing.T) {
 			assert.Equal(rDm, tbp.inCsRDm)
 		case "success":
 			assert.Equal(pMan, tbp.inCsPS)
-			assert.Equal(cMan, snap.Current)
+			assert.Equal(cMan, snap.Manifest)
 		}
 	}
 }

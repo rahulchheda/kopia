@@ -3,6 +3,7 @@ package volumefs
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/kopia/kopia/fs"
@@ -16,12 +17,15 @@ const (
 	currentSnapshotDirName  = "t"
 	previousSnapshotDirName = "p"
 	directoryStreamType     = "kopia:directory" // copied from snapshot
+	descriptionSeparator    = ":"
 )
 
-// Snapshot returns a snapshot manifest.
+// Snapshot returns data on a volume snapshot.
 type Snapshot struct {
-	Current  *snapshot.Manifest
-	Previous *snapshot.Manifest
+	VolumeID         string
+	VolumeSnapshotID string
+	Manifest         *snapshot.Manifest
+	SnapshotAnalysis
 }
 
 // SnapshotAnalysis analyzes the data in a snapshot manifest.
@@ -51,11 +55,13 @@ func (sa *SnapshotAnalysis) Analyze(man *snapshot.Manifest) {
 	sa.ChainedNumDirs = cs.ExcludedDirCount
 }
 
-// snapshotProcessor aids in unit testing
+// snapshotProcessor is an interface to Kopia snapshot methods
 type snapshotProcessor interface {
+	ListSnapshotManifests(ctx context.Context, rep repo.Repository, src *snapshot.SourceInfo) ([]manifest.ID, error)
 	ListSnapshots(ctx context.Context, repo repo.Repository, si snapshot.SourceInfo) ([]*snapshot.Manifest, error)
-	SnapshotRoot(rep repo.Repository, man *snapshot.Manifest) (fs.Entry, error)
+	LoadSnapshots(ctx context.Context, rep repo.Repository, manifestIDs []manifest.ID) ([]*snapshot.Manifest, error)
 	SaveSnapshot(ctx context.Context, rep repo.Repository, man *snapshot.Manifest) (manifest.ID, error)
+	SnapshotRoot(rep repo.Repository, man *snapshot.Manifest) (fs.Entry, error)
 }
 
 type snapshotHelper struct{}
@@ -63,8 +69,18 @@ type snapshotHelper struct{}
 var _ snapshotProcessor = (*snapshotHelper)(nil)
 
 // nolint:gocritic
+func (sh *snapshotHelper) ListSnapshotManifests(ctx context.Context, repo repo.Repository, src *snapshot.SourceInfo) ([]manifest.ID, error) {
+	return snapshot.ListSnapshotManifests(ctx, repo, src)
+}
+
+// nolint:gocritic
 func (sh *snapshotHelper) ListSnapshots(ctx context.Context, repo repo.Repository, si snapshot.SourceInfo) ([]*snapshot.Manifest, error) {
 	return snapshot.ListSnapshots(ctx, repo, si)
+}
+
+// nolint:gocritic
+func (sh *snapshotHelper) LoadSnapshots(ctx context.Context, repo repo.Repository, manifestIDs []manifest.ID) ([]*snapshot.Manifest, error) {
+	return snapshot.LoadSnapshots(ctx, repo, manifestIDs)
 }
 
 // nolint:gocritic
@@ -207,7 +223,18 @@ func (f *Filesystem) snapshotDescription(volSnapID string) string {
 		volSnapID = f.VolumeSnapshotID
 	}
 
-	return fmt.Sprintf("volume:%s:%s", f.VolumeID, volSnapID)
+	return fmt.Sprintf("volume%s%s%s%s", descriptionSeparator, f.VolumeID, descriptionSeparator, volSnapID)
+}
+
+// parseSnapshotDescription parses the Description field of a manifest and extracts the volume and snapshot.
+// nolint:gocritic
+func (f *Filesystem) parseSnapshotDescription(m *snapshot.Manifest) (string, string) {
+	parts := strings.SplitN(m.Description, descriptionSeparator, 3)
+	if len(parts) != 3 || parts[0] != "volume" {
+		return "", ""
+	}
+
+	return parts[1], parts[2]
 }
 
 // linkToPreviousSnapshot finds the previous snapshot and returns its dirMeta entry.
