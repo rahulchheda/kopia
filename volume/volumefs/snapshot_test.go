@@ -2,7 +2,6 @@ package volumefs
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
@@ -41,18 +40,17 @@ func TestSnapshotAnalysis(t *testing.T) {
 		CachedFiles:    int32(expSA.BlockSizeBytes),
 		NonCachedFiles: int32(expSA.ChainLength),
 	}
-	curSM := &snapshot.Manifest{
+	sm := &snapshot.Manifest{
 		Stats: curStats,
 	}
-	s := Snapshot{
-		Current: curSM,
-	}
 
-	assert.Equal(expSA, s.Analyze())
-	assert.Equal(SnapshotAnalysis{}, (&Snapshot{}).Analyze())
+	sa := SnapshotAnalysis{}
+	sa.Analyze(sm)
+
+	assert.Equal(expSA, sa)
 }
 
-// nolint:gocritic
+// nolint:wsl,gocritic
 func TestInitFromSnapshot(t *testing.T) {
 	assert := assert.New(t)
 
@@ -63,16 +61,15 @@ func TestInitFromSnapshot(t *testing.T) {
 	f.logger = log(ctx)
 	assert.NotNil(f.sp)
 
-	manifests := []*snapshot.Manifest{
-		{RootEntry: &snapshot.DirEntry{ObjectID: "k2313ef907f3b250b331aed988802e4c5", Type: snapshot.EntryTypeDirectory}},
-		{RootEntry: &snapshot.DirEntry{ObjectID: "k72d04e1f67ac38946b29c146fbea44fc", Type: snapshot.EntryTypeDirectory}},
-		{RootEntry: &snapshot.DirEntry{ObjectID: "kf9fb0e450bba821a1c35585d48eaff04", Type: snapshot.EntryTypeFile}}, // not-a-dir
-	}
-
 	expMD, _, expEntries := generateTestMetaData()
+	manifests, tSnap := th.generateTestManifests(expMD)
+	manifests = append(manifests, &snapshot.Manifest{
+		Description: f.snapshotDescription("not-a-dir"),
+		RootEntry:   &snapshot.DirEntry{ObjectID: "kf9fb0e450bba821a1c35585d48eaff04", Type: snapshot.EntryTypeFile},
+	})
 
 	for _, tc := range []string{
-		"invalid-snapid", "list error", "not found", "not-a-dir", "metadata error", "initialized",
+		"list error", "not found", "not-a-dir", "metadata error", "initialized",
 	} {
 		t.Logf("Case: %s", tc)
 
@@ -81,22 +78,18 @@ func TestInitFromSnapshot(t *testing.T) {
 		f.sp = tsp
 
 		var expError error
-
-		oid := string(manifests[1].RootObjectID())
+		prevVolSnapshotID := expMD.VolSnapID
 
 		switch tc {
-		case "invalid-snapid":
-			oid = "not-a-snap-id"
-			expError = fmt.Errorf("invalid contentID suffix")
 		case "list error":
 			expError = ErrInternalError
 			tsp.retLsM = nil
 			tsp.retLsE = expError
 		case "not found":
-			oid = "k785f33b8bcccffa4aac1dabb89cf5a71"
+			prevVolSnapshotID = "foo"
 			expError = ErrSnapshotNotFound
 		case "not-a-dir":
-			oid = "kf9fb0e450bba821a1c35585d48eaff04"
+			prevVolSnapshotID = "not-a-dir"
 			expError = ErrInvalidSnapshot
 		case "metadata error":
 			expError = ErrOutOfRange
@@ -105,13 +98,13 @@ func TestInitFromSnapshot(t *testing.T) {
 			tsp.retSrEntry = &testDirEntry{retReadDirE: expEntries}
 		}
 
-		m, de, md, err := f.initFromSnapshot(ctx, oid)
+		m, de, md, err := f.initFromSnapshot(ctx, prevVolSnapshotID)
 
 		if expError == nil {
 			assert.NoError(err)
 			assert.NotNil(m)
 			assert.NotNil(de)
-			assert.EqualValues(oid, m.RootObjectID())
+			assert.Equal(tSnap, m.EndTime)
 
 			if tc == "initialized" {
 				assert.Equal(expMD, md)
@@ -235,10 +228,8 @@ func TestLinkPreviousSnapshot(t *testing.T) {
 	ctx, th := newVolFsTestHarness(t)
 	defer th.cleanup()
 
-	manifests := []*snapshot.Manifest{
-		{RootEntry: &snapshot.DirEntry{ObjectID: "k2313ef907f3b250b331aed988802e4c5", Type: snapshot.EntryTypeDirectory, DirSummary: &fs.DirectorySummary{}}},
-	}
-	expMD, _, expEntries := generateTestMetaData()
+	expMD, expPPs, expEntries := generateTestMetaData()
+	manifests, tSnap := th.generateTestManifests(expMD)
 
 	for _, tc := range []string{
 		"previous snapshot not found", "volSnapID mismatch", "linked",
@@ -255,27 +246,32 @@ func TestLinkPreviousSnapshot(t *testing.T) {
 		f.setMetadata(metadata{}) // clear all
 
 		var expError error
-		oid := string(manifests[0].RootObjectID())
 		prevVolSnapshotID := expMD.VolSnapID
 
 		switch tc {
 		case "previous snapshot not found":
-			oid = "k785f33b8bcccffa4aac1dabb89cf5a71"
+			prevVolSnapshotID = "foo"
 			expError = ErrSnapshotNotFound
 		case "volSnapID mismatch":
-			prevVolSnapshotID += "foo"
+			entries := fs.Entries{}
+			for _, pp := range expPPs {
+				entries = append(entries, &testFileEntry{name: pp[0] + "x"})
+			}
+			tsp.retSrEntry = &testDirEntry{retReadDirE: entries}
 			expError = ErrInvalidSnapshot
 		}
 
-		dm, man, err := f.linkPreviousSnapshot(ctx, oid, prevVolSnapshotID)
+		dm, man, err := f.linkPreviousSnapshot(ctx, prevVolSnapshotID)
 
 		if expError == nil {
 			assert.NoError(err)
-			assert.Equal(manifests[0], man)
+			expMan := manifests[len(manifests)-1]
+			assert.Equal(expMan, man)
+			assert.Equal(tSnap, man.EndTime)
 			expDM := &dirMeta{
 				name:    previousSnapshotDirName,
-				oid:     manifests[0].RootEntry.ObjectID,
-				summary: manifests[0].RootEntry.DirSummary,
+				oid:     expMan.RootEntry.ObjectID,
+				summary: expMan.RootEntry.DirSummary,
 			}
 			assert.Equal(expDM, dm)
 			assert.Equal(prevVolSnapshotID, f.prevVolumeSnapshotID)

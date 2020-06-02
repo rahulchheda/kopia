@@ -8,7 +8,6 @@ import (
 	"github.com/kopia/kopia/fs"
 	"github.com/kopia/kopia/repo"
 	"github.com/kopia/kopia/repo/manifest"
-	"github.com/kopia/kopia/repo/object"
 	"github.com/kopia/kopia/snapshot"
 	"github.com/kopia/kopia/snapshot/snapshotfs"
 )
@@ -21,7 +20,8 @@ const (
 
 // Snapshot returns a snapshot manifest.
 type Snapshot struct {
-	Current *snapshot.Manifest
+	Current  *snapshot.Manifest
+	Previous *snapshot.Manifest
 }
 
 // SnapshotAnalysis analyzes the data in a snapshot manifest.
@@ -36,15 +36,9 @@ type SnapshotAnalysis struct {
 	ChainedNumDirs   int
 }
 
-// Analyze analyzes a snapshot
-func (s *Snapshot) Analyze() SnapshotAnalysis {
-	var sa SnapshotAnalysis
-
-	if s.Current == nil {
-		return sa
-	}
-
-	cs := s.Current.Stats
+// Analyze sets values from a snapshot manifest
+func (sa *SnapshotAnalysis) Analyze(man *snapshot.Manifest) {
+	cs := man.Stats
 
 	sa.BlockSizeBytes = int(cs.CachedFiles)
 	sa.Bytes = cs.TotalFileSize - cs.ExcludedTotalFileSize
@@ -55,8 +49,6 @@ func (s *Snapshot) Analyze() SnapshotAnalysis {
 	sa.ChainedBytes = cs.ExcludedTotalFileSize
 	sa.ChainedNumBlocks = cs.ExcludedFileCount
 	sa.ChainedNumDirs = cs.ExcludedDirCount
-
-	return sa
 }
 
 // snapshotProcessor aids in unit testing
@@ -86,8 +78,8 @@ func (sh *snapshotHelper) SaveSnapshot(ctx context.Context, rep repo.Repository,
 }
 
 // initFromSnapshot retrieves a snapshot and initializes the filesystem with the previous metadata.
-func (f *Filesystem) initFromSnapshot(ctx context.Context, snapshotID string) (*snapshot.Manifest, fs.Directory, metadata, error) {
-	man, rootEntry, md, err := f.findPreviousSnapshot(ctx, snapshotID)
+func (f *Filesystem) initFromSnapshot(ctx context.Context, prevVolumeSnapshotID string) (*snapshot.Manifest, fs.Directory, metadata, error) {
+	man, rootEntry, md, err := f.findPreviousSnapshot(ctx, prevVolumeSnapshotID)
 	if err != nil {
 		return nil, nil, md, err
 	}
@@ -98,27 +90,24 @@ func (f *Filesystem) initFromSnapshot(ctx context.Context, snapshotID string) (*
 }
 
 // findPreviousSnapshot searches for the previous snapshot and parses it.
-func (f *Filesystem) findPreviousSnapshot(ctx context.Context, prevSnapID string) (*snapshot.Manifest, fs.Directory, metadata, error) {
+func (f *Filesystem) findPreviousSnapshot(ctx context.Context, prevVolumeSnapshotID string) (*snapshot.Manifest, fs.Directory, metadata, error) {
 	var (
 		err       error
 		man       *snapshot.Manifest
 		md        metadata
 		rootEntry fs.Entry
-		rootOID   object.ID
 	)
 
-	if rootOID, err = object.ParseID(prevSnapID); err == nil {
-		if man, err = f.findSnapshotManifest(ctx, rootOID); err == nil {
-			if rootEntry, err = f.sp.SnapshotRoot(f.Repo, man); err == nil {
-				if !rootEntry.IsDir() {
-					f.logger.Debugf("expected rootEntry to be a directory")
-					return nil, nil, md, ErrInvalidSnapshot
-				}
+	if man, err = f.findSnapshotManifest(ctx, prevVolumeSnapshotID); err == nil {
+		if rootEntry, err = f.sp.SnapshotRoot(f.Repo, man); err == nil {
+			if !rootEntry.IsDir() {
+				f.logger.Debugf("expected rootEntry to be a directory")
+				return nil, nil, md, ErrInvalidSnapshot
+			}
 
-				dfe := rootEntry.(fs.Directory)
-				if md, err = f.recoverMetadataFromDirEntry(ctx, dfe); err == nil {
-					return man, dfe, md, err
-				}
+			dfe := rootEntry.(fs.Directory)
+			if md, err = f.recoverMetadataFromDirEntry(ctx, dfe); err == nil {
+				return man, dfe, md, err
 			}
 		}
 	}
@@ -126,21 +115,36 @@ func (f *Filesystem) findPreviousSnapshot(ctx context.Context, prevSnapID string
 	return nil, nil, md, err
 }
 
-// findSnapshotManifest returns the latest complete manifest containing the specified snapshot ID.
-func (f *Filesystem) findSnapshotManifest(ctx context.Context, oid object.ID) (*snapshot.Manifest, error) {
+// findSnapshotManifest returns the latest manifest for the specified volume snapshot.
+// There may be multiple such manifests due to compact operations.
+func (f *Filesystem) findSnapshotManifest(ctx context.Context, prevVolumeSnapshotID string) (*snapshot.Manifest, error) {
 	man, err := f.sp.ListSnapshots(ctx, f.Repo, f.SourceInfo())
 	if err != nil {
 		return nil, err
 	}
 
+	var (
+		descKey = f.snapshotDescription(prevVolumeSnapshotID)
+		latest  *snapshot.Manifest
+	)
+
 	for _, m := range man {
-		if m.RootObjectID() == oid {
-			log(ctx).Debugf("found manifest %s startTime:%s", m.ID, m.StartTime)
-			return m, nil
+		if m.Description == descKey {
+			log(ctx).Debugf("found manifest %s startTime:%s endTime:%s", m.ID, m.StartTime, m.EndTime)
+
+			if latest == nil || latest.EndTime.Before(m.EndTime) {
+				latest = m
+			}
 		}
 	}
 
-	return nil, ErrSnapshotNotFound
+	if latest == nil {
+		return nil, ErrSnapshotNotFound
+	}
+
+	log(ctx).Debugf("latest: %s startTime:%s endTime:%s OID:%s", latest.ID, latest.StartTime, latest.EndTime, latest.RootObjectID())
+
+	return latest, nil
 }
 
 // commitSnapshot writes a snapshot manifest to the repository
@@ -171,7 +175,7 @@ func (f *Filesystem) createSnapshotManifest(rootDir *dirMeta, psm *snapshot.Mani
 	summary := rootDir.summary
 	sm := &snapshot.Manifest{
 		Source:      f.SourceInfo(),
-		Description: f.snapshotDescription(),
+		Description: f.snapshotDescription(""),
 		StartTime:   f.epoch,
 		EndTime:     time.Now(),
 		Stats: snapshot.Stats{
@@ -198,24 +202,28 @@ func (f *Filesystem) createSnapshotManifest(rootDir *dirMeta, psm *snapshot.Mani
 	return sm
 }
 
-func (f *Filesystem) snapshotDescription() string {
-	return fmt.Sprintf("volume:%s:%s", f.VolumeID, f.VolumeSnapshotID)
+func (f *Filesystem) snapshotDescription(volSnapID string) string {
+	if volSnapID == "" {
+		volSnapID = f.VolumeSnapshotID
+	}
+
+	return fmt.Sprintf("volume:%s:%s", f.VolumeID, volSnapID)
 }
 
 // linkToPreviousSnapshot finds the previous snapshot and returns its dirMeta entry.
-func (f *Filesystem) linkPreviousSnapshot(ctx context.Context, previousSnapshotID, prevVolumeSnapshotID string) (*dirMeta, *snapshot.Manifest, error) {
-	prevMan, _, prevMd, err := f.findPreviousSnapshot(ctx, previousSnapshotID)
+func (f *Filesystem) linkPreviousSnapshot(ctx context.Context, prevVolumeSnapshotID string) (*dirMeta, *snapshot.Manifest, error) {
+	prevMan, _, prevMd, err := f.findPreviousSnapshot(ctx, prevVolumeSnapshotID)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	if prevMd.VolSnapID != prevVolumeSnapshotID {
-		f.logger.Debugf("previous volume snapshot exp[%s] got[%s]", prevVolumeSnapshotID, prevMd.VolSnapID)
+		f.logger.Debugf("previous volume snapshot exp[%s] md[%s]", prevVolumeSnapshotID, prevMd.VolSnapID)
 		return nil, nil, ErrInvalidSnapshot
 	}
 
 	// import previous data
-	f.logger.Debugf("found snapshot [%s, %s] %#v %#v", previousSnapshotID, prevVolumeSnapshotID, prevMd, prevMan)
+	f.logger.Debugf("found snapshot [%s] %#v %#v", prevMan.RootObjectID(), prevMd, prevMan)
 	f.layoutProperties.initLayoutProperties(prevMd.BlockSzB, prevMd.DirSz, prevMd.Depth)
 	f.prevVolumeSnapshotID = prevMd.VolSnapID
 

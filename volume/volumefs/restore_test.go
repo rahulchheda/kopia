@@ -21,7 +21,7 @@ func TestRestoreArgs(t *testing.T) {
 
 	badTcs := []RestoreArgs{
 		{},
-		{RestoreConcurrency: -1},
+		{Concurrency: -1},
 		{VolumeManager: mgr},
 	}
 	for i, tc := range badTcs {
@@ -31,7 +31,7 @@ func TestRestoreArgs(t *testing.T) {
 
 	goodTcs := []RestoreArgs{
 		{}, // not really empty - manager/profile added in loop
-		{RestoreConcurrency: 10},
+		{Concurrency: 10},
 	}
 	for i, tc := range goodTcs {
 		t.Logf("Case: %d", i)
@@ -117,7 +117,7 @@ func TestRestore(t *testing.T) {
 			tbw.retPutBlocksErr = expError
 		case "success explicit concurrency":
 			expConcurrency += 2
-			ra.RestoreConcurrency = expConcurrency
+			ra.Concurrency = expConcurrency
 		}
 
 		res, err := f.Restore(ctx, ra)

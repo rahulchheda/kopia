@@ -16,12 +16,10 @@ const (
 
 // BackupArgs contain arguments to the Backup method.
 type BackupArgs struct {
-	// The identifier of the previous snapshot if this is an incremental.
-	PreviousSnapshotID string
 	// The identifier of the previous volume snapshot if this is an incremental.
 	PreviousVolumeSnapshotID string
-	// TThe amount of concurrency during backup. 0 assigns a default value.
-	BackupConcurrency int
+	// The amount of concurrency during backup. 0 assigns a default value.
+	Concurrency int
 	// The volume manager.
 	VolumeManager volume.Manager
 	// Profile containing location and credential information for the volume manager.
@@ -30,9 +28,7 @@ type BackupArgs struct {
 
 // Validate checks the arguments for correctness.
 func (a *BackupArgs) Validate() error {
-	if (a.PreviousSnapshotID == "" && a.PreviousVolumeSnapshotID != "") ||
-		(a.PreviousSnapshotID != "" && a.PreviousVolumeSnapshotID == "") ||
-		a.BackupConcurrency < 0 || a.VolumeManager == nil || a.VolumeAccessProfile == nil {
+	if a.Concurrency < 0 || a.VolumeManager == nil || a.VolumeAccessProfile == nil {
 		return ErrInvalidArgs
 	}
 
@@ -48,7 +44,7 @@ func (f *Filesystem) Backup(ctx context.Context, args BackupArgs) (*Snapshot, er
 
 	f.logger = log(ctx)
 	f.epoch = time.Now()
-	f.logger.Debugf("backup volumeID[%s] VolumeSnapshotID[%s] PreviousSnapshotID[%s] PreviousVolumeSnapshotID[%s]", f.VolumeID, f.VolumeSnapshotID, args.PreviousVolumeSnapshotID, args.PreviousVolumeSnapshotID)
+	f.logger.Debugf("backup volumeID[%s] VolumeSnapshotID[%s] PreviousVolumeSnapshotID[%s]", f.VolumeID, f.VolumeSnapshotID, args.PreviousVolumeSnapshotID)
 
 	gbrArgs := volume.GetBlockReaderArgs{
 		VolumeID:           f.VolumeID,
@@ -70,16 +66,16 @@ func (f *Filesystem) Backup(ctx context.Context, args BackupArgs) (*Snapshot, er
 		curMan     *snapshot.Manifest
 	)
 
-	if args.PreviousSnapshotID != "" {
-		prevRootDm, prevMan, err = f.bp.linkPreviousSnapshot(ctx, args.PreviousSnapshotID, args.PreviousVolumeSnapshotID)
+	if args.PreviousVolumeSnapshotID != "" {
+		prevRootDm, prevMan, err = f.bp.linkPreviousSnapshot(ctx, args.PreviousVolumeSnapshotID)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	numWorkers := DefaultBackupConcurrency
-	if args.BackupConcurrency > 0 {
-		numWorkers = args.BackupConcurrency
+	if args.Concurrency > 0 {
+		numWorkers = args.Concurrency
 	}
 
 	if curDm, err = f.bp.backupBlocks(ctx, br, numWorkers); err == nil {
@@ -92,7 +88,7 @@ func (f *Filesystem) Backup(ctx context.Context, args BackupArgs) (*Snapshot, er
 		return nil, err
 	}
 
-	return &Snapshot{Current: curMan}, nil
+	return &Snapshot{Current: curMan, Previous: prevMan}, nil
 }
 
 // backupProcessor aids in unit testing
@@ -100,7 +96,7 @@ type backupProcessor interface {
 	backupBlocks(ctx context.Context, br volume.BlockReader, numWorkers int) (*dirMeta, error)
 	commitSnapshot(ctx context.Context, rootDir *dirMeta, psm *snapshot.Manifest) (*snapshot.Manifest, error)
 	createRoot(ctx context.Context, curDm, prevRootDm *dirMeta) (*dirMeta, error)
-	linkPreviousSnapshot(ctx context.Context, previousSnapshotID, prevVolumeSnapshotID string) (*dirMeta, *snapshot.Manifest, error)
+	linkPreviousSnapshot(ctx context.Context, prevVolumeSnapshotID string) (*dirMeta, *snapshot.Manifest, error)
 }
 
 // backupBlocks writes the volume blocks and the block map hierarchy to the repo.

@@ -16,7 +16,7 @@ const (
 // RestoreArgs contain arguments to the Restore method.
 type RestoreArgs struct {
 	// The amount of concurrency during restore. 0 assigns a default value.
-	RestoreConcurrency int
+	Concurrency int
 	// The volume manager.
 	VolumeManager volume.Manager
 	// Profile containing location and credential information for the volume manager.
@@ -25,7 +25,7 @@ type RestoreArgs struct {
 
 // Validate checks the arguments for correctness.
 func (a *RestoreArgs) Validate() error {
-	if a.RestoreConcurrency < 0 || a.VolumeManager == nil || a.VolumeAccessProfile == nil {
+	if a.Concurrency < 0 || a.VolumeManager == nil || a.VolumeAccessProfile == nil {
 		return ErrInvalidArgs
 	}
 
@@ -34,6 +34,7 @@ func (a *RestoreArgs) Validate() error {
 
 // RestoreResult returns the result of a successful Restore operation.
 type RestoreResult struct {
+	Current *snapshot.Manifest
 	BlockIterStats
 }
 
@@ -60,8 +61,8 @@ func (f *Filesystem) Restore(ctx context.Context, args RestoreArgs) (*RestoreRes
 	chainLen := int(man.Stats.NonCachedFiles)
 
 	concurrency := DefaultRestoreConcurrency
-	if args.RestoreConcurrency > 0 {
-		concurrency = args.RestoreConcurrency
+	if args.Concurrency > 0 {
+		concurrency = args.Concurrency
 	}
 
 	bm, err := f.rp.effectiveBlockMap(ctx, chainLen, rootEntry, concurrency)
@@ -89,6 +90,7 @@ func (f *Filesystem) Restore(ctx context.Context, args RestoreArgs) (*RestoreRes
 	}
 
 	ret := &RestoreResult{
+		Current:        man,
 		BlockIterStats: bi.BlockIterStats,
 	}
 

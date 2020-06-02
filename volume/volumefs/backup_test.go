@@ -21,9 +21,7 @@ func TestBackupArgs(t *testing.T) {
 
 	badTcs := []BackupArgs{
 		{},
-		{BackupConcurrency: -1},
-		{PreviousSnapshotID: "snapID"},
-		{PreviousVolumeSnapshotID: "volSnapID"},
+		{Concurrency: -1},
 		{VolumeManager: mgr},
 	}
 	for i, tc := range badTcs {
@@ -33,9 +31,9 @@ func TestBackupArgs(t *testing.T) {
 
 	goodTcs := []BackupArgs{
 		{}, // not really empty - manager/profile added in loop
-		{BackupConcurrency: 10},
-		{PreviousSnapshotID: "snapID", PreviousVolumeSnapshotID: "volSnapID"},
-		{PreviousSnapshotID: "snapID", PreviousVolumeSnapshotID: "volSnapID", BackupConcurrency: 10},
+		{Concurrency: 10},
+		{PreviousVolumeSnapshotID: "volSnapID"},
+		{PreviousVolumeSnapshotID: "volSnapID", Concurrency: 10},
 	}
 	for i, tc := range goodTcs {
 		t.Logf("Case: %d", i)
@@ -64,6 +62,8 @@ func TestBackup(t *testing.T) {
 		"no gbr", "link error", "bb error default concurrency", "cr error non-default concurrency",
 		"cs error", "success",
 	} {
+		t.Logf("Case: %s", tc)
+
 		ctx, th := newVolFsTestHarness(t)
 		defer th.cleanup()
 
@@ -95,15 +95,13 @@ func TestBackup(t *testing.T) {
 
 		switch tc {
 		case "invalid args":
-			ba.PreviousSnapshotID = "foo"
-			ba.PreviousVolumeSnapshotID = ""
+			ba.Concurrency = -1
 			expError = ErrInvalidArgs
 		case "no gbr":
 			expError = volume.ErrNotSupported
 			tvm.retGbrBR = nil
 			tvm.retGbrE = expError
 		case "link error":
-			ba.PreviousSnapshotID = "previousSnapshotID"
 			ba.PreviousVolumeSnapshotID = "previousVolumeSnapshotID"
 			expError = ErrInvalidSnapshot
 			tbp.retLpsE = expError
@@ -113,9 +111,8 @@ func TestBackup(t *testing.T) {
 			expError = ErrInternalError
 			tbp.retBbE = expError
 		case "cr error non-default concurrency":
-			ba.PreviousSnapshotID = "previousSnapshotID"
 			ba.PreviousVolumeSnapshotID = "previousVolumeSnapshotID"
-			ba.BackupConcurrency = 2 * DefaultBackupConcurrency
+			ba.Concurrency = 2 * DefaultBackupConcurrency
 			expError = ErrOutOfRange
 			tbp.retCrE = expError
 		case "cs error":
@@ -123,7 +120,6 @@ func TestBackup(t *testing.T) {
 			tbp.retCsE = expError
 			tbp.retCsS = nil
 		case "success":
-			ba.PreviousSnapshotID = "previousSnapshotID"
 			ba.PreviousVolumeSnapshotID = "previousVolumeSnapshotID"
 		}
 
@@ -139,7 +135,6 @@ func TestBackup(t *testing.T) {
 
 		switch tc {
 		case "link error":
-			assert.Equal(ba.PreviousSnapshotID, tbp.inLpsPsID)
 			assert.Equal(ba.PreviousVolumeSnapshotID, tbp.inLpsPvsID)
 		case "bb error default concurrency":
 			assert.Equal(DefaultBackupConcurrency, tbp.inBbNw)
@@ -271,7 +266,6 @@ func TestBackupBlocks(t *testing.T) {
 }
 
 type testBackupProcessor struct {
-	inLpsPsID  string
 	inLpsPvsID string
 	retLpsDm   *dirMeta
 	retLpsE    error
@@ -295,8 +289,7 @@ type testBackupProcessor struct {
 
 var _ backupProcessor = (*testBackupProcessor)(nil)
 
-func (tbp *testBackupProcessor) linkPreviousSnapshot(ctx context.Context, previousSnapshotID, prevVolumeSnapshotID string) (*dirMeta, *snapshot.Manifest, error) {
-	tbp.inLpsPsID = previousSnapshotID
+func (tbp *testBackupProcessor) linkPreviousSnapshot(ctx context.Context, prevVolumeSnapshotID string) (*dirMeta, *snapshot.Manifest, error) {
 	tbp.inLpsPvsID = prevVolumeSnapshotID
 
 	return tbp.retLpsDm, tbp.retLpsS, tbp.retLpsE

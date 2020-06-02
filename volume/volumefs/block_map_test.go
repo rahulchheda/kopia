@@ -1,6 +1,8 @@
 package volumefs
 
 import (
+	"context"
+	"fmt"
 	"testing"
 
 	"github.com/kopia/kopia/repo/object"
@@ -82,4 +84,49 @@ func TestBTreeMap(t *testing.T) {
 	assert.Equal(object.ID(""), bam.Oid)
 
 	bmi.Close()
+}
+
+// nolint:wsl,gocritic
+func TestCreateTreeFromBlockMap(t *testing.T) {
+	assert := assert.New(t)
+
+	f := &Filesystem{}
+	f.logger = log(context.Background())
+	f.initLayoutProperties(16384, 256, 4)
+
+	bmm := newBTreeMap(256)
+	addresses := []int64{
+		0, 0xff, 0x1000, 0x10ff, 0xa000, 0xb000, 0xc001, 0x1000a, 0x2000b,
+	}
+	for _, ba := range addresses {
+		bam := BlockAddressMapping{
+			BlockAddr: ba,
+			Oid:       object.ID(fmt.Sprintf("oid-for-%x", ba)),
+		}
+		bmm.InsertOrReplace(bam)
+	}
+
+	dm, err := f.createTreeFromBlockMap(bmm)
+	assert.NoError(err)
+	assert.NotNil(dm)
+
+	for _, ba := range addresses {
+		pp, err := f.addrToPath(ba) // nolint:govet
+		assert.NoError(err)
+		fm := f.lookupFile(dm, pp)
+		assert.NotNil(fm)
+		assert.Equal(object.ID(fmt.Sprintf("oid-for-%x", ba)), fm.oid)
+	}
+
+	// cause a failure
+	bam := BlockAddressMapping{
+		BlockAddr: f.maxBlocks + 1,
+		Oid:       object.ID(fmt.Sprintf("oid-for-%x", f.maxBlocks+1)),
+	}
+	bmm.InsertOrReplace(bam)
+
+	dm, err = f.createTreeFromBlockMap(bmm)
+	assert.Error(err)
+	assert.Nil(dm)
+
 }

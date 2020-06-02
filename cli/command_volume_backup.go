@@ -18,9 +18,8 @@ var (
 	volBackupCommand              = volumeCommands.Command("backup", "Backup a provider volume snapshot")
 	volBackupCommandType          = volBackupCommand.Flag("vol-type", "Volume type").Required().Short('T').String()
 	volBackupCommandVolID         = volBackupCommand.Flag("vol-id", "Volume identifier").Required().Short('V').String()
-	volBackupCommandVolSnapID     = volBackupCommand.Flag("vol-snapshot-id", "Volume snapshot identifier").Required().Short('i').String()
-	volBackupCommandPrevVolSnapID = volBackupCommand.Flag("vol-previous-snapshot-id", "Previous volume snapshot identifier. Use with '-S'.").Short('I').String()
-	volBackupCommandPrevSnapID    = volBackupCommand.Flag("previous-snapshot-id", "Previous repository snapshot identifier. Use with '-I'.").Short('S').String()
+	volBackupCommandVolSnapID     = volBackupCommand.Flag("vol-snapshot-id", "Volume snapshot identifier").Required().Short('I').String()
+	volBackupCommandPrevVolSnapID = volBackupCommand.Flag("vol-previous-snapshot-id", "Previous volume snapshot identifier.").Short('P').String()
 	volBackupCommandFakeProfile   = volBackupCommand.Flag("fake-profile", "Path to the volume manager profile if -T=fake.").ExistingFile()
 	volBackupCommandBlockfile     = volBackupCommand.Flag("block-file", "Path to a file if -T=blockfile.").ExistingFile()
 	volBackupCommandConcurrency   = volBackupCommand.Flag("parallel", "Backup N blocks in parallel").PlaceHolder("N").Default("0").Int()
@@ -32,11 +31,6 @@ func init() {
 
 // runVolBackupCommand is a simplified adaptation of runSnapshotCommand
 func runVolBackupCommand(ctx context.Context, rep repo.Repository) error {
-	if (*volBackupCommandPrevVolSnapID != "" && *volBackupCommandPrevSnapID == "") ||
-		(*volBackupCommandPrevVolSnapID == "" && *volBackupCommandPrevSnapID != "") {
-		return fmt.Errorf("previous values for the volume and repository must be specified together")
-	}
-
 	fsArgs := &volumefs.FilesystemArgs{
 		Repo:             rep,
 		VolumeID:         *volBackupCommandVolID,
@@ -44,9 +38,8 @@ func runVolBackupCommand(ctx context.Context, rep repo.Repository) error {
 	}
 
 	backupArgs := volumefs.BackupArgs{
-		PreviousSnapshotID:       *volBackupCommandPrevSnapID,
 		PreviousVolumeSnapshotID: *volBackupCommandPrevVolSnapID,
-		BackupConcurrency:        *volBackupCommandConcurrency,
+		Concurrency:              *volBackupCommandConcurrency,
 	}
 
 	backupArgs.VolumeManager = volume.FindManager(*volBackupCommandType)
@@ -83,7 +76,10 @@ func runVolBackupCommand(ctx context.Context, rep repo.Repository) error {
 		enc = json.NewEncoder(&buf)
 	)
 
-	_ = enc.Encode(result.Analyze())
+	var sa volumefs.SnapshotAnalysis
+
+	sa.Analyze(result.Current)
+	_ = enc.Encode(sa)
 
 	printStderr("%s\n", buf.String())
 

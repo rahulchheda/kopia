@@ -13,7 +13,7 @@ import (
 var (
 	volRestoreCommand            = volumeCommands.Command("restore", "Restore a volume snapshot to a device or file")
 	volRestoreCommandVolID       = volRestoreCommand.Flag("vol-id", "Volume identifier").Required().Short('V').String()
-	volRestoreCommandSnapID      = volRestoreCommand.Flag("snapshot-id", "Repository snapshot identifier").Required().Short('S').String()
+	volRestoreCommandSnapID      = volRestoreCommand.Flag("vol-snapshot-id", "Volume snapshot identifier").Required().Short('I').String()
 	volRestoreCommandDeviceFile  = volRestoreCommand.Flag("device-file", "Name of the device file").Required().Short('d').String()
 	volRestoreCommandCreate      = volRestoreCommand.Flag("create", "Create the file if no present").Short('c').Bool()
 	volRestoreCommandBlockSize   = volRestoreCommand.Flag("device-block-size", "Device block size").Short('n').Int64()
@@ -32,7 +32,7 @@ func runVolRestoreCommand(ctx context.Context, rep repo.Repository) error {
 	}
 
 	restoreArgs := volumefs.RestoreArgs{
-		RestoreConcurrency: *volRestoreCommandConcurrency,
+		Concurrency: *volRestoreCommandConcurrency,
 	}
 
 	restoreArgs.VolumeManager = volume.FindManager(blockfile.VolumeType)

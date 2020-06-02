@@ -17,6 +17,7 @@ import (
 	"github.com/kopia/kopia/repo"
 	"github.com/kopia/kopia/repo/blob/filesystem"
 	"github.com/kopia/kopia/repo/object"
+	"github.com/kopia/kopia/snapshot"
 	"github.com/kopia/kopia/volume"
 
 	"github.com/stretchr/testify/assert"
@@ -107,6 +108,42 @@ func (th *volFsTestHarness) fs() *Filesystem {
 	assert.NotNil(f)
 
 	return f
+}
+
+// nolint:wsl,gocritic
+func (th *volFsTestHarness) generateTestManifests(md metadata) ([]*snapshot.Manifest, time.Time) {
+	tSnap := time.Now()
+	pf := th.fs() // defines volumeID
+	pf.VolumeSnapshotID = md.VolSnapID
+	return []*snapshot.Manifest{
+		{
+			Description: pf.snapshotDescription(""),
+			EndTime:     tSnap.Add(-60 * time.Minute),
+			RootEntry: &snapshot.DirEntry{
+				ObjectID:   "k2313ef907f3b250b331aed988802e4c4",
+				Type:       snapshot.EntryTypeDirectory,
+				DirSummary: &fs.DirectorySummary{},
+			},
+		},
+		{
+			Description: pf.snapshotDescription(md.VolSnapID + "foo"),
+			EndTime:     tSnap,
+			RootEntry: &snapshot.DirEntry{
+				ObjectID:   "k2313ef907f3b250b331aed988802e401",
+				Type:       snapshot.EntryTypeDirectory,
+				DirSummary: &fs.DirectorySummary{},
+			},
+		},
+		{
+			Description: pf.snapshotDescription(""),
+			EndTime:     tSnap,
+			RootEntry: &snapshot.DirEntry{
+				ObjectID:   "k2313ef907f3b250b331aed988802e4c5",
+				Type:       snapshot.EntryTypeDirectory,
+				DirSummary: &fs.DirectorySummary{},
+			},
+		},
+	}, tSnap
 }
 
 type testVM struct {

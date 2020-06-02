@@ -13,12 +13,7 @@ import (
 //     3         2Mi      16Mi
 //     4       256Mi    4096Mi
 //
-// There is a fixed number of blocks that a symmetric tree can track. To preserve the
-// ability to increase the number of blocks in the future while still remaining backward
-// compatible we add extra address space potential to top-level directory entries by adding
-// leading zeros to their name.  Then in the future we have the choice to add additional
-// trees of depth maxTreeDepth-1 or introduce indirect blocks for additional trees of
-// depth maxTreeDepth.  See the unit test for illustration.
+// There is a fixed number of blocks that a symmetric tree can track.
 
 const (
 	maxDirEntries     = 256 // nolint:gomnd // must be a power of 2

@@ -182,3 +182,29 @@ func (bmi *bTreeIter) dispatch(i btree.Item) bool {
 // 	}()
 // 	return bmi
 // }
+
+// createTreeFromBlockMap creates an in-memory hierarchy from a block map and returns its root.
+// Directories are not written to the repo.
+func (f *Filesystem) createTreeFromBlockMap(bm BlockMap) (*dirMeta, error) {
+	bi := bm.Iterator()
+	defer bi.Close()
+
+	mapRootDm := &dirMeta{
+		name: currentSnapshotDirName,
+	}
+	emptyBam := BlockAddressMapping{}
+
+	for bam := bi.Next(); bam != emptyBam; bam = bi.Next() {
+		pp, err := f.addrToPath(bam.BlockAddr)
+		if err != nil {
+			return nil, err
+		}
+
+		fm := f.ensureFileInTree(mapRootDm, pp)
+		fm.oid = bam.Oid
+
+		f.logger.Debugf("block [%s] %s", pp.String(), bam.Oid)
+	}
+
+	return mapRootDm, nil
+}
