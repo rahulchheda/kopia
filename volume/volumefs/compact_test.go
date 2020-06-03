@@ -32,6 +32,100 @@ func TestCompactArgs(t *testing.T) {
 	}
 }
 
+// nolint:wsl,gocritic,goconst
+func TestCompact(t *testing.T) {
+	assert := assert.New(t)
+
+	man := &snapshot.Manifest{
+		RootEntry: &snapshot.DirEntry{
+			ObjectID:   "k2313ef907f3b250b331aed988802e4c5",
+			Type:       snapshot.EntryTypeDirectory,
+			DirSummary: &fs.DirectorySummary{},
+		},
+		Stats: snapshot.Stats{
+			NonCachedFiles: 1, // chain len
+		},
+	}
+	rootEntry := &testDirEntry{}
+
+	for _, tc := range []string{
+		"invalid args", "ifs error", "ebm error non-default concurrency", "ctfbm error", "wdtr error", "cr error", "cs error", "success",
+	} {
+		t.Logf("Case: %s", tc)
+
+		ctx, th := newVolFsTestHarness(t)
+		defer th.cleanup()
+
+		ca := CompactArgs{}
+		bmi := newBTreeMap(4).Iterator()
+		tbm := &testBlockMap{}
+		tbm.retIteratorBmi = bmi
+		curDm := &dirMeta{name: currentSnapshotDirName}
+		rootDir := &dirMeta{}
+		curMan := &snapshot.Manifest{}
+		tcp := &testCompactProcessor{}
+		tcp.retIfsMan = man
+		tcp.retIfsDir = rootEntry
+		tcp.retEbmBm = tbm
+		tcp.retCtfBmDm = curDm
+		tcp.retCrDm = rootDir
+		tcp.retCsS = curMan
+
+		f := th.fs()
+		f.cp = tcp
+
+		var expError error
+		expConcurrency := DefaultCompactConcurrency
+
+		switch tc {
+		case "invalid args":
+			ca.Concurrency = -1
+			expError = ErrInvalidArgs
+		case "ifs error":
+			expError = ErrInvalidSnapshot
+			tcp.retIfsE = expError
+		case "ebm error non-default concurrency":
+			expConcurrency = DefaultCompactConcurrency * 2
+			ca.Concurrency = expConcurrency
+			expError = ErrOutOfRange
+			tcp.retEbmE = expError
+			tcp.retEbmBm = nil
+		case "ctfbm error":
+			expError = ErrInternalError
+			tcp.retCtfBmE = expError
+		case "wdtr error":
+			expError = ErrInternalError
+			tcp.retWdrE = expError
+		case "cr error":
+			expError = ErrOutOfRange
+			tcp.retCrE = expError
+		case "cs error":
+			expError = ErrInvalidSnapshot
+			tcp.retCsE = expError
+		}
+
+		cur, prev, err := f.Compact(ctx, ca)
+
+		if expError == nil {
+			assert.NoError(err)
+			assert.NotNil(cur)
+			assert.NotNil(prev)
+			assert.Equal(curMan, cur.Manifest)
+			assert.Equal(man, prev.Manifest)
+		} else {
+			assert.Error(expError, err)
+			assert.Nil(cur)
+			assert.Nil(prev)
+		}
+
+		switch tc {
+		case "ebm error non-default concurrency", "success":
+			assert.Equal(expConcurrency, tcp.inEbmC)
+		}
+	}
+
+}
+
 type testCompactProcessor struct {
 	inIfsS    string
 	retIfsMan *snapshot.Manifest
