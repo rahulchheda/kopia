@@ -18,6 +18,7 @@ const (
 	previousSnapshotDirName = "p"
 	directoryStreamType     = "kopia:directory" // copied from snapshot
 	descriptionSeparator    = ":"
+	descriptionFormat       = "volume%s%s%s%s"
 )
 
 // Snapshot returns data on a volume snapshot.
@@ -30,14 +31,15 @@ type Snapshot struct {
 
 // SnapshotAnalysis analyzes the data in a snapshot manifest.
 type SnapshotAnalysis struct {
-	BlockSizeBytes   int
-	Bytes            int64
-	NumBlocks        int
-	NumDirs          int
-	ChainLength      int
-	ChainedBytes     int64
-	ChainedNumBlocks int
-	ChainedNumDirs   int
+	BlockSizeBytes     int
+	Bytes              int64
+	NumBlocks          int
+	NumDirs            int
+	ChainLength        int
+	ChainedBytes       int64
+	ChainedNumBlocks   int
+	ChainedNumDirs     int
+	WeightedBlockCount int
 }
 
 // Analyze sets values from a snapshot manifest
@@ -45,7 +47,7 @@ func (sa *SnapshotAnalysis) Analyze(man *snapshot.Manifest) {
 	cs := man.Stats
 
 	sa.BlockSizeBytes = int(cs.CachedFiles)
-	sa.Bytes = cs.TotalFileSize - cs.ExcludedTotalFileSize
+	sa.Bytes = cs.TotalFileSize - cs.ExcludedTotalFileSize // can be deduced from num blocks * block size
 	sa.NumBlocks = cs.TotalFileCount - cs.ExcludedFileCount
 	sa.NumDirs = cs.TotalDirectoryCount - cs.ExcludedDirCount
 
@@ -53,6 +55,8 @@ func (sa *SnapshotAnalysis) Analyze(man *snapshot.Manifest) {
 	sa.ChainedBytes = cs.ExcludedTotalFileSize
 	sa.ChainedNumBlocks = cs.ExcludedFileCount
 	sa.ChainedNumDirs = cs.ExcludedDirCount
+
+	sa.WeightedBlockCount = cs.ReadErrors
 }
 
 // snapshotProcessor is an interface to Kopia snapshot methods
@@ -213,6 +217,8 @@ func (f *Filesystem) createSnapshotManifest(rootDir *dirMeta, psm *snapshot.Mani
 		sm.Stats.ExcludedFileCount = psm.Stats.TotalFileCount
 		sm.Stats.ExcludedTotalFileSize = psm.Stats.TotalFileSize
 		sm.Stats.NonCachedFiles = psm.Stats.NonCachedFiles + 1 // chain length
+		// weighted blocks (WB) = ChainLength * (PrevWB + curBlocks)
+		sm.Stats.ReadErrors = int(sm.Stats.NonCachedFiles)*psm.Stats.ReadErrors + psm.Stats.TotalFileCount - psm.Stats.ExcludedFileCount
 	}
 
 	return sm

@@ -2,6 +2,7 @@ package volumefs
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -18,14 +19,15 @@ func TestSnapshotAnalysis(t *testing.T) {
 	assert := assert.New(t)
 
 	expSA := SnapshotAnalysis{
-		BlockSizeBytes:   1000,
-		Bytes:            20000,
-		NumBlocks:        1000,
-		NumDirs:          100,
-		ChainLength:      2,
-		ChainedBytes:     80000,
-		ChainedNumBlocks: 2000,
-		ChainedNumDirs:   200,
+		BlockSizeBytes:     1000,
+		Bytes:              20000,
+		NumBlocks:          1000,
+		NumDirs:            100,
+		ChainLength:        2,
+		ChainedBytes:       80000,
+		ChainedNumBlocks:   2000,
+		ChainedNumDirs:     200,
+		WeightedBlockCount: 1020402000,
 	}
 
 	curStats := snapshot.Stats{
@@ -39,6 +41,8 @@ func TestSnapshotAnalysis(t *testing.T) {
 
 		CachedFiles:    int32(expSA.BlockSizeBytes),
 		NonCachedFiles: int32(expSA.ChainLength),
+
+		ReadErrors: expSA.WeightedBlockCount,
 	}
 	sm := &snapshot.Manifest{
 		Stats: curStats,
@@ -137,14 +141,17 @@ func TestCommitSnapshot(t *testing.T) {
 		},
 		Stats: snapshot.Stats{
 			TotalDirectoryCount: 1,
-			TotalFileCount:      1,
+			TotalFileCount:      10, // previous added
+			ExcludedFileCount:   2,  // 8 files
 			TotalFileSize:       1,
 			CachedFiles:         int32(f.blockSzB),
+			NonCachedFiles:      2, // chain len
+			ReadErrors:          1000,
 		},
 	}
 	summary := &fs.DirectorySummary{
 		TotalFileSize:  100,
-		TotalFileCount: 10,
+		TotalFileCount: 19, // current adds 9 files
 		TotalDirCount:  2,
 	}
 
@@ -167,7 +174,7 @@ func TestCommitSnapshot(t *testing.T) {
 			StartTime:   f.epoch,
 			Stats: snapshot.Stats{
 				TotalDirectoryCount: 2,
-				TotalFileCount:      10,
+				TotalFileCount:      int(summary.TotalFileCount),
 				TotalFileSize:       100,
 				CachedFiles:         int32(f.blockSzB),
 			},
@@ -201,6 +208,7 @@ func TestCommitSnapshot(t *testing.T) {
 			expMan.Stats.ExcludedFileCount = psm.Stats.TotalFileCount
 			expMan.Stats.ExcludedTotalFileSize = psm.Stats.TotalFileSize
 			expMan.Stats.NonCachedFiles = psm.Stats.NonCachedFiles + 1
+			expMan.Stats.ReadErrors = int(expMan.Stats.NonCachedFiles)*1000 + 8
 		}
 
 		tB := time.Now()
@@ -287,6 +295,37 @@ func TestLinkPreviousSnapshot(t *testing.T) {
 	}
 }
 
+// nolint:wsl,gocritic
+func TestSnapshotDescription(t *testing.T) {
+	assert := assert.New(t)
+
+	f := &Filesystem{}
+	f.VolumeID = "volumeID"
+	f.VolumeSnapshotID = "snapshotID"
+
+	for _, tc := range []struct{ vs, exp string }{
+		{exp: fmt.Sprintf(descriptionFormat, descriptionSeparator, f.VolumeID, descriptionSeparator, f.VolumeSnapshotID)},
+		{vs: f.VolumeSnapshotID + "foo", exp: fmt.Sprintf(descriptionFormat, descriptionSeparator, f.VolumeID, descriptionSeparator, f.VolumeSnapshotID+"foo")},
+	} {
+		d := f.snapshotDescription(tc.vs)
+		assert.Equal(tc.exp, d)
+		m := &snapshot.Manifest{Description: d}
+		v, vs := f.parseSnapshotDescription(m)
+		assert.Equal(f.VolumeID, v)
+		if tc.vs != "" {
+			assert.Equal(tc.vs, vs)
+		} else {
+			assert.Equal(f.VolumeSnapshotID, vs)
+		}
+	}
+
+	// failure case
+	m := &snapshot.Manifest{Description: "invalid description"}
+	v, vs := f.parseSnapshotDescription(m)
+	assert.Equal("", v)
+	assert.Equal("", vs)
+}
+
 type testSnapshotProcessor struct {
 	inLsmR  repo.Repository
 	inLsmS  *snapshot.SourceInfo
@@ -323,8 +362,8 @@ func (tsp *testSnapshotProcessor) ListSnapshotManifests(ctx context.Context, rep
 
 		m, err := sh.ListSnapshotManifests(ctx, repo, src)
 
-		if err != nil || len(m) == 0 { // behavior?
-			return nil, tsp.retLsE
+		if err != nil || len(m) == 0 { // returns empty list
+			return nil, tsp.retLsmE
 		}
 
 		panic("failed to fail")
@@ -358,13 +397,13 @@ func (tsp *testSnapshotProcessor) LoadSnapshots(ctx context.Context, repo repo.R
 	tsp.inLosR = repo
 	tsp.inLosM = manifestIDs
 
-	if tsp.retLsmE != nil {
+	if tsp.retLosE != nil {
 		sh := &snapshotHelper{} // call the real thing to check that it works
 
 		m, err := sh.LoadSnapshots(ctx, repo, manifestIDs)
 
 		if err != nil || len(m) == 0 { // behavior?
-			return nil, tsp.retLsE
+			return nil, tsp.retLosE
 		}
 
 		panic("failed to fail")
