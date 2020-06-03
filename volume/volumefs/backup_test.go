@@ -147,7 +147,12 @@ func TestBackup(t *testing.T) {
 			assert.Equal(rDm, tbp.inCsRDm)
 		case "success":
 			assert.Equal(pMan, tbp.inCsPS)
-			assert.Equal(cMan, snap.Manifest)
+			expSnap := &Snapshot{
+				VolumeID:         f.VolumeID,
+				VolumeSnapshotID: f.VolumeSnapshotID,
+				Manifest:         cMan,
+			}
+			assert.Equal(expSnap, snap)
 		}
 	}
 }

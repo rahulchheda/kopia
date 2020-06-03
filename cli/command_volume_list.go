@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	volListCommand      = volumeCommands.Command("list", "List volume snapshots")
+	volListCommand      = volumeCommands.Command("ls", "List volume snapshots")
 	volListCommandVolID = volListCommand.Flag("vol-id", "Optional volume identifier").Short('V').String()
 )
 
@@ -28,11 +28,12 @@ func runVolListCommand(ctx context.Context, rep repo.Repository) error {
 			return snaps[i].Manifest.StartTime.Before(snaps[j].Manifest.StartTime)
 		})
 
-		fmt.Printf("      Timestamp                   Repository ID           Chain VolID / SnapID\n" +
-			"----------------------- --------------------------------- ----- -------------\n")
+		fmt.Printf("" +
+			"      Timestamp                   Repository ID              #Blocks      #Dirs   CLen   #CBlocks      #CDirs   VolID / SnapID\n" +
+			"----------------------- --------------------------------- ------------ ---------- ---- ------------ ---------- --------------\n")
 
 		for _, s := range snaps {
-			fmt.Printf("%s %s %5d %s %s\n", formatTimestamp(s.Manifest.StartTime), s.Manifest.RootObjectID(), s.ChainLength, s.VolumeID, s.VolumeSnapshotID)
+			fmt.Printf("%s %s %12d %10d %4d %12d %10d %s / %s\n", formatTimestamp(s.Manifest.StartTime), s.Manifest.RootObjectID(), s.NumBlocks, s.NumDirs, s.ChainLength, s.ChainedNumBlocks, s.ChainedNumDirs, s.VolumeID, s.VolumeSnapshotID)
 		}
 	}
 

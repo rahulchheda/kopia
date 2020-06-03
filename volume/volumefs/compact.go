@@ -79,8 +79,8 @@ func (f *Filesystem) Compact(ctx context.Context, args CompactArgs) (current, pr
 		return nil, nil, err
 	}
 
-	current = &Snapshot{Manifest: curMan}
-	previous = &Snapshot{Manifest: man}
+	current = &Snapshot{VolumeID: f.VolumeID, VolumeSnapshotID: f.VolumeSnapshotID, Manifest: curMan}
+	previous = &Snapshot{VolumeID: f.VolumeID, VolumeSnapshotID: f.VolumeSnapshotID, Manifest: man}
 
 	return // nolint:nakedret
 }

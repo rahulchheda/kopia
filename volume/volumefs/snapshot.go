@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	currentSnapshotDirName  = "t"
+	currentSnapshotDirName  = "c"
 	previousSnapshotDirName = "p"
 	directoryStreamType     = "kopia:directory" // copied from snapshot
 	descriptionSeparator    = ":"
