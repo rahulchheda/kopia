@@ -55,7 +55,7 @@ func runVolRestoreCommand(ctx context.Context, rep repo.Repository) error {
 	res, err := f.Restore(ctx, restoreArgs)
 
 	if err == nil {
-		fmt.Printf("%#v\n", res)
+		fmt.Printf("Restored %s %#v\n", res.Manifest.RootObjectID(), res.BlockIterStats)
 	}
 
 	return err

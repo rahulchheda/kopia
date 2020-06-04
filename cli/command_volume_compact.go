@@ -38,7 +38,9 @@ func runVolCompactCommand(ctx context.Context, rep repo.Repository) error {
 	cur, prev, err := f.Compact(ctx, compactArgs)
 
 	if err == nil {
-		fmt.Printf("cur:%#v prev:%#v\n", cur, prev)
+		deltaBlocks := cur.CurrentNumBlocks - (prev.CurrentNumBlocks + prev.ChainedNumBlocks)
+		deltaDirs := cur.CurrentNumDirs - (prev.CurrentNumDirs + prev.ChainedNumDirs)
+		fmt.Printf("%s compacted to %s Δ[%d blocks, %d dirs]\n", prev.Manifest.RootObjectID(), cur.Manifest.RootObjectID(), deltaBlocks, deltaDirs)
 	}
 
 	return err

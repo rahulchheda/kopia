@@ -16,10 +16,10 @@ import (
 // There is a fixed number of blocks that a symmetric tree can track.
 
 const (
-	maxDirEntries     = 256 // nolint:gomnd // must be a power of 2
-	maxTreeDepth      = 4
+	maxDirEntries     = 2048 // nolint:gomnd // must be a power of 2
+	maxTreeDepth      = 3
 	snapshotBlockSize = 1024 * 16 // nolint:gomnd // this value actually comes from the device
-	baseEncoding      = 32
+	baseEncoding      = 16
 )
 
 type layoutProperties struct {

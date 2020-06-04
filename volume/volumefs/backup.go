@@ -88,7 +88,7 @@ func (f *Filesystem) Backup(ctx context.Context, args BackupArgs) (*Snapshot, er
 		return nil, err
 	}
 
-	return &Snapshot{VolumeID: f.VolumeID, VolumeSnapshotID: f.VolumeSnapshotID, Manifest: curMan}, nil
+	return newSnapshot(f.VolumeID, f.VolumeSnapshotID, curMan), nil
 }
 
 // backupProcessor aids in unit testing

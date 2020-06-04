@@ -43,6 +43,7 @@ func TestCompact(t *testing.T) {
 			DirSummary: &fs.DirectorySummary{},
 		},
 		Stats: snapshot.Stats{
+			TotalFileCount: 10,
 			NonCachedFiles: 1, // chain len
 		},
 	}
@@ -63,6 +64,7 @@ func TestCompact(t *testing.T) {
 		curDm := &dirMeta{name: currentSnapshotDirName}
 		rootDir := &dirMeta{}
 		curMan := &snapshot.Manifest{}
+		curMan.Stats.TotalFileCount = 3
 		tcp := &testCompactProcessor{}
 		tcp.retIfsMan = man
 		tcp.retIfsDir = rootEntry
@@ -112,6 +114,10 @@ func TestCompact(t *testing.T) {
 			assert.NotNil(prev)
 			assert.Equal(curMan, cur.Manifest)
 			assert.Equal(man, prev.Manifest)
+			assert.NotZero(cur.CurrentNumBlocks)
+			assert.Equal(curMan.Stats.TotalFileCount, cur.CurrentNumBlocks)
+			assert.NotZero(prev.CurrentNumBlocks)
+			assert.Equal(man.Stats.TotalFileCount, prev.CurrentNumBlocks)
 		} else {
 			assert.Error(expError, err)
 			assert.Nil(cur)

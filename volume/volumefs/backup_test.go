@@ -78,6 +78,7 @@ func TestBackup(t *testing.T) {
 		pDm := &dirMeta{}
 		rDm := &dirMeta{}
 		cMan := &snapshot.Manifest{}
+		cMan.Stats.TotalFileCount = 10
 		pMan := &snapshot.Manifest{}
 		tbp := &testBackupProcessor{}
 		tbp.retLpsDm = pDm
@@ -151,6 +152,9 @@ func TestBackup(t *testing.T) {
 				VolumeID:         f.VolumeID,
 				VolumeSnapshotID: f.VolumeSnapshotID,
 				Manifest:         cMan,
+				SnapshotAnalysis: SnapshotAnalysis{
+					CurrentNumBlocks: 10,
+				},
 			}
 			assert.Equal(expSnap, snap)
 		}

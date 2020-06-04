@@ -15,43 +15,43 @@ import (
 )
 
 // nolint:wsl,gocritic
-func TestSnapshotAnalysis(t *testing.T) {
+func TestSnapshotDatastructure(t *testing.T) {
 	assert := assert.New(t)
 
 	expSA := SnapshotAnalysis{
 		BlockSizeBytes:     1000,
-		Bytes:              20000,
-		NumBlocks:          1000,
-		NumDirs:            100,
+		CurrentNumBlocks:   1000,
+		CurrentNumDirs:     100,
 		ChainLength:        2,
-		ChainedBytes:       80000,
 		ChainedNumBlocks:   2000,
 		ChainedNumDirs:     200,
+		WeightedDirCount:   1000,
 		WeightedBlockCount: 1020402000,
 	}
 
 	curStats := snapshot.Stats{
-		TotalDirectoryCount: expSA.NumDirs + expSA.ChainedNumDirs,
-		TotalFileCount:      expSA.NumBlocks + expSA.ChainedNumBlocks,
-		TotalFileSize:       expSA.Bytes + expSA.ChainedBytes,
-
+		TotalDirectoryCount:   expSA.CurrentNumDirs + expSA.ChainedNumDirs,
+		TotalFileCount:        expSA.CurrentNumBlocks + expSA.ChainedNumBlocks,
 		ExcludedFileCount:     expSA.ChainedNumBlocks,
-		ExcludedTotalFileSize: expSA.ChainedBytes,
 		ExcludedDirCount:      expSA.ChainedNumDirs,
-
-		CachedFiles:    int32(expSA.BlockSizeBytes),
-		NonCachedFiles: int32(expSA.ChainLength),
-
-		ReadErrors: expSA.WeightedBlockCount,
+		CachedFiles:           int32(expSA.BlockSizeBytes),
+		NonCachedFiles:        int32(expSA.ChainLength),
+		TotalFileSize:         expSA.WeightedBlockCount,
+		ExcludedTotalFileSize: expSA.WeightedDirCount,
 	}
 	sm := &snapshot.Manifest{
 		Stats: curStats,
 	}
 
 	sa := SnapshotAnalysis{}
-	sa.Analyze(sm)
+	sa.initFromManifest(sm)
 
 	assert.Equal(expSA, sa)
+
+	s := newSnapshot("vID", "vsID", sm)
+	assert.Equal("vID", s.VolumeID)
+	assert.Equal("vsID", s.VolumeSnapshotID)
+	assert.Equal(expSA, s.SnapshotAnalysis)
 }
 
 // nolint:wsl,gocritic
@@ -140,19 +140,20 @@ func TestCommitSnapshot(t *testing.T) {
 			DirSummary: &fs.DirectorySummary{},
 		},
 		Stats: snapshot.Stats{
-			TotalDirectoryCount: 1,
-			TotalFileCount:      10, // previous added
-			ExcludedFileCount:   2,  // 8 files
-			TotalFileSize:       1,
-			CachedFiles:         int32(f.blockSzB),
-			NonCachedFiles:      2, // chain len
-			ReadErrors:          1000,
+			TotalDirectoryCount:   5,  // previous added
+			ExcludedDirCount:      3,  // 2 directories
+			TotalFileCount:        10, // previous added
+			ExcludedFileCount:     2,  // 8 files
+			CachedFiles:           int32(f.blockSzB),
+			NonCachedFiles:        2,    // chain len
+			TotalFileSize:         100,  // previous WBC
+			ExcludedTotalFileSize: 1000, // previous WDC
 		},
 	}
 	summary := &fs.DirectorySummary{
 		TotalFileSize:  100,
 		TotalFileCount: 19, // current adds 9 files
-		TotalDirCount:  2,
+		TotalDirCount:  12, // current adds 7 dirs
 	}
 
 	for _, tc := range []string{
@@ -173,9 +174,8 @@ func TestCommitSnapshot(t *testing.T) {
 			Description: "volume:VolumeID:VolumeSnapshotID",
 			StartTime:   f.epoch,
 			Stats: snapshot.Stats{
-				TotalDirectoryCount: 2,
+				TotalDirectoryCount: int(summary.TotalDirCount),
 				TotalFileCount:      int(summary.TotalFileCount),
-				TotalFileSize:       100,
 				CachedFiles:         int32(f.blockSzB),
 			},
 			RootEntry: &snapshot.DirEntry{
@@ -208,7 +208,8 @@ func TestCommitSnapshot(t *testing.T) {
 			expMan.Stats.ExcludedFileCount = psm.Stats.TotalFileCount
 			expMan.Stats.ExcludedTotalFileSize = psm.Stats.TotalFileSize
 			expMan.Stats.NonCachedFiles = psm.Stats.NonCachedFiles + 1
-			expMan.Stats.ReadErrors = int(expMan.Stats.NonCachedFiles)*1000 + 8
+			expMan.Stats.TotalFileSize = int64(expMan.Stats.NonCachedFiles*1000 + 8)        // WBC
+			expMan.Stats.ExcludedTotalFileSize = int64(expMan.Stats.NonCachedFiles*100 + 2) // WDC
 		}
 
 		tB := time.Now()

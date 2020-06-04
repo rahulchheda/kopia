@@ -76,10 +76,7 @@ func runVolBackupCommand(ctx context.Context, rep repo.Repository) error {
 		enc = json.NewEncoder(&buf)
 	)
 
-	var sa volumefs.SnapshotAnalysis
-
-	sa.Analyze(result.Manifest)
-	_ = enc.Encode(sa)
+	_ = enc.Encode(result.SnapshotAnalysis)
 
 	printStderr("%s\n", buf.String())
 

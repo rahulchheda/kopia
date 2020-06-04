@@ -29,34 +29,46 @@ type Snapshot struct {
 	SnapshotAnalysis
 }
 
+// newSnapshot returns an initialized Snapshot
+func newSnapshot(vID, vsID string, man *snapshot.Manifest) *Snapshot {
+	s := &Snapshot{}
+	s.VolumeID = vID
+	s.VolumeSnapshotID = vsID
+	s.Manifest = man
+
+	if s.Manifest != nil {
+		s.SnapshotAnalysis.initFromManifest(s.Manifest)
+	}
+
+	return s
+}
+
 // SnapshotAnalysis analyzes the data in a snapshot manifest.
 type SnapshotAnalysis struct {
 	BlockSizeBytes     int
-	Bytes              int64
-	NumBlocks          int
-	NumDirs            int
+	CurrentNumBlocks   int
+	CurrentNumDirs     int
 	ChainLength        int
-	ChainedBytes       int64
 	ChainedNumBlocks   int
 	ChainedNumDirs     int
-	WeightedBlockCount int
+	WeightedBlockCount int64
+	WeightedDirCount   int64
 }
 
-// Analyze sets values from a snapshot manifest
-func (sa *SnapshotAnalysis) Analyze(man *snapshot.Manifest) {
+// initFromManifest sets values from a snapshot manifest
+func (sa *SnapshotAnalysis) initFromManifest(man *snapshot.Manifest) {
 	cs := man.Stats
 
 	sa.BlockSizeBytes = int(cs.CachedFiles)
-	sa.Bytes = cs.TotalFileSize - cs.ExcludedTotalFileSize // can be deduced from num blocks * block size
-	sa.NumBlocks = cs.TotalFileCount - cs.ExcludedFileCount
-	sa.NumDirs = cs.TotalDirectoryCount - cs.ExcludedDirCount
+	sa.CurrentNumBlocks = cs.TotalFileCount - cs.ExcludedFileCount
+	sa.CurrentNumDirs = cs.TotalDirectoryCount - cs.ExcludedDirCount
 
 	sa.ChainLength = int(cs.NonCachedFiles)
-	sa.ChainedBytes = cs.ExcludedTotalFileSize
 	sa.ChainedNumBlocks = cs.ExcludedFileCount
 	sa.ChainedNumDirs = cs.ExcludedDirCount
 
-	sa.WeightedBlockCount = cs.ReadErrors
+	sa.WeightedBlockCount = cs.TotalFileSize
+	sa.WeightedDirCount = cs.ExcludedTotalFileSize
 }
 
 // snapshotProcessor is an interface to Kopia snapshot methods
@@ -201,7 +213,6 @@ func (f *Filesystem) createSnapshotManifest(rootDir *dirMeta, psm *snapshot.Mani
 		Stats: snapshot.Stats{
 			TotalDirectoryCount: int(summary.TotalDirCount),
 			TotalFileCount:      int(summary.TotalFileCount),
-			TotalFileSize:       summary.TotalFileSize,
 			CachedFiles:         int32(f.blockSzB),
 		},
 		RootEntry: &snapshot.DirEntry{
@@ -215,10 +226,10 @@ func (f *Filesystem) createSnapshotManifest(rootDir *dirMeta, psm *snapshot.Mani
 	if psm != nil {
 		sm.Stats.ExcludedDirCount = psm.Stats.TotalDirectoryCount
 		sm.Stats.ExcludedFileCount = psm.Stats.TotalFileCount
-		sm.Stats.ExcludedTotalFileSize = psm.Stats.TotalFileSize
 		sm.Stats.NonCachedFiles = psm.Stats.NonCachedFiles + 1 // chain length
-		// weighted blocks (WB) = ChainLength * (PrevWB + curBlocks)
-		sm.Stats.ReadErrors = int(sm.Stats.NonCachedFiles)*psm.Stats.ReadErrors + psm.Stats.TotalFileCount - psm.Stats.ExcludedFileCount
+		// WeightedCounter = ChainLength * (previous WeightedCounter) + previous Counter
+		sm.Stats.ExcludedTotalFileSize = int64(sm.Stats.NonCachedFiles)*psm.Stats.TotalFileSize + int64(psm.Stats.TotalDirectoryCount-psm.Stats.ExcludedDirCount)
+		sm.Stats.TotalFileSize = int64(sm.Stats.NonCachedFiles)*psm.Stats.ExcludedTotalFileSize + int64(psm.Stats.TotalFileCount-psm.Stats.ExcludedFileCount)
 	}
 
 	return sm

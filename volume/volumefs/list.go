@@ -51,13 +51,7 @@ func (f *Filesystem) ListSnapshots(ctx context.Context) ([]*Snapshot, error) {
 			continue
 		}
 
-		s := &Snapshot{
-			VolumeID:         vID,
-			VolumeSnapshotID: vsID,
-			Manifest:         m,
-		}
-		s.Analyze(m)
-		res = append(res, s)
+		res = append(res, newSnapshot(vID, vsID, m))
 	}
 
 	return res, nil
