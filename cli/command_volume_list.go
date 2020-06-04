@@ -29,12 +29,12 @@ func runVolListCommand(ctx context.Context, rep repo.Repository) error {
 		})
 
 		fmt.Printf("" +
-			"      Timestamp                   Repository ID              #Blocks      #Dirs   CLen   #CBlocks      #CDirs         WDC              WBC       VolID / SnapID\n" +
-			"----------------------- --------------------------------- ------------ ---------- ---- ------------ ---------- ---------------- ---------------- --------------\n")
+			"      Timestamp                   Root ID                            Manifest ID              #Blocks     #Dirs    CLen   #CBlocks     #CDirs         WDC               WBC       VolID / SnapID\n" +
+			"----------------------- --------------------------------- -------------------------------- ------------ ---------- ---- ------------ ---------- ---------------- ---------------- --------------\n")
 
 		for _, s := range snaps {
-			fmt.Printf("%s %s %12d %10d %4d %12d %10d %16d %16d %s / %s\n",
-				formatTimestamp(s.Manifest.StartTime), s.Manifest.RootObjectID(), s.CurrentNumBlocks, s.CurrentNumDirs,
+			fmt.Printf("%s %s %s %12d %10d %4d %12d %10d %16d %16d %s / %s\n",
+				formatTimestamp(s.Manifest.StartTime), s.Manifest.RootObjectID(), s.Manifest.ID, s.CurrentNumBlocks, s.CurrentNumDirs,
 				s.ChainLength, s.ChainedNumBlocks, s.ChainedNumDirs, s.WeightedDirCount, s.WeightedBlockCount,
 				s.VolumeID, s.VolumeSnapshotID)
 		}
