@@ -69,7 +69,7 @@ func runVolBackupCommand(ctx context.Context, rep repo.Repository) error {
 	}
 
 	dur := result.Manifest.EndTime.Sub(result.Manifest.StartTime)
-	printStderr("\nCreated snapshot with root %v and ID %v in %v\n", result.Manifest.RootObjectID(), result.Manifest.ID, dur.Truncate(time.Second))
+	fmt.Printf("Created snapshot with root %v and ID %v in %v\n", result.Manifest.RootObjectID(), result.Manifest.ID, dur.Truncate(time.Second))
 
 	var (
 		buf bytes.Buffer
@@ -78,7 +78,7 @@ func runVolBackupCommand(ctx context.Context, rep repo.Repository) error {
 
 	_ = enc.Encode(result.SnapshotAnalysis)
 
-	printStderr("%s\n", buf.String())
+	fmt.Printf("%s", buf.String())
 
 	return nil
 }
