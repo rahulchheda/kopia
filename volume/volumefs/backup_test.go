@@ -43,7 +43,7 @@ func TestBackupArgs(t *testing.T) {
 	}
 }
 
-// nolint:wsl,gocritic,goconst
+// nolint:wsl,gocritic,goconst,gocyclo
 func TestBackup(t *testing.T) {
 	assert := assert.New(t)
 
@@ -60,7 +60,7 @@ func TestBackup(t *testing.T) {
 	for _, tc := range []string{
 		"invalid args",
 		"no gbr", "link error", "bb error default concurrency", "cr error non-default concurrency",
-		"cs error", "success",
+		"cs error", "write dir error", "success",
 	} {
 		t.Logf("Case: %s", tc)
 
@@ -120,6 +120,9 @@ func TestBackup(t *testing.T) {
 			expError = ErrInvalidSnapshot
 			tbp.retCsE = expError
 			tbp.retCsS = nil
+		case "write dir error":
+			expError = ErrInvalidArgs
+			tbp.retWdrE = expError
 		case "success":
 			ba.PreviousVolumeSnapshotID = "previousVolumeSnapshotID"
 		}
@@ -172,7 +175,7 @@ func TestBackupBlocks(t *testing.T) {
 		// helper tests
 		"invalid addr", "block get error", "file write error", "size mismatch + close error", "no error",
 		// bb tests
-		"GetBlocks error", "run error", "write dir error", "success",
+		"GetBlocks error", "run error", "success",
 	} {
 		t.Logf("Case: %s", tc)
 
@@ -233,10 +236,6 @@ func TestBackupBlocks(t *testing.T) {
 			bbhTest = false
 			expError = ErrInvalidArgs
 			numWorkers = -1
-		case "write dir error":
-			bbhTest = false
-			expError = ErrInvalidArgs
-			tU.retWriteDirE = expError
 		case "success":
 			bbhTest = false
 		}
@@ -299,6 +298,11 @@ type testBackupProcessor struct {
 	inCsPS  *snapshot.Manifest
 	retCsS  *snapshot.Manifest
 	retCsE  error
+
+	inWdrPp  parsedPath
+	inWdrDm  *dirMeta
+	inWdrWst bool
+	retWdrE  error
 }
 
 var _ backupProcessor = (*testBackupProcessor)(nil)
@@ -328,4 +332,12 @@ func (tbp *testBackupProcessor) commitSnapshot(ctx context.Context, rootDir *dir
 	tbp.inCsPS = psm
 
 	return tbp.retCsS, tbp.retCsE
+}
+
+func (tbp *testBackupProcessor) writeDirToRepo(ctx context.Context, pp parsedPath, dir *dirMeta, writeSubTree bool) error {
+	tbp.inWdrPp = pp
+	tbp.inWdrDm = dir
+	tbp.inWdrWst = writeSubTree
+
+	return tbp.retWdrE
 }

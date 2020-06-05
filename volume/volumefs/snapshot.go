@@ -228,8 +228,8 @@ func (f *Filesystem) createSnapshotManifest(rootDir *dirMeta, psm *snapshot.Mani
 		sm.Stats.ExcludedFileCount = psm.Stats.TotalFileCount
 		sm.Stats.NonCachedFiles = psm.Stats.NonCachedFiles + 1 // chain length
 		// WeightedCounter = ChainLength * (previous WeightedCounter) + previous Counter
-		sm.Stats.ExcludedTotalFileSize = int64(sm.Stats.NonCachedFiles)*psm.Stats.TotalFileSize + int64(psm.Stats.TotalDirectoryCount-psm.Stats.ExcludedDirCount)
-		sm.Stats.TotalFileSize = int64(sm.Stats.NonCachedFiles)*psm.Stats.ExcludedTotalFileSize + int64(psm.Stats.TotalFileCount-psm.Stats.ExcludedFileCount)
+		sm.Stats.ExcludedTotalFileSize = int64(sm.Stats.NonCachedFiles)*psm.Stats.ExcludedTotalFileSize + int64(psm.Stats.TotalDirectoryCount-psm.Stats.ExcludedDirCount)
+		sm.Stats.TotalFileSize = int64(sm.Stats.NonCachedFiles)*psm.Stats.TotalFileSize + int64(psm.Stats.TotalFileCount-psm.Stats.ExcludedFileCount)
 	}
 
 	return sm

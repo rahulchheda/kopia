@@ -140,20 +140,22 @@ func TestCommitSnapshot(t *testing.T) {
 			DirSummary: &fs.DirectorySummary{},
 		},
 		Stats: snapshot.Stats{
-			TotalDirectoryCount:   5,  // previous added
-			ExcludedDirCount:      3,  // 2 directories
-			TotalFileCount:        10, // previous added
-			ExcludedFileCount:     2,  // 8 files
+			TotalDirectoryCount: 5, // previous added
+			ExcludedDirCount:    3, // 2 directories
+
+			TotalFileCount:    10, // previous added
+			ExcludedFileCount: 2,  // 8 files
+
 			CachedFiles:           int32(f.blockSzB),
 			NonCachedFiles:        2,    // chain len
-			TotalFileSize:         100,  // previous WBC
-			ExcludedTotalFileSize: 1000, // previous WDC
+			TotalFileSize:         1000, // previous WBC
+			ExcludedTotalFileSize: 100,  // previous WDC
 		},
 	}
 	summary := &fs.DirectorySummary{
-		TotalFileSize:  100,
-		TotalFileCount: 19, // current adds 9 files
-		TotalDirCount:  12, // current adds 7 dirs
+		TotalFileSize:  100, // ignored
+		TotalFileCount: 19,  // current adds 9 files
+		TotalDirCount:  12,  // current adds 7 dirs
 	}
 
 	for _, tc := range []string{
@@ -206,7 +208,6 @@ func TestCommitSnapshot(t *testing.T) {
 		case "committed with prev":
 			expMan.Stats.ExcludedDirCount = psm.Stats.TotalDirectoryCount
 			expMan.Stats.ExcludedFileCount = psm.Stats.TotalFileCount
-			expMan.Stats.ExcludedTotalFileSize = psm.Stats.TotalFileSize
 			expMan.Stats.NonCachedFiles = psm.Stats.NonCachedFiles + 1
 			expMan.Stats.TotalFileSize = int64(expMan.Stats.NonCachedFiles*1000 + 8)        // WBC
 			expMan.Stats.ExcludedTotalFileSize = int64(expMan.Stats.NonCachedFiles*100 + 2) // WDC

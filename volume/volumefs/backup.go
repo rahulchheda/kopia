@@ -87,8 +87,17 @@ func (f *Filesystem) Backup(ctx context.Context, args BackupArgs) (*BackupResult
 	}
 
 	if curDm, bis, err = f.bp.backupBlocks(ctx, br, numWorkers); err == nil {
-		if rootDir, err = f.bp.createRoot(ctx, curDm, prevRootDm); err == nil {
-			curMan, err = f.bp.commitSnapshot(ctx, rootDir, prevMan)
+		// TBD: Decide if compaction must be done based on uncommitted stats + prev stats
+		//      Only necessary if minChainLen exceeded.
+		// How:
+		//  - build a block map for the saved blocks while processing
+		//  - create the effective block map of the previous snapshot
+		//  - add current blocks to the block map
+		//  - update curRoot from block map
+		if err = f.bp.writeDirToRepo(ctx, parsedPath{currentSnapshotDirName}, curDm, true); err == nil {
+			if rootDir, err = f.bp.createRoot(ctx, curDm, prevRootDm); err == nil {
+				curMan, err = f.bp.commitSnapshot(ctx, rootDir, prevMan)
+			}
 		}
 	}
 
@@ -113,6 +122,7 @@ type backupProcessor interface {
 	commitSnapshot(ctx context.Context, rootDir *dirMeta, psm *snapshot.Manifest) (*snapshot.Manifest, error)
 	createRoot(ctx context.Context, curDm, prevRootDm *dirMeta) (*dirMeta, error)
 	linkPreviousSnapshot(ctx context.Context, prevVolumeSnapshotID string) (*dirMeta, *snapshot.Manifest, error)
+	writeDirToRepo(ctx context.Context, pp parsedPath, dir *dirMeta, writeSubTree bool) error
 }
 
 // backupBlocks writes the volume blocks and the block map hierarchy to the repo.
@@ -139,23 +149,6 @@ func (f *Filesystem) backupBlocks(ctx context.Context, br volume.BlockReader, nu
 	bis.NumBlocks = int(bbh.bp.NumBlocks)
 	bis.MaxBlockAddr = bbh.bp.MaxAddress
 	bis.MinBlockAddr = bbh.bp.MinAddress
-
-	// TBD: Decide if compaction must be done based on uncommitted stats + prev stats
-	//      Only necessary if minChainLen exceeded.
-	// How:
-	//  - build a block map for the saved blocks while processing
-	//  - create the effective block map of the previous snapshot
-	//  - add current blocks to the block map
-	//  - update curRoot from block map
-	//
-	// Break out the next call to a separate step so compact steps can be interwoven and
-	// this logic hoisted to Backup
-
-	// upload the block map directory hierarchy
-	err = f.up.writeDirToRepo(ctx, parsedPath{currentSnapshotDirName}, bbh.curRoot, true)
-	if err != nil {
-		return nil, bis, err
-	}
 
 	return bbh.curRoot, bis, nil
 }
