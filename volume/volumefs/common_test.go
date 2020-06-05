@@ -187,12 +187,18 @@ func (vm *testVM) GetBlockWriter(args volume.GetBlockWriterArgs) (volume.BlockWr
 type testBW struct {
 	inPutBlocksBI   volume.BlockIterator
 	retPutBlocksErr error
+	waitChan        chan int
 }
 
 var _ volume.BlockWriter = (*testBW)(nil)
 
 func (bw *testBW) PutBlocks(ctx context.Context, bi volume.BlockIterator) error {
 	bw.inPutBlocksBI = bi
+
+	if bw.waitChan != nil {
+		<-bw.waitChan
+	}
+
 	return bw.retPutBlocksErr
 }
 

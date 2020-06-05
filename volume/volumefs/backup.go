@@ -35,9 +35,16 @@ func (a *BackupArgs) Validate() error {
 	return nil
 }
 
+// BackupResult returns the result of a Backup operation
+type BackupResult struct {
+	Snapshot         *Snapshot
+	PreviousSnapshot *Snapshot
+	BlockIterStats
+}
+
 // Backup a volume.
 // The volume manager must provide a BlockReader interface.
-func (f *Filesystem) Backup(ctx context.Context, args BackupArgs) (*Snapshot, error) {
+func (f *Filesystem) Backup(ctx context.Context, args BackupArgs) (*BackupResult, error) {
 	if err := args.Validate(); err != nil {
 		return nil, err
 	}
@@ -64,6 +71,7 @@ func (f *Filesystem) Backup(ctx context.Context, args BackupArgs) (*Snapshot, er
 		rootDir    *dirMeta
 		prevMan    *snapshot.Manifest
 		curMan     *snapshot.Manifest
+		bis        BlockIterStats
 	)
 
 	if args.PreviousVolumeSnapshotID != "" {
@@ -78,7 +86,7 @@ func (f *Filesystem) Backup(ctx context.Context, args BackupArgs) (*Snapshot, er
 		numWorkers = args.Concurrency
 	}
 
-	if curDm, err = f.bp.backupBlocks(ctx, br, numWorkers); err == nil {
+	if curDm, bis, err = f.bp.backupBlocks(ctx, br, numWorkers); err == nil {
 		if rootDir, err = f.bp.createRoot(ctx, curDm, prevRootDm); err == nil {
 			curMan, err = f.bp.commitSnapshot(ctx, rootDir, prevMan)
 		}
@@ -88,22 +96,32 @@ func (f *Filesystem) Backup(ctx context.Context, args BackupArgs) (*Snapshot, er
 		return nil, err
 	}
 
-	return newSnapshot(f.VolumeID, f.VolumeSnapshotID, curMan), nil
+	res := &BackupResult{
+		Snapshot:       newSnapshot(f.VolumeID, f.VolumeSnapshotID, curMan),
+		BlockIterStats: bis,
+	}
+	if prevMan != nil {
+		res.PreviousSnapshot = newSnapshot(f.VolumeID, f.prevVolumeSnapshotID, prevMan)
+	}
+
+	return res, nil
 }
 
 // backupProcessor aids in unit testing
 type backupProcessor interface {
-	backupBlocks(ctx context.Context, br volume.BlockReader, numWorkers int) (*dirMeta, error)
+	backupBlocks(ctx context.Context, br volume.BlockReader, numWorkers int) (*dirMeta, BlockIterStats, error)
 	commitSnapshot(ctx context.Context, rootDir *dirMeta, psm *snapshot.Manifest) (*snapshot.Manifest, error)
 	createRoot(ctx context.Context, curDm, prevRootDm *dirMeta) (*dirMeta, error)
 	linkPreviousSnapshot(ctx context.Context, prevVolumeSnapshotID string) (*dirMeta, *snapshot.Manifest, error)
 }
 
 // backupBlocks writes the volume blocks and the block map hierarchy to the repo.
-func (f *Filesystem) backupBlocks(ctx context.Context, br volume.BlockReader, numWorkers int) (*dirMeta, error) {
+func (f *Filesystem) backupBlocks(ctx context.Context, br volume.BlockReader, numWorkers int) (*dirMeta, BlockIterStats, error) {
+	bis := BlockIterStats{}
+
 	bi, err := br.GetBlocks(ctx)
 	if err != nil {
-		return nil, err
+		return nil, bis, err
 	}
 
 	bbh := &backupBlocksHelper{}
@@ -115,8 +133,12 @@ func (f *Filesystem) backupBlocks(ctx context.Context, br volume.BlockReader, nu
 	// process the snapshot blocks
 	err = bbh.bp.Run(ctx)
 	if err != nil {
-		return nil, err
+		return nil, bis, err
 	}
+
+	bis.NumBlocks = int(bbh.bp.NumBlocks)
+	bis.MaxBlockAddr = bbh.bp.MaxAddress
+	bis.MinBlockAddr = bbh.bp.MinAddress
 
 	// TBD: Decide if compaction must be done based on uncommitted stats + prev stats
 	//      Only necessary if minChainLen exceeded.
@@ -132,10 +154,10 @@ func (f *Filesystem) backupBlocks(ctx context.Context, br volume.BlockReader, nu
 	// upload the block map directory hierarchy
 	err = f.up.writeDirToRepo(ctx, parsedPath{currentSnapshotDirName}, bbh.curRoot, true)
 	if err != nil {
-		return nil, err
+		return nil, bis, err
 	}
 
-	return bbh.curRoot, nil
+	return bbh.curRoot, bis, nil
 }
 
 // backupBlocksHelper is a helper for backupBlocks

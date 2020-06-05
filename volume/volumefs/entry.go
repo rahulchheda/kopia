@@ -29,7 +29,10 @@ func (f *Filesystem) createRoot(ctx context.Context, curDm, prevRootDm *dirMeta)
 
 // createTreeFromBlockMap creates an in-memory hierarchy from a block map and returns its root.
 // Directories are not written to the repo.
-func (f *Filesystem) createTreeFromBlockMap(bm BlockMap) (*dirMeta, error) {
+func (f *Filesystem) createTreeFromBlockMap(bm BlockMap) (*dirMeta, BlockIterStats, error) {
+	bis := BlockIterStats{}
+	bis.initStats()
+
 	bi := bm.Iterator()
 	defer bi.Close()
 
@@ -41,7 +44,16 @@ func (f *Filesystem) createTreeFromBlockMap(bm BlockMap) (*dirMeta, error) {
 	for bam := bi.Next(); bam != emptyBam; bam = bi.Next() {
 		pp, err := f.addrToPath(bam.BlockAddr)
 		if err != nil {
-			return nil, err
+			return nil, bis, err
+		}
+
+		bis.NumBlocks++
+		if bis.MaxBlockAddr < bam.BlockAddr {
+			bis.MaxBlockAddr = bam.BlockAddr
+		}
+
+		if bis.MinBlockAddr > bam.BlockAddr {
+			bis.MinBlockAddr = bam.BlockAddr
 		}
 
 		fm := f.ensureFileInTree(mapRootDm, pp)
@@ -50,7 +62,7 @@ func (f *Filesystem) createTreeFromBlockMap(bm BlockMap) (*dirMeta, error) {
 		f.logger.Debugf("block [%s] %s", pp.String(), bam.Oid)
 	}
 
-	return mapRootDm, nil
+	return mapRootDm, bis, nil
 }
 
 // lookupDir searches for a directory in a directory hierarchy

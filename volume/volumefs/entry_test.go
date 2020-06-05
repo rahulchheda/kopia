@@ -87,9 +87,12 @@ func TestCreateTreeFromBlockMap(t *testing.T) {
 		bmm.InsertOrReplace(bam)
 	}
 
-	dm, err := f.createTreeFromBlockMap(bmm)
+	dm, bis, err := f.createTreeFromBlockMap(bmm)
 	assert.NoError(err)
 	assert.NotNil(dm)
+	assert.Equal(len(addresses), bis.NumBlocks)
+	assert.Equal(addresses[0], bis.MinBlockAddr)
+	assert.Equal(addresses[len(addresses)-1], bis.MaxBlockAddr)
 
 	for _, ba := range addresses {
 		pp, err := f.addrToPath(ba) // nolint:govet
@@ -106,7 +109,7 @@ func TestCreateTreeFromBlockMap(t *testing.T) {
 	}
 	bmm.InsertOrReplace(bam)
 
-	dm, err = f.createTreeFromBlockMap(bmm)
+	dm, bis, err = f.createTreeFromBlockMap(bmm)
 	assert.Error(err)
 	assert.Nil(dm)
 }

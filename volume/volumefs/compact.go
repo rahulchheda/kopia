@@ -28,6 +28,13 @@ func (a *CompactArgs) Validate() error {
 	return nil
 }
 
+// CompactResult returns the result of a Compact operation
+type CompactResult struct {
+	Snapshot         *Snapshot
+	PreviousSnapshot *Snapshot
+	BlockIterStats
+}
+
 // Compact a volume snapshot creating a new snapshot with the same VolSnapID metadata file
 // but no VolPrevSnapID metadata.  After compaction earlier snapshots can be deleted to free
 // up references to shadowed blocks.
@@ -35,9 +42,9 @@ func (a *CompactArgs) Validate() error {
 // Note that this cannot operate concurrently with an incremental snapshot that references the
 // snapshot being compacted (i.e. the "head" snapshot), but is safe for concurrent use if the
 // latest incremental references a later snapshot.
-func (f *Filesystem) Compact(ctx context.Context, args CompactArgs) (current, previous *Snapshot, err error) {
-	if err := args.Validate(); err != nil { // nolint: govet
-		return nil, nil, err
+func (f *Filesystem) Compact(ctx context.Context, args CompactArgs) (*CompactResult, error) {
+	if err := args.Validate(); err != nil {
+		return nil, err
 	}
 
 	f.logger = log(ctx)
@@ -46,7 +53,7 @@ func (f *Filesystem) Compact(ctx context.Context, args CompactArgs) (current, pr
 
 	man, rootEntry, _, err := f.cp.initFromSnapshot(ctx, f.VolumeSnapshotID)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	chainLen := int(man.Stats.NonCachedFiles)
@@ -58,16 +65,17 @@ func (f *Filesystem) Compact(ctx context.Context, args CompactArgs) (current, pr
 
 	bm, err := f.cp.effectiveBlockMap(ctx, chainLen, rootEntry, concurrency)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	var (
 		curDm   *dirMeta
 		rootDir *dirMeta
 		curMan  *snapshot.Manifest
+		bis     BlockIterStats
 	)
 
-	if curDm, err = f.cp.createTreeFromBlockMap(bm); err == nil {
+	if curDm, bis, err = f.cp.createTreeFromBlockMap(bm); err == nil {
 		if err = f.cp.writeDirToRepo(ctx, parsedPath{curDm.name}, curDm, true); err == nil {
 			if rootDir, err = f.cp.createRoot(ctx, curDm, nil); err == nil {
 				curMan, err = f.cp.commitSnapshot(ctx, rootDir, nil)
@@ -76,19 +84,22 @@ func (f *Filesystem) Compact(ctx context.Context, args CompactArgs) (current, pr
 	}
 
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	current = newSnapshot(f.VolumeID, f.VolumeSnapshotID, curMan)
-	previous = newSnapshot(f.VolumeID, f.VolumeSnapshotID, man)
+	res := &CompactResult{
+		Snapshot:         newSnapshot(f.VolumeID, f.VolumeSnapshotID, curMan),
+		PreviousSnapshot: newSnapshot(f.VolumeID, f.VolumeSnapshotID, man),
+		BlockIterStats:   bis,
+	}
 
-	return // nolint:nakedret
+	return res, nil
 }
 
 type compactProcessor interface {
 	commitSnapshot(ctx context.Context, rootDir *dirMeta, psm *snapshot.Manifest) (*snapshot.Manifest, error)
 	createRoot(ctx context.Context, curDm, prevRootDm *dirMeta) (*dirMeta, error)
-	createTreeFromBlockMap(bm BlockMap) (*dirMeta, error)
+	createTreeFromBlockMap(bm BlockMap) (*dirMeta, BlockIterStats, error)
 	effectiveBlockMap(ctx context.Context, chainLen int, rootEntry fs.Directory, concurrency int) (BlockMap, error)
 	initFromSnapshot(ctx context.Context, snapshotID string) (*snapshot.Manifest, fs.Directory, metadata, error)
 	writeDirToRepo(ctx context.Context, pp parsedPath, dir *dirMeta, writeSubTree bool) error

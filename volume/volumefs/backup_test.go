@@ -7,7 +7,7 @@ import (
 	"github.com/kopia/kopia/repo/object"
 	"github.com/kopia/kopia/snapshot"
 	"github.com/kopia/kopia/volume"
-	vmgr "github.com/kopia/kopia/volume/fake"
+	"github.com/kopia/kopia/volume/fake"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -16,7 +16,7 @@ import (
 func TestBackupArgs(t *testing.T) {
 	assert := assert.New(t)
 
-	mgr := volume.FindManager(vmgr.VolumeType)
+	mgr := volume.FindManager(fake.VolumeType)
 	assert.NotNil(mgr)
 
 	badTcs := []BackupArgs{
@@ -47,10 +47,10 @@ func TestBackupArgs(t *testing.T) {
 func TestBackup(t *testing.T) {
 	assert := assert.New(t)
 
-	mgr := volume.FindManager(vmgr.VolumeType)
+	mgr := volume.FindManager(fake.VolumeType)
 	assert.NotNil(mgr)
-	profile := &vmgr.ReaderProfile{
-		Ranges: []vmgr.BlockAddrRange{
+	profile := &fake.ReaderProfile{
+		Ranges: []fake.BlockAddrRange{
 			{Start: 0, Count: 1},
 			{Start: 0x100, Count: 1},
 			{Start: 0x111ff, Count: 1},
@@ -124,14 +124,14 @@ func TestBackup(t *testing.T) {
 			ba.PreviousVolumeSnapshotID = "previousVolumeSnapshotID"
 		}
 
-		snap, err := f.Backup(ctx, ba)
+		res, err := f.Backup(ctx, ba)
 
 		if expError == nil {
 			assert.NoError(err)
-			assert.NotNil(snap)
+			assert.NotNil(res)
 		} else {
 			assert.Error(expError, err)
-			assert.Nil(snap)
+			assert.Nil(res)
 		}
 
 		switch tc {
@@ -156,7 +156,7 @@ func TestBackup(t *testing.T) {
 					CurrentNumBlocks: 10,
 				},
 			}
-			assert.Equal(expSnap, snap)
+			assert.Equal(expSnap, res.Snapshot)
 		}
 	}
 }
@@ -202,6 +202,7 @@ func TestBackupBlocks(t *testing.T) {
 
 		var expError, err error
 		var dm *dirMeta
+		var bis BlockIterStats
 		expRClose := true
 		bbhTest := true
 		numWorkers := 1
@@ -248,7 +249,7 @@ func TestBackupBlocks(t *testing.T) {
 			assert.NotNil(bbh.bufPool.New)
 			err = bbh.worker(ctx, b)
 		} else {
-			dm, err = f.backupBlocks(ctx, tBR, numWorkers)
+			dm, bis, err = f.backupBlocks(ctx, tBR, numWorkers)
 		}
 
 		if expError == nil {
@@ -262,6 +263,9 @@ func TestBackupBlocks(t *testing.T) {
 			} else {
 				assert.NotNil(dm)
 				assert.Equal(&dirMeta{name: currentSnapshotDirName}, dm)
+				assert.Equal(int64((^uint64(0) >> 1)), bis.MinBlockAddr)
+				assert.Equal(int64(-1), bis.MaxBlockAddr)
+				assert.Equal(0, bis.NumBlocks)
 			}
 		} else {
 			assert.Error(err)
@@ -280,10 +284,11 @@ type testBackupProcessor struct {
 	retLpsE    error
 	retLpsS    *snapshot.Manifest
 
-	inBbBR  volume.BlockReader
-	inBbNw  int
-	retBbDm *dirMeta
-	retBbE  error
+	inBbBR   volume.BlockReader
+	inBbNw   int
+	retBbDm  *dirMeta
+	retBbBis BlockIterStats
+	retBbE   error
 
 	inCrCDm *dirMeta
 	inCrPDm *dirMeta
@@ -304,11 +309,11 @@ func (tbp *testBackupProcessor) linkPreviousSnapshot(ctx context.Context, prevVo
 	return tbp.retLpsDm, tbp.retLpsS, tbp.retLpsE
 }
 
-func (tbp *testBackupProcessor) backupBlocks(ctx context.Context, br volume.BlockReader, numWorkers int) (*dirMeta, error) {
+func (tbp *testBackupProcessor) backupBlocks(ctx context.Context, br volume.BlockReader, numWorkers int) (*dirMeta, BlockIterStats, error) {
 	tbp.inBbBR = br
 	tbp.inBbNw = numWorkers
 
-	return tbp.retBbDm, tbp.retBbE
+	return tbp.retBbDm, tbp.retBbBis, tbp.retBbE
 }
 
 func (tbp *testBackupProcessor) createRoot(ctx context.Context, curDm, prevRootDm *dirMeta) (*dirMeta, error) {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/kopia/kopia/repo"
@@ -63,22 +64,20 @@ func runVolBackupCommand(ctx context.Context, rep repo.Repository) error {
 		return err
 	}
 
-	result, err := f.Backup(ctx, backupArgs)
+	res, err := f.Backup(ctx, backupArgs)
 	if err != nil {
 		return err
 	}
 
-	dur := result.Manifest.EndTime.Sub(result.Manifest.StartTime)
-	fmt.Printf("Created snapshot with root %v and ID %v in %v\n", result.Manifest.RootObjectID(), result.Manifest.ID, dur.Truncate(time.Second))
-
 	var (
+		dur = res.Snapshot.Manifest.EndTime.Sub(res.Snapshot.Manifest.StartTime)
 		buf bytes.Buffer
 		enc = json.NewEncoder(&buf)
 	)
 
-	_ = enc.Encode(result.SnapshotAnalysis)
+	_ = enc.Encode(res.Snapshot.SnapshotAnalysis)
 
-	fmt.Printf("%s", buf.String())
+	fmt.Printf("Created %v and ID %v in %v\n%s\n%s", res.Snapshot.Manifest.RootObjectID(), res.Snapshot.Manifest.ID, dur.Truncate(time.Second), res.BlockIterStats.String(), strings.ReplaceAll(buf.String(), "\"", ""))
 
 	return nil
 }

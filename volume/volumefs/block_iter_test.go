@@ -48,8 +48,9 @@ func TestBlockIter(t *testing.T) {
 	assert.Equal(f, bi.f)
 	assert.Equal(bmi, bi.bmi)
 	assert.Equal(int64(-1), bi.MaxBlockAddr)
-	assert.Equal(f.maxBlocks+1, bi.MinBlockAddr)
+	assert.Equal(int64((^uint64(0) >> 1)), bi.MinBlockAddr)
 	assert.Equal(0, bi.NumBlocks)
+	assert.Equal("{}", bi.String())
 
 	// next (min block)
 	b := bi.Next(ctx)
@@ -61,6 +62,7 @@ func TestBlockIter(t *testing.T) {
 	assert.Equal(int64(0), bi.MinBlockAddr)
 	assert.Equal(int64(0), bi.MaxBlockAddr)
 	assert.Equal(1, bi.NumBlocks)
+	assert.Equal("{NumBlocks:1,MinBlockAddr:0,MaxBlockAddr:0}", bi.String())
 
 	// next (max block)
 	b = bi.Next(ctx)
@@ -72,6 +74,7 @@ func TestBlockIter(t *testing.T) {
 	assert.Equal(int64(0), bi.MinBlockAddr)
 	assert.Equal(int64(1), bi.MaxBlockAddr)
 	assert.Equal(2, bi.NumBlocks)
+	assert.Equal("{NumBlocks:2,MinBlockAddr:0,MaxBlockAddr:1}", bi.String())
 
 	// eof
 	b = bi.Next(ctx)
@@ -80,6 +83,7 @@ func TestBlockIter(t *testing.T) {
 	assert.Equal(int64(0), bi.MinBlockAddr)
 	assert.Equal(int64(1), bi.MaxBlockAddr)
 	assert.Equal(2, bi.NumBlocks)
+	assert.Equal("{NumBlocks:2,MinBlockAddr:0,MaxBlockAddr:1}", bi.String())
 
 	// eof again
 	b = bi.Next(ctx)

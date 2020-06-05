@@ -35,12 +35,12 @@ func runVolCompactCommand(ctx context.Context, rep repo.Repository) error {
 		return err
 	}
 
-	cur, prev, err := f.Compact(ctx, compactArgs)
+	res, err := f.Compact(ctx, compactArgs)
 
 	if err == nil {
-		deltaBlocks := cur.CurrentNumBlocks - (prev.CurrentNumBlocks + prev.ChainedNumBlocks)
-		deltaDirs := cur.CurrentNumDirs - (prev.CurrentNumDirs + prev.ChainedNumDirs)
-		fmt.Printf("%s compacted to %s Δ[%d blocks, %d dirs]\n", prev.Manifest.RootObjectID(), cur.Manifest.RootObjectID(), deltaBlocks, deltaDirs)
+		deltaBlocks := res.Snapshot.CurrentNumBlocks - (res.PreviousSnapshot.CurrentNumBlocks + res.PreviousSnapshot.ChainedNumBlocks)
+		deltaDirs := res.Snapshot.CurrentNumDirs - (res.PreviousSnapshot.CurrentNumDirs + res.PreviousSnapshot.ChainedNumDirs)
+		fmt.Printf("%s compacted to %s\nΔ[%d blocks, %d dirs]\n%s\n", res.PreviousSnapshot.Manifest.RootObjectID(), res.Snapshot.Manifest.RootObjectID(), deltaBlocks, deltaDirs, res.BlockIterStats.String())
 	}
 
 	return err

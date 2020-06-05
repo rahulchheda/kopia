@@ -2,9 +2,30 @@ package volumefs
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/kopia/kopia/volume"
 )
+
+// BlockIterStats contains statistics on block iterator traversal
+type BlockIterStats struct {
+	NumBlocks    int
+	MinBlockAddr int64
+	MaxBlockAddr int64
+}
+
+func (bis *BlockIterStats) initStats() {
+	bis.MinBlockAddr = int64((^uint64(0) >> 1))
+	bis.MaxBlockAddr = -1
+}
+
+func (bis *BlockIterStats) String() string {
+	if bis.NumBlocks == 0 {
+		return "{}"
+	}
+
+	return fmt.Sprintf("{NumBlocks:%d,MinBlockAddr:%d,MaxBlockAddr:%d}", bis.NumBlocks, bis.MinBlockAddr, bis.MaxBlockAddr)
+}
 
 type blockIter struct {
 	f     *Filesystem
@@ -17,7 +38,7 @@ var _ volume.BlockIterator = (*blockIter)(nil)
 
 func (f *Filesystem) newBlockIter(bmi BlockMapIterator) *blockIter {
 	bi := &blockIter{f: f, bmi: bmi}
-	bi.initStats(f)
+	bi.initStats()
 
 	return bi
 }
@@ -60,16 +81,4 @@ func (bi *blockIter) Close() error {
 	bi.bmi.Close()
 
 	return nil
-}
-
-// BlockIterStats contains statistics on block iterator traversal
-type BlockIterStats struct {
-	NumBlocks    int
-	MinBlockAddr int64
-	MaxBlockAddr int64
-}
-
-func (bis *BlockIterStats) initStats(f *Filesystem) {
-	bis.MinBlockAddr = f.maxBlocks + 1
-	bis.MaxBlockAddr = -1
 }

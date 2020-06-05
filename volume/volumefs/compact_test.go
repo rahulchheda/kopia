@@ -70,6 +70,7 @@ func TestCompact(t *testing.T) {
 		tcp.retIfsDir = rootEntry
 		tcp.retEbmBm = tbm
 		tcp.retCtfBmDm = curDm
+		tcp.retCtfBis.initStats()
 		tcp.retCrDm = rootDir
 		tcp.retCsS = curMan
 
@@ -106,22 +107,21 @@ func TestCompact(t *testing.T) {
 			tcp.retCsE = expError
 		}
 
-		cur, prev, err := f.Compact(ctx, ca)
+		res, err := f.Compact(ctx, ca)
 
 		if expError == nil {
 			assert.NoError(err)
-			assert.NotNil(cur)
-			assert.NotNil(prev)
-			assert.Equal(curMan, cur.Manifest)
-			assert.Equal(man, prev.Manifest)
-			assert.NotZero(cur.CurrentNumBlocks)
-			assert.Equal(curMan.Stats.TotalFileCount, cur.CurrentNumBlocks)
-			assert.NotZero(prev.CurrentNumBlocks)
-			assert.Equal(man.Stats.TotalFileCount, prev.CurrentNumBlocks)
+			assert.NotNil(res)
+			assert.Equal(curMan, res.Snapshot.Manifest)
+			assert.Equal(man, res.PreviousSnapshot.Manifest)
+			assert.NotZero(res.Snapshot.CurrentNumBlocks)
+			assert.Equal(curMan.Stats.TotalFileCount, res.Snapshot.CurrentNumBlocks)
+			assert.NotZero(res.PreviousSnapshot.CurrentNumBlocks)
+			assert.Equal(man.Stats.TotalFileCount, res.PreviousSnapshot.CurrentNumBlocks)
+			assert.Equal(int64(-1), res.MaxBlockAddr)
 		} else {
 			assert.Error(expError, err)
-			assert.Nil(cur)
-			assert.Nil(prev)
+			assert.Nil(res)
 		}
 
 		switch tc {
@@ -157,6 +157,7 @@ type testCompactProcessor struct {
 
 	inCtfBmB   BlockMap
 	retCtfBmDm *dirMeta
+	retCtfBis  BlockIterStats
 	retCtfBmE  error
 
 	inWdrPp  parsedPath
@@ -194,9 +195,9 @@ func (tcp *testCompactProcessor) commitSnapshot(ctx context.Context, rootDir *di
 	return tcp.retCsS, tcp.retCsE
 }
 
-func (tcp *testCompactProcessor) createTreeFromBlockMap(bm BlockMap) (*dirMeta, error) {
+func (tcp *testCompactProcessor) createTreeFromBlockMap(bm BlockMap) (*dirMeta, BlockIterStats, error) {
 	tcp.inCtfBmB = bm
-	return tcp.retCtfBmDm, tcp.retCtfBmE
+	return tcp.retCtfBmDm, tcp.retCtfBis, tcp.retCtfBmE
 }
 
 func (tcp *testCompactProcessor) writeDirToRepo(ctx context.Context, pp parsedPath, dir *dirMeta, writeSubTree bool) error {

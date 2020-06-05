@@ -34,7 +34,7 @@ func (a *RestoreArgs) Validate() error {
 
 // RestoreResult returns the result of a successful Restore operation.
 type RestoreResult struct {
-	Manifest *snapshot.Manifest
+	Snapshot *Snapshot
 	BlockIterStats
 }
 
@@ -90,7 +90,7 @@ func (f *Filesystem) Restore(ctx context.Context, args RestoreArgs) (*RestoreRes
 	}
 
 	ret := &RestoreResult{
-		Manifest:       man,
+		Snapshot:       newSnapshot(f.VolumeID, f.VolumeSnapshotID, man),
 		BlockIterStats: bi.BlockIterStats,
 	}
 

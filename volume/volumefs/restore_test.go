@@ -124,6 +124,9 @@ func TestRestore(t *testing.T) {
 
 		if expError == nil {
 			assert.NoError(err)
+			assert.NotNil(res)
+			expSnap := newSnapshot(f.VolumeID, f.VolumeSnapshotID, man)
+			assert.Equal(expSnap, res.Snapshot)
 			assert.Equal(bi.BlockIterStats, res.BlockIterStats)
 			assert.Equal(bi, tbw.inPutBlocksBI)
 			assert.Equal(bmi, trp.inNbiB)
