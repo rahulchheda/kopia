@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kopia/kopia/fs"
 	"github.com/kopia/kopia/snapshot"
 	"github.com/kopia/kopia/volume"
 )
@@ -20,6 +21,8 @@ type BackupArgs struct {
 	PreviousVolumeSnapshotID string
 	// The amount of concurrency during backup. 0 assigns a default value.
 	Concurrency int
+	// If non-zero, the maximum chain length after which automatic compaction takes place.
+	MaxChainLength int
 	// The volume manager.
 	VolumeManager volume.Manager
 	// Profile containing location and credential information for the volume manager.
@@ -28,7 +31,7 @@ type BackupArgs struct {
 
 // Validate checks the arguments for correctness.
 func (a *BackupArgs) Validate() error {
-	if a.Concurrency < 0 || a.VolumeManager == nil || a.VolumeAccessProfile == nil {
+	if a.Concurrency < 0 || a.MaxChainLength < 0 || a.VolumeManager == nil || a.VolumeAccessProfile == nil {
 		return ErrInvalidArgs
 	}
 
@@ -40,6 +43,7 @@ type BackupResult struct {
 	Snapshot         *Snapshot
 	PreviousSnapshot *Snapshot
 	BlockIterStats
+	CompactIterStats BlockIterStats
 }
 
 // Backup a volume.
@@ -66,37 +70,41 @@ func (f *Filesystem) Backup(ctx context.Context, args BackupArgs) (*BackupResult
 	}
 
 	var (
-		prevRootDm *dirMeta
-		curDm      *dirMeta
-		rootDir    *dirMeta
-		prevMan    *snapshot.Manifest
-		curMan     *snapshot.Manifest
-		bis        BlockIterStats
+		bis         BlockIterStats
+		compactBis  BlockIterStats
+		compactDm   *dirMeta
+		curDm       *dirMeta
+		curMan      *snapshot.Manifest
+		prevMan     *snapshot.Manifest
+		prevRoot    fs.Directory
+		prevRootDm  *dirMeta
+		prevSnapMan *snapshot.Manifest
+		rootDir     *dirMeta
 	)
 
 	if args.PreviousVolumeSnapshotID != "" {
-		prevRootDm, prevMan, err = f.bp.linkPreviousSnapshot(ctx, args.PreviousVolumeSnapshotID)
+		prevRootDm, prevMan, prevRoot, err = f.bp.linkPreviousSnapshot(ctx, args.PreviousVolumeSnapshotID)
 		if err != nil {
 			return nil, err
 		}
+
+		prevSnapMan = prevMan
 	}
 
-	numWorkers := DefaultBackupConcurrency
-	if args.Concurrency > 0 {
-		numWorkers = args.Concurrency
+	if args.Concurrency <= 0 {
+		args.Concurrency = DefaultBackupConcurrency
 	}
 
-	if curDm, bis, err = f.bp.backupBlocks(ctx, br, numWorkers); err == nil {
-		// TBD: Decide if compaction must be done based on uncommitted stats + prev stats
-		//      Only necessary if minChainLen exceeded.
-		// How:
-		//  - build a block map for the saved blocks while processing
-		//  - create the effective block map of the previous snapshot
-		//  - add current blocks to the block map
-		//  - update curRoot from block map
-		if err = f.bp.writeDirToRepo(ctx, parsedPath{currentSnapshotDirName}, curDm, true); err == nil {
-			if rootDir, err = f.bp.createRoot(ctx, curDm, prevRootDm); err == nil {
-				curMan, err = f.bp.commitSnapshot(ctx, rootDir, prevMan)
+	if curDm, bis, err = f.bp.backupBlocks(ctx, br, args.Concurrency); err == nil {
+		if compactDm, compactBis, err = f.bp.maybeCompactBackup(ctx, args, curDm, prevMan, prevRoot); err == nil {
+			if compactDm != nil { // compacted so synthesize full
+				curDm, prevMan, prevRootDm = compactDm, nil, nil
+			}
+
+			if err = f.bp.writeDirToRepo(ctx, parsedPath{currentSnapshotDirName}, curDm, true); err == nil {
+				if rootDir, err = f.bp.createRoot(ctx, curDm, prevRootDm); err == nil {
+					curMan, err = f.bp.commitSnapshot(ctx, rootDir, prevMan)
+				}
 			}
 		}
 	}
@@ -106,11 +114,12 @@ func (f *Filesystem) Backup(ctx context.Context, args BackupArgs) (*BackupResult
 	}
 
 	res := &BackupResult{
-		Snapshot:       newSnapshot(f.VolumeID, f.VolumeSnapshotID, curMan),
-		BlockIterStats: bis,
+		Snapshot:         newSnapshot(f.VolumeID, f.VolumeSnapshotID, curMan),
+		BlockIterStats:   bis,
+		CompactIterStats: compactBis,
 	}
-	if prevMan != nil {
-		res.PreviousSnapshot = newSnapshot(f.VolumeID, f.prevVolumeSnapshotID, prevMan)
+	if prevSnapMan != nil {
+		res.PreviousSnapshot = newSnapshot(f.VolumeID, f.prevVolumeSnapshotID, prevSnapMan)
 	}
 
 	return res, nil
@@ -120,9 +129,46 @@ func (f *Filesystem) Backup(ctx context.Context, args BackupArgs) (*BackupResult
 type backupProcessor interface {
 	backupBlocks(ctx context.Context, br volume.BlockReader, numWorkers int) (*dirMeta, BlockIterStats, error)
 	commitSnapshot(ctx context.Context, rootDir *dirMeta, psm *snapshot.Manifest) (*snapshot.Manifest, error)
+	compactBackup(ctx context.Context, curDm *dirMeta, prevRoot fs.Directory, chainLen, concurrency int) (*dirMeta, BlockIterStats, error)
 	createRoot(ctx context.Context, curDm, prevRootDm *dirMeta) (*dirMeta, error)
-	linkPreviousSnapshot(ctx context.Context, prevVolumeSnapshotID string) (*dirMeta, *snapshot.Manifest, error)
+	linkPreviousSnapshot(ctx context.Context, prevVolumeSnapshotID string) (*dirMeta, *snapshot.Manifest, fs.Directory, error)
+	maybeCompactBackup(ctx context.Context, args BackupArgs, curDm *dirMeta, prevMan *snapshot.Manifest, prevRoot fs.Directory) (*dirMeta, BlockIterStats, error)
 	writeDirToRepo(ctx context.Context, pp parsedPath, dir *dirMeta, writeSubTree bool) error
+}
+
+// maybeCompactBackup compacts the in-memory snapshot if possible and necessary.
+// On compaction:
+//   - New directory returned
+// No compaction:
+//   - nil directory returned
+func (f *Filesystem) maybeCompactBackup(ctx context.Context, args BackupArgs, curDm *dirMeta, prevMan *snapshot.Manifest, prevRoot fs.Directory) (*dirMeta, BlockIterStats, error) {
+	var (
+		bis         BlockIterStats
+		err         error
+		chainLen    int
+		mustCompact bool
+	)
+
+	if prevMan != nil && prevRoot != nil {
+		chainLen = getChainLength(prevMan)
+
+		// @TODO: if MinChainLength exceeded used WBC/WDC to decide on compaction
+
+		if args.MaxChainLength > 0 && chainLen >= args.MaxChainLength {
+			f.logger.Debugf("Maximum chain length (%d) reached or exceeded: %d", args.MaxChainLength, chainLen)
+
+			mustCompact = true
+		}
+	}
+
+	if mustCompact {
+		f.logger.Debugf("compacting %s", curDm.name)
+		curDm, bis, err = f.bp.compactBackup(ctx, curDm, prevRoot, chainLen, args.Concurrency)
+	} else {
+		curDm = nil
+	}
+
+	return curDm, bis, err
 }
 
 // backupBlocks writes the volume blocks and the block map hierarchy to the repo.

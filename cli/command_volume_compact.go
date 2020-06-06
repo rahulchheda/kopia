@@ -12,7 +12,7 @@ var (
 	volCompactCommand            = volumeCommands.Command("compact", "Compact a volume snapshot")
 	volCompactCommandVolID       = volCompactCommand.Flag("vol-id", "Volume identifier").Required().Short('V').String()
 	volCompactCommandSnapID      = volCompactCommand.Flag("vol-snapshot-id", "Volume snapshot identifier").Required().Short('I').String()
-	volCompactCommandConcurrency = volCompactCommand.Flag("parallel", "Concurrency to use while compacting").PlaceHolder("N").Default("0").Int()
+	volCompactCommandConcurrency = volCompactCommand.Flag("parallel", "Concurrency to use while compacting").Short('N').Default("0").Int()
 )
 
 func init() {

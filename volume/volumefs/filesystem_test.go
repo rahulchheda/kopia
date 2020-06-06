@@ -54,7 +54,8 @@ func TestE2E(t *testing.T) {
 	mgr := volume.FindManager(fake.VolumeType)
 	assert.NotNil(mgr)
 
-	lastSnap := 4
+	lastSnap := 6
+	maxChainLen := 2
 
 	// block descriptors with history of when set
 	type blockDesc struct {
@@ -62,15 +63,18 @@ func TestE2E(t *testing.T) {
 		setInSnap []int // ascending order
 	}
 	blockHistory := []*blockDesc{ // must be in ascending order of block address
-		{0, []int{1, 2, 3, 4}},
+		{0, []int{1, 2, 3, 4, 5, 6}},
 		{1, []int{1}},
 		{2, []int{2}},
 		{3, []int{3}},
 		{4, []int{4}},
-		{1000, []int{2, 3}},
-		{10000, []int{1, 2}},
-		{100000, []int{1, 3}},
-		{1000000, []int{1, 4}},
+		{5, []int{5}},
+		{6, []int{6}},
+		{1012, []int{1, 2}},
+		{1013, []int{1, 3}},
+		{1014, []int{1, 4}},
+		{1015, []int{1, 5}},
+		{1016, []int{1, 6}},
 	}
 	blockSetInSnap := func(bh *blockDesc, value int) bool {
 		for _, v := range bh.setInSnap {
@@ -95,6 +99,7 @@ func TestE2E(t *testing.T) {
 	blocksSeen := 0
 	for snapNum := 1; snapNum <= lastSnap; snapNum++ {
 		snapLabel := fmt.Sprintf("%d", snapNum)
+		t.Logf("SNAP: %s", snapLabel)
 		prevLabel := ""
 		if snapNum > 1 {
 			prevLabel = fmt.Sprintf("%d", snapNum-1)
@@ -121,11 +126,18 @@ func TestE2E(t *testing.T) {
 			PreviousVolumeSnapshotID: prevLabel,
 			VolumeManager:            mgr,
 			VolumeAccessProfile:      profile,
+			MaxChainLength:           maxChainLen,
 		}
 
 		bRes, err := f.Backup(ctx, ba)
 		assert.NoError(err)
 		assert.NotNil(bRes)
+
+		if bRes.PreviousSnapshot != nil && getChainLength(bRes.PreviousSnapshot.Manifest) == ba.MaxChainLength {
+			assert.NotZero(bRes.CompactIterStats.NumBlocks, "snap: %s bRes:%#v", snapLabel, bRes)
+		} else {
+			assert.Zero(bRes.CompactIterStats.NumBlocks, "snap: %s bRes:%#v", snapLabel, bRes)
+		}
 
 		// validate that blocks are present
 		bw := &testBW{}
@@ -190,6 +202,8 @@ func TestE2E(t *testing.T) {
 			cRes, cErr := fc.Compact(ctx, ca)
 			assert.NoError(cErr)
 			assert.NotNil(cRes)
+			assert.True(getChainLength(cRes.PreviousSnapshot.Manifest) < ba.MaxChainLength) // test setup
+			assert.True(getChainLength(cRes.PreviousSnapshot.Manifest) > 0)                 // validation
 		}
 	}
 	assert.Equal(len(blockHistory), blocksSeen)

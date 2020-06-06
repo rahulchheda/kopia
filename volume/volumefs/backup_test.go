@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/kopia/kopia/fs"
 	"github.com/kopia/kopia/repo/object"
 	"github.com/kopia/kopia/snapshot"
 	"github.com/kopia/kopia/volume"
@@ -22,6 +23,7 @@ func TestBackupArgs(t *testing.T) {
 	badTcs := []BackupArgs{
 		{},
 		{Concurrency: -1},
+		{MaxChainLength: -1},
 		{VolumeManager: mgr},
 	}
 	for i, tc := range badTcs {
@@ -58,9 +60,8 @@ func TestBackup(t *testing.T) {
 	}
 
 	for _, tc := range []string{
-		"invalid args",
-		"no gbr", "link error", "bb error default concurrency", "cr error non-default concurrency",
-		"cs error", "write dir error", "success",
+		"invalid args", "no gbr", "link error", "bb error default concurrency",
+		"cr error non-default concurrency", "cs error", "write dir error", "success", "compact",
 	} {
 		t.Logf("Case: %s", tc)
 
@@ -74,15 +75,18 @@ func TestBackup(t *testing.T) {
 		tbr := &testBR{}
 		tvm := &testVM{}
 		tvm.retGbrBR = tbr
-		cDm := &dirMeta{}
-		pDm := &dirMeta{}
-		rDm := &dirMeta{}
+		cDm := &dirMeta{name: "current"}
+		pDm := &dirMeta{name: "previous"}
+		rDm := &dirMeta{name: "root"}
 		cMan := &snapshot.Manifest{}
 		cMan.Stats.TotalFileCount = 10
 		pMan := &snapshot.Manifest{}
+		setChainLength(pMan, 5)
+		setChainLength(cMan, 6)
 		tbp := &testBackupProcessor{}
 		tbp.retLpsDm = pDm
 		tbp.retLpsS = pMan
+		tbp.retLpsRe = &testDirEntry{}
 		tbp.retBbDm = cDm
 		tbp.retCrDm = rDm
 		tbp.retCsS = cMan
@@ -125,6 +129,10 @@ func TestBackup(t *testing.T) {
 			tbp.retWdrE = expError
 		case "success":
 			ba.PreviousVolumeSnapshotID = "previousVolumeSnapshotID"
+		case "compact":
+			ba.PreviousVolumeSnapshotID = "previousVolumeSnapshotID"
+			tbp.retMcbD = &dirMeta{}
+			tbp.retMcbBis.initStats()
 		}
 
 		res, err := f.Backup(ctx, ba)
@@ -149,18 +157,100 @@ func TestBackup(t *testing.T) {
 			assert.Equal(pDm, tbp.inCrPDm)
 		case "cs error":
 			assert.Equal(rDm, tbp.inCsRDm)
-		case "success":
-			assert.Equal(pMan, tbp.inCsPS)
+		case "success", "compact":
 			expSnap := &Snapshot{
 				VolumeID:         f.VolumeID,
 				VolumeSnapshotID: f.VolumeSnapshotID,
 				Manifest:         cMan,
 				SnapshotAnalysis: SnapshotAnalysis{
 					CurrentNumBlocks: 10,
+					ChainLength:      getChainLength(cMan),
 				},
 			}
 			assert.Equal(expSnap, res.Snapshot)
+			assert.Equal(tbp.retBbBis, res.BlockIterStats)
+			assert.Equal(tbp.retMcbBis, res.CompactIterStats)
+			if tc == "compact" {
+				assert.Nil(tbp.inCrPDm)
+				assert.Nil(tbp.inCsPS)
+			} else {
+				assert.Equal(pDm, tbp.inCrPDm)
+				assert.Equal(pMan, tbp.inCsPS)
+			}
 		}
+	}
+}
+
+// nolint:wsl,gocritic,goconst
+func TestMaybeCompactBackup(t *testing.T) {
+	assert := assert.New(t)
+
+	ctx, th := newVolFsTestHarness(t)
+	defer th.cleanup()
+
+	man := &snapshot.Manifest{}
+	setChainLength(man, 5)
+	root := &testDirEntry{}
+
+	for _, tc := range []string{
+		"no previous", "< max-chain-len", ">= max-chain-len", "cb error",
+	} {
+		t.Logf("Case: %s", tc)
+
+		ba := BackupArgs{Concurrency: 4}
+		prevMan := man
+		prevRoot := root
+		curDm := &dirMeta{}
+
+		tbp := &testBackupProcessor{}
+		tbp.retCbBis.initStats()
+		tbp.retCbDm = &dirMeta{}
+
+		f := th.fs()
+		f.logger = log(ctx)
+		assert.NotNil(f.bp)
+		f.bp = tbp
+
+		var expError, err error
+		var expDm *dirMeta
+		expBis := BlockIterStats{}
+
+		switch tc {
+		case "no previous":
+			prevMan = nil
+			prevRoot = nil
+		case "< max-chain-len":
+			ba.MaxChainLength = getChainLength(prevMan) + 1
+		case ">= max-chain-len":
+			ba.MaxChainLength = getChainLength(prevMan)
+			expBis = tbp.retCbBis
+			expDm = tbp.retCbDm
+		case "cb error":
+			ba.MaxChainLength = getChainLength(prevMan) - 1
+			tbp.retCbBis = BlockIterStats{}
+			tbp.retCbDm = nil
+			expError = ErrInternalError
+			tbp.retCbE = expError
+		}
+
+		dm, bis, err := f.maybeCompactBackup(ctx, ba, curDm, prevMan, prevRoot)
+
+		if expError == nil {
+			assert.NoError(err)
+			assert.Equal(expDm, dm)
+			assert.Equal(expBis, bis)
+
+			switch tc {
+			case ">= max-chain-len":
+				assert.Equal(getChainLength(prevMan), tbp.inCbCl)
+				assert.Equal(ba.Concurrency, tbp.inCbC)
+			}
+		} else {
+			assert.Error(err)
+			assert.Regexp(expError.Error(), err.Error())
+			assert.Nil(dm)
+		}
+
 	}
 }
 
@@ -280,6 +370,7 @@ func TestBackupBlocks(t *testing.T) {
 type testBackupProcessor struct {
 	inLpsPvsID string
 	retLpsDm   *dirMeta
+	retLpsRe   fs.Directory
 	retLpsE    error
 	retLpsS    *snapshot.Manifest
 
@@ -299,6 +390,22 @@ type testBackupProcessor struct {
 	retCsS  *snapshot.Manifest
 	retCsE  error
 
+	inCbDm   *dirMeta
+	inCbPr   fs.Directory
+	inCbCl   int
+	inCbC    int
+	retCbDm  *dirMeta
+	retCbBis BlockIterStats
+	retCbE   error
+
+	inMcbA    BackupArgs
+	inMcbD    *dirMeta
+	inMcbPm   *snapshot.Manifest
+	inMcbPr   fs.Directory
+	retMcbD   *dirMeta
+	retMcbBis BlockIterStats
+	retMcbE   error
+
 	inWdrPp  parsedPath
 	inWdrDm  *dirMeta
 	inWdrWst bool
@@ -307,10 +414,10 @@ type testBackupProcessor struct {
 
 var _ backupProcessor = (*testBackupProcessor)(nil)
 
-func (tbp *testBackupProcessor) linkPreviousSnapshot(ctx context.Context, prevVolumeSnapshotID string) (*dirMeta, *snapshot.Manifest, error) {
+func (tbp *testBackupProcessor) linkPreviousSnapshot(ctx context.Context, prevVolumeSnapshotID string) (*dirMeta, *snapshot.Manifest, fs.Directory, error) {
 	tbp.inLpsPvsID = prevVolumeSnapshotID
 
-	return tbp.retLpsDm, tbp.retLpsS, tbp.retLpsE
+	return tbp.retLpsDm, tbp.retLpsS, tbp.retLpsRe, tbp.retLpsE
 }
 
 func (tbp *testBackupProcessor) backupBlocks(ctx context.Context, br volume.BlockReader, numWorkers int) (*dirMeta, BlockIterStats, error) {
@@ -324,7 +431,7 @@ func (tbp *testBackupProcessor) createRoot(ctx context.Context, curDm, prevRootD
 	tbp.inCrCDm = curDm
 	tbp.inCrPDm = prevRootDm
 
-	return tbp.inCrCDm, tbp.retCrE
+	return tbp.retCrDm, tbp.retCrE
 }
 
 func (tbp *testBackupProcessor) commitSnapshot(ctx context.Context, rootDir *dirMeta, psm *snapshot.Manifest) (*snapshot.Manifest, error) {
@@ -332,6 +439,28 @@ func (tbp *testBackupProcessor) commitSnapshot(ctx context.Context, rootDir *dir
 	tbp.inCsPS = psm
 
 	return tbp.retCsS, tbp.retCsE
+}
+
+func (tbp *testBackupProcessor) compactBackup(ctx context.Context, curDm *dirMeta, prevRoot fs.Directory, chainLen, concurrency int) (*dirMeta, BlockIterStats, error) {
+	tbp.inCbDm = curDm
+	tbp.inCbPr = prevRoot
+	tbp.inCbCl = chainLen
+	tbp.inCbC = concurrency
+
+	if tbp.retCbDm == nil && tbp.retCbE == nil {
+		return curDm, BlockIterStats{}, nil
+	}
+
+	return tbp.retCbDm, tbp.retCbBis, tbp.retCbE
+}
+
+func (tbp *testBackupProcessor) maybeCompactBackup(ctx context.Context, args BackupArgs, curDm *dirMeta, prevMan *snapshot.Manifest, prevRoot fs.Directory) (*dirMeta, BlockIterStats, error) {
+	tbp.inMcbA = args
+	tbp.inMcbD = curDm
+	tbp.inMcbPm = prevMan
+	tbp.inMcbPr = prevRoot
+
+	return tbp.retMcbD, tbp.retMcbBis, tbp.retMcbE
 }
 
 func (tbp *testBackupProcessor) writeDirToRepo(ctx context.Context, pp parsedPath, dir *dirMeta, writeSubTree bool) error {

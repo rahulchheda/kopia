@@ -23,7 +23,8 @@ var (
 	volBackupCommandPrevVolSnapID = volBackupCommand.Flag("vol-previous-snapshot-id", "Previous volume snapshot identifier.").Short('P').String()
 	volBackupCommandFakeProfile   = volBackupCommand.Flag("fake-profile", "Path to the volume manager profile if -T=fake.").ExistingFile()
 	volBackupCommandBlockfile     = volBackupCommand.Flag("block-file", "Path to a file if -T=blockfile.").ExistingFile()
-	volBackupCommandConcurrency   = volBackupCommand.Flag("parallel", "Backup N blocks in parallel").PlaceHolder("N").Default("0").Int()
+	volBackupCommandConcurrency   = volBackupCommand.Flag("parallel", "Backup N blocks in parallel").Short('N').Default("0").Int()
+	volBackupMaxChainLen          = volBackupCommand.Flag("max-chain-length", "Maximum chain length before automatic compaction").Short('M').Default("0").Int()
 )
 
 func init() {
@@ -41,6 +42,7 @@ func runVolBackupCommand(ctx context.Context, rep repo.Repository) error {
 	backupArgs := volumefs.BackupArgs{
 		PreviousVolumeSnapshotID: *volBackupCommandPrevVolSnapID,
 		Concurrency:              *volBackupCommandConcurrency,
+		MaxChainLength:           *volBackupMaxChainLen,
 	}
 
 	backupArgs.VolumeManager = volume.FindManager(*volBackupCommandType)
@@ -77,7 +79,14 @@ func runVolBackupCommand(ctx context.Context, rep repo.Repository) error {
 
 	_ = enc.Encode(res.Snapshot.SnapshotAnalysis)
 
-	fmt.Printf("Created %v and ID %v in %v\n%s\n%s", res.Snapshot.Manifest.RootObjectID(), res.Snapshot.Manifest.ID, dur.Truncate(time.Second), res.BlockIterStats.String(), strings.ReplaceAll(buf.String(), "\"", ""))
+	fmt.Printf("Created %v and ID %v in %v\n", res.Snapshot.Manifest.RootObjectID(), res.Snapshot.Manifest.ID, dur.Truncate(time.Second))
+	fmt.Printf("Block Stats: %s\n", res.BlockIterStats.String())
+
+	if res.CompactIterStats.NumBlocks > 0 {
+		fmt.Printf("Compaction Stats: %s\n", res.CompactIterStats.String())
+	}
+
+	fmt.Printf("%s", strings.ReplaceAll(buf.String(), "\"", ""))
 
 	return nil
 }

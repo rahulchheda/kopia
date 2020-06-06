@@ -23,7 +23,37 @@ import (
 // Concurrently scanning individual leaf directories can speed up the process of generating
 // the map, as long as the scan in any snapshot filesystem does not "get ahead" of the
 // earlier filesystem scans of the corresponding leaf directory addresses.
-func (f *Filesystem) effectiveBlockMap(ctx context.Context, chainLen int, rootEntry fs.Directory, concurrency int) (BlockMap, error) {
+//
+// The function can optionally apply an in-memory directory hierarchy over the block map if it
+// is passed a dirMeta containing the block map.
+func (f *Filesystem) effectiveBlockMap(ctx context.Context, chainLen int, rootEntry fs.Directory, bmRootDm *dirMeta, concurrency int) (BlockMap, error) {
+	bm, err := f.effectiveBlockMapMutable(ctx, chainLen, rootEntry, concurrency)
+	if err != nil {
+		return nil, err
+	}
+
+	if bmRootDm != nil {
+		f.mergeDirOntoBlockMap(bmRootDm, nil, bm)
+	}
+
+	return bm, nil
+}
+
+func (f *Filesystem) mergeDirOntoBlockMap(dm *dirMeta, pp parsedPath, bm blockMapMutable) {
+	for _, sdm := range dm.subdirs {
+		dpp := pp.Child(sdm.name)
+		f.mergeDirOntoBlockMap(sdm, dpp, bm)
+	}
+
+	for _, fm := range dm.files {
+		fpp := pp.Child(fm.name)
+		bam := BlockAddressMapping{f.pathToAddr(fpp), fm.oid}
+
+		bm.InsertOrReplace(bam)
+	}
+}
+
+func (f *Filesystem) effectiveBlockMapMutable(ctx context.Context, chainLen int, rootEntry fs.Directory, concurrency int) (blockMapMutable, error) {
 	bmg := &blockMapGenerator{}
 	bmg.Init(f, chainLen, concurrency)
 

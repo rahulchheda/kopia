@@ -271,10 +271,12 @@ func TestLinkPreviousSnapshot(t *testing.T) {
 			expError = ErrInvalidSnapshot
 		}
 
-		dm, man, err := f.linkPreviousSnapshot(ctx, prevVolSnapshotID)
+		dm, man, rE, err := f.linkPreviousSnapshot(ctx, prevVolSnapshotID)
 
 		if expError == nil {
 			assert.NoError(err)
+			assert.NotNil(rE)
+			assert.Equal(tsp.retSrEntry, rE)
 			expMan := manifests[len(manifests)-1]
 			assert.Equal(expMan, man)
 			assert.Equal(tSnap, man.EndTime)

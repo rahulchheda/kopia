@@ -226,13 +226,23 @@ func (f *Filesystem) createSnapshotManifest(rootDir *dirMeta, psm *snapshot.Mani
 	if psm != nil {
 		sm.Stats.ExcludedDirCount = psm.Stats.TotalDirectoryCount
 		sm.Stats.ExcludedFileCount = psm.Stats.TotalFileCount
-		sm.Stats.NonCachedFiles = psm.Stats.NonCachedFiles + 1 // chain length
+		setChainLength(sm, getChainLength(psm)+1)
 		// WeightedCounter = ChainLength * (previous WeightedCounter) + previous Counter
 		sm.Stats.ExcludedTotalFileSize = int64(sm.Stats.NonCachedFiles)*psm.Stats.ExcludedTotalFileSize + int64(psm.Stats.TotalDirectoryCount-psm.Stats.ExcludedDirCount)
 		sm.Stats.TotalFileSize = int64(sm.Stats.NonCachedFiles)*psm.Stats.TotalFileSize + int64(psm.Stats.TotalFileCount-psm.Stats.ExcludedFileCount)
+	} else {
+		setChainLength(sm, 0)
 	}
 
 	return sm
+}
+
+func getChainLength(m *snapshot.Manifest) int {
+	return int(m.Stats.NonCachedFiles)
+}
+
+func setChainLength(m *snapshot.Manifest, cl int) {
+	m.Stats.NonCachedFiles = int32(cl)
 }
 
 func (f *Filesystem) snapshotDescription(volSnapID string) string {
@@ -255,15 +265,15 @@ func (f *Filesystem) parseSnapshotDescription(m *snapshot.Manifest) (string, str
 }
 
 // linkToPreviousSnapshot finds the previous snapshot and returns its dirMeta entry.
-func (f *Filesystem) linkPreviousSnapshot(ctx context.Context, prevVolumeSnapshotID string) (*dirMeta, *snapshot.Manifest, error) {
-	prevMan, _, prevMd, err := f.findPreviousSnapshot(ctx, prevVolumeSnapshotID)
+func (f *Filesystem) linkPreviousSnapshot(ctx context.Context, prevVolumeSnapshotID string) (*dirMeta, *snapshot.Manifest, fs.Directory, error) {
+	prevMan, prevRoot, prevMd, err := f.findPreviousSnapshot(ctx, prevVolumeSnapshotID)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	if prevMd.VolSnapID != prevVolumeSnapshotID {
 		f.logger.Debugf("previous volume snapshot exp[%s] md[%s]", prevVolumeSnapshotID, prevMd.VolSnapID)
-		return nil, nil, ErrInvalidSnapshot
+		return nil, nil, nil, ErrInvalidSnapshot
 	}
 
 	// import previous data
@@ -278,5 +288,5 @@ func (f *Filesystem) linkPreviousSnapshot(ctx context.Context, prevVolumeSnapsho
 		summary: prevMan.RootEntry.DirSummary,
 	}
 
-	return prevRootDm, prevMan, nil
+	return prevRootDm, prevMan, prevRoot, nil
 }

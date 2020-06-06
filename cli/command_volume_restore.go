@@ -17,7 +17,7 @@ var (
 	volRestoreCommandDeviceFile  = volRestoreCommand.Flag("device-file", "Name of the device file").Required().Short('d').String()
 	volRestoreCommandCreate      = volRestoreCommand.Flag("create", "Create the file if no present").Short('c').Bool()
 	volRestoreCommandBlockSize   = volRestoreCommand.Flag("device-block-size", "Device block size").Short('n').Int64()
-	volRestoreCommandConcurrency = volRestoreCommand.Flag("parallel", "Restore N blocks in parallel").PlaceHolder("N").Default("0").Int()
+	volRestoreCommandConcurrency = volRestoreCommand.Flag("parallel", "Restore N blocks in parallel").Short('N').Default("0").Int()
 )
 
 func init() {

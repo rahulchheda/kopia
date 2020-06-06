@@ -129,7 +129,6 @@ func TestCompact(t *testing.T) {
 			assert.Equal(expConcurrency, tcp.inEbmC)
 		}
 	}
-
 }
 
 type testCompactProcessor struct {
@@ -141,6 +140,7 @@ type testCompactProcessor struct {
 
 	inEbmCl  int
 	inEbmR   fs.Directory
+	inEbmM   *dirMeta
 	inEbmC   int
 	retEbmBm BlockMap
 	retEbmE  error
@@ -173,9 +173,10 @@ func (tcp *testCompactProcessor) initFromSnapshot(ctx context.Context, snapshotI
 	return tcp.retIfsMan, tcp.retIfsDir, tcp.retIfsMd, tcp.retIfsE
 }
 
-func (tcp *testCompactProcessor) effectiveBlockMap(ctx context.Context, chainLen int, rootEntry fs.Directory, concurrency int) (BlockMap, error) {
+func (tcp *testCompactProcessor) effectiveBlockMap(ctx context.Context, chainLen int, rootEntry fs.Directory, mergeDm *dirMeta, concurrency int) (BlockMap, error) {
 	tcp.inEbmCl = chainLen
 	tcp.inEbmR = rootEntry
+	tcp.inEbmM = mergeDm
 	tcp.inEbmC = concurrency
 
 	return tcp.retEbmBm, tcp.retEbmE

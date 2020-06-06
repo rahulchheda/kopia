@@ -58,8 +58,6 @@ func (f *Filesystem) createTreeFromBlockMap(bm BlockMap) (*dirMeta, BlockIterSta
 
 		fm := f.ensureFileInTree(mapRootDm, pp)
 		fm.oid = bam.Oid
-
-		f.logger.Debugf("block [%s] %s", pp.String(), bam.Oid)
 	}
 
 	return mapRootDm, bis, nil
@@ -107,7 +105,6 @@ func (f *Filesystem) ensureFileInTree(pDir *dirMeta, pp parsedPath) *fileMeta {
 			}
 
 			pDir.insertSubdir(sdm)
-			f.logger.Debugf("inserted directory(%s)", pp[:i+1])
 		}
 
 		pDir = sdm
@@ -120,7 +117,6 @@ func (f *Filesystem) ensureFileInTree(pDir *dirMeta, pp parsedPath) *fileMeta {
 		}
 
 		pDir.insertFile(fm)
-		f.logger.Debugf("inserted file(%s)", pp)
 
 		return fm
 	}

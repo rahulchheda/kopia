@@ -60,12 +60,11 @@ func (f *Filesystem) Restore(ctx context.Context, args RestoreArgs) (*RestoreRes
 
 	chainLen := int(man.Stats.NonCachedFiles)
 
-	concurrency := DefaultRestoreConcurrency
-	if args.Concurrency > 0 {
-		concurrency = args.Concurrency
+	if args.Concurrency <= 0 {
+		args.Concurrency = DefaultRestoreConcurrency
 	}
 
-	bm, err := f.rp.effectiveBlockMap(ctx, chainLen, rootEntry, concurrency)
+	bm, err := f.rp.effectiveBlockMap(ctx, chainLen, rootEntry, nil, args.Concurrency)
 	if err != nil {
 		return nil, err
 	}
@@ -99,6 +98,6 @@ func (f *Filesystem) Restore(ctx context.Context, args RestoreArgs) (*RestoreRes
 
 type restoreProcessor interface {
 	initFromSnapshot(ctx context.Context, snapshotID string) (*snapshot.Manifest, fs.Directory, metadata, error)
-	effectiveBlockMap(ctx context.Context, chainLen int, rootEntry fs.Directory, concurrency int) (BlockMap, error)
+	effectiveBlockMap(ctx context.Context, chainLen int, rootEntry fs.Directory, mergeDm *dirMeta, concurrency int) (BlockMap, error)
 	newBlockIter(bmi BlockMapIterator) *blockIter
 }

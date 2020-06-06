@@ -201,7 +201,7 @@ func TestEffectiveBlockMap(t *testing.T) {
 
 	f := th.fs()
 	f.repo = tRepo
-	f.initLayoutProperties(4096, 8, 2) // reset for UT
+	f.initLayoutProperties(4096, 8, 3)
 	f.logger = log(ctx)
 
 	p0_0_0 := fs.Entries{
@@ -243,8 +243,44 @@ func TestEffectiveBlockMap(t *testing.T) {
 		&testDirEntry{name: currentSnapshotDirName, retReadDirE: b0},
 	}
 
+	// dir for merge test
+	d0_0_0 := &dirMeta{
+		name: "0",
+		files: []*fileMeta{
+			{name: "0", oid: "oid0d"},
+		},
+	}
+	d0_0 := &dirMeta{
+		name:    "0",
+		subdirs: []*dirMeta{d0_0_0},
+	}
+	d0_4_3 := &dirMeta{
+		name: "3",
+		files: []*fileMeta{
+			{name: "2", oid: "oid11ad"},
+		},
+	}
+	d0_4 := &dirMeta{
+		name:    "4",
+		subdirs: []*dirMeta{d0_4_3},
+	}
+	d0_7_7 := &dirMeta{
+		name: "7",
+		files: []*fileMeta{
+			{name: "7", oid: "oid1ffd"},
+		},
+	}
+	d0_7 := &dirMeta{
+		name:    "7",
+		subdirs: []*dirMeta{d0_7_7},
+	}
+	d0 := &dirMeta{
+		name:    currentSnapshotDirName,
+		subdirs: []*dirMeta{d0_0, d0_4, d0_7},
+	}
+
 	for _, tc := range []string{
-		"no chain", "chain", "findRoots error", "process chain error",
+		"no chain", "chain", "findRoots error", "process chain error", "merge",
 	} {
 		t.Logf("Case: %s", tc)
 
@@ -255,6 +291,7 @@ func TestEffectiveBlockMap(t *testing.T) {
 		var expError error
 		de := &testDirEntry{}
 		chainLen := 0
+		var mergeDm *dirMeta
 
 		switch tc {
 		case "no chain":
@@ -268,10 +305,14 @@ func TestEffectiveBlockMap(t *testing.T) {
 		case "process chain error":
 			expError = ErrOutOfRange
 			de.retReadDirE = badRoot
+		case "merge":
+			de.retReadDirE = cRoot
+			chainLen = 1
+			mergeDm = d0
 		}
 
 		// concurrency > max directory depth to exercise the parallelwork.NewQueue() boundary condition.
-		bm, err := f.effectiveBlockMap(ctx, chainLen, de, 32)
+		bm, err := f.effectiveBlockMap(ctx, chainLen, de, mergeDm, 32)
 
 		if expError == nil {
 			assert.NoError(err)
@@ -299,6 +340,26 @@ func TestEffectiveBlockMap(t *testing.T) {
 				bam = bi.Next()
 				assert.Equal(int64(11), bam.BlockAddr)
 				assert.Equal(object.ID("oid11c"), bam.Oid)
+				bam = bi.Next()
+				assert.Equal(object.ID(""), bam.Oid)
+			case "merge":
+				bi := bm.Iterator()
+				defer bi.Close()
+				bam := bi.Next()
+				assert.Equal(int64(0), bam.BlockAddr)
+				assert.Equal(object.ID("oid0d"), bam.Oid)
+				bam = bi.Next()
+				assert.Equal(int64(1), bam.BlockAddr)
+				assert.Equal(object.ID("oid1p"), bam.Oid)
+				bam = bi.Next()
+				assert.Equal(int64(11), bam.BlockAddr)
+				assert.Equal(object.ID("oid11c"), bam.Oid)
+				bam = bi.Next()
+				assert.Equal(int64(0x11a), bam.BlockAddr)
+				assert.Equal(object.ID("oid11ad"), bam.Oid)
+				bam = bi.Next()
+				assert.Equal(int64(0x1ff), bam.BlockAddr)
+				assert.Equal(object.ID("oid1ffd"), bam.Oid)
 				bam = bi.Next()
 				assert.Equal(object.ID(""), bam.Oid)
 			}

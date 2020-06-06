@@ -153,6 +153,7 @@ type testRestoreProcessor struct {
 
 	inEbmCl  int
 	inEbmR   fs.Directory
+	inEbmM   *dirMeta
 	inEbmC   int
 	retEbmBm BlockMap
 	retEbmE  error
@@ -166,9 +167,10 @@ func (trp *testRestoreProcessor) initFromSnapshot(ctx context.Context, snapshotI
 	return trp.retIfsMan, trp.retIfsDir, trp.retIfsMd, trp.retIfsE
 }
 
-func (trp *testRestoreProcessor) effectiveBlockMap(ctx context.Context, chainLen int, rootEntry fs.Directory, concurrency int) (BlockMap, error) {
+func (trp *testRestoreProcessor) effectiveBlockMap(ctx context.Context, chainLen int, rootEntry fs.Directory, mergeDm *dirMeta, concurrency int) (BlockMap, error) {
 	trp.inEbmCl = chainLen
 	trp.inEbmR = rootEntry
+	trp.inEbmM = mergeDm
 	trp.inEbmC = concurrency
 
 	return trp.retEbmBm, trp.retEbmE
