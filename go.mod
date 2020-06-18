@@ -6,8 +6,9 @@ require (
 	bazil.org/fuse v0.0.0-20200117225306-7b5117fecadc
 	cloud.google.com/go/storage v1.9.0
 	contrib.go.opencensus.io/exporter/prometheus v0.2.0
+	github.com/Azure/azure-amqp-common-go/v2 v2.1.0 // indirect
 	github.com/Azure/azure-pipeline-go v0.2.2 // indirect
-	github.com/Azure/azure-storage-blob-go v0.8.0
+	github.com/Azure/azure-storage-blob-go v0.9.0
 	github.com/alecthomas/units v0.0.0-20190924025748-f65c72e2690d // indirect
 	github.com/aws/aws-sdk-go v1.32.4
 	github.com/bgentry/speakeasy v0.1.0
@@ -20,6 +21,7 @@ require (
 	github.com/google/readahead v0.0.0-20161222183148-eaceba169032 // indirect
 	github.com/google/wire v0.4.0 // indirect
 	github.com/gorilla/mux v1.7.4
+	github.com/grpc-ecosystem/grpc-gateway v1.9.2 // indirect
 	github.com/klauspost/compress v1.10.9
 	github.com/klauspost/pgzip v1.2.4
 	github.com/kylelemons/godebug v1.1.0
@@ -40,7 +42,7 @@ require (
 	github.com/tg123/go-htpasswd v1.0.0
 	github.com/zalando/go-keyring v0.0.0-20200121091418-667557018717
 	go.opencensus.io v0.22.4
-	gocloud.dev v0.19.0
+	gocloud.dev v0.20.0
 	golang.org/x/crypto v0.0.0-20200604202706-70a84ac30bf9
 	golang.org/x/exp v0.0.0-20200513190911-00229845015e
 	golang.org/x/mod v0.3.0
