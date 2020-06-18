@@ -4,7 +4,7 @@ go 1.14
 
 require (
 	bazil.org/fuse v0.0.0-20200117225306-7b5117fecadc
-	cloud.google.com/go/storage v1.8.0
+	cloud.google.com/go/storage v1.9.0
 	contrib.go.opencensus.io/exporter/prometheus v0.1.0
 	github.com/Azure/azure-pipeline-go v0.2.2 // indirect
 	github.com/Azure/azure-storage-blob-go v0.8.0
@@ -48,8 +48,8 @@ require (
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d
 	golang.org/x/sync v0.0.0-20200317015054-43a5402ce75a
 	golang.org/x/tools v0.0.0-20200618031402-d15173dcc7e4 // indirect
-	google.golang.org/api v0.25.0
-	google.golang.org/protobuf v1.23.0
+	google.golang.org/api v0.27.0
+	google.golang.org/protobuf v1.24.0
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	gopkg.in/ini.v1 v1.56.0 // indirect
 	gopkg.in/kothar/go-backblaze.v0 v0.0.0-20191215213626-7594ed38700f
