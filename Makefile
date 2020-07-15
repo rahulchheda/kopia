@@ -207,7 +207,6 @@ endif
 robustness-tool-tests: dist-binary
 	KOPIA_EXE=$(KOPIA_INTEGRATION_EXE) \
 	FIO_DOCKER_IMAGE=$(FIO_DOCKER_TAG) \
-	FIO_USE_DOCKER=1 \
 	$(GO_TEST) -count=1 github.com/kopia/kopia/tests/tools/... github.com/kopia/kopia/tests/robustness/engine/... $(TEST_FLAGS)
 
 stress-test:
