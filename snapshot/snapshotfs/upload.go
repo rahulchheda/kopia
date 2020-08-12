@@ -45,6 +45,9 @@ const (
 
 // Uploader supports efficient uploading files and directories to repository.
 type Uploader struct {
+	// values aligned to 8-bytes due to atomic access
+	totalWrittenBytes int64
+
 	Progress UploadProgress
 
 	// automatically cancel the Upload after certain number of bytes
@@ -71,8 +74,6 @@ type Uploader struct {
 	nextCheckpointTime time.Time
 
 	uploadBufPool sync.Pool
-
-	totalWrittenBytes int64
 }
 
 // IsCanceled returns true if the upload is canceled.
@@ -683,7 +684,7 @@ func maybeReadDirectoryEntries(ctx context.Context, dir fs.Directory) fs.Entries
 		return nil
 	}
 
-	return ent
+	return skipCacheDirectory(ent)
 }
 
 func uniqueDirectories(dirs []fs.Directory) []fs.Directory {
@@ -741,6 +742,8 @@ func uploadDirInternal(
 		return "", fs.DirectorySummary{}, dirReadError{direrr}
 	}
 
+	entries = skipCacheDirectory(entries)
+
 	var prevEntries []fs.Entries
 
 	for _, d := range uniqueDirectories(previousDirs) {
@@ -775,6 +778,15 @@ func uploadDirInternal(
 	dirManifest.Summary.IncompleteReason = u.incompleteReason()
 
 	return oid, *dirManifest.Summary, err
+}
+
+func skipCacheDirectory(entries fs.Entries) fs.Entries {
+	if entries.FindByName(repo.CacheDirMarkerFile) != nil {
+		// if the given directory contains a marker file used for kopia cache, pretend the directory was empty.
+		return nil
+	}
+
+	return entries
 }
 
 func (u *Uploader) maybeIgnoreFileReadError(err error, output chan dirEntryOrError, entryRelativePath string, policyTree *policy.Tree) error {

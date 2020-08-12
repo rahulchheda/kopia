@@ -10,6 +10,26 @@ ifeq ($(TRAVIS_OS_NAME),windows)
 UNIX_SHELL_ON_WINDOWS=true
 endif
 
+kopia_arch_name=amd64
+node_arch_name=x64
+goreleaser_arch_name=x86_64
+linter_arch_name=amd64
+
+raw_arch:=$(shell uname -m)
+ifeq ($(raw_arch),aarch64)
+	kopia_arch_name=arm64
+	node_arch_name=arm64
+	goreleaser_arch_name=arm64
+	linter_arch_name=arm64
+endif
+
+ifeq ($(raw_arch),armv7l)
+	kopia_arch_name=arm
+	node_arch_name=armv7l
+	goreleaser_arch_name=armv6
+	linter_arch_name=armv7
+endif
+
 ifneq ($(APPVEYOR),)
 
 UNIX_SHELL_ON_WINDOWS=false
@@ -85,9 +105,9 @@ TOOLS_DIR:=$(SELF_DIR)$(slash).tools
 
 # tool versions
 GOLANGCI_LINT_VERSION=1.23.7
-NODE_VERSION=12.16.1
-HUGO_VERSION=0.67.1
-GORELEASER_VERSION=v0.128.0
+NODE_VERSION=12.18.3
+HUGO_VERSION=0.74.3
+GORELEASER_VERSION=v0.140.1
 
 # goveralls
 GOVERALLS_TOOL=$(TOOLS_DIR)/bin/goveralls
@@ -121,7 +141,7 @@ ifeq ($(uname),Windows)
 else
 
 ifeq ($(uname),Linux)
-	curl -LsS https://nodejs.org/dist/v$(NODE_VERSION)/node-v$(NODE_VERSION)-linux-x64.tar.gz | tar zx -C $(node_base_dir)
+	curl -LsS https://nodejs.org/dist/v$(NODE_VERSION)/node-v$(NODE_VERSION)-linux-$(node_arch_name).tar.gz | tar zx -C $(node_base_dir)
 else
 	curl -LsS https://nodejs.org/dist/v$(NODE_VERSION)/node-v$(NODE_VERSION)-darwin-x64.tar.gz | tar zx -C $(node_base_dir)
 endif
@@ -154,7 +174,7 @@ ifeq ($(uname),Windows)
 else
 	mkdir -p $(linter_dir)
 ifeq ($(uname),Linux)
-	curl -LsS https://github.com/golangci/golangci-lint/releases/download/v$(GOLANGCI_LINT_VERSION)/golangci-lint-$(GOLANGCI_LINT_VERSION)-linux-amd64.tar.gz | tar zxv --strip=1 -C $(linter_dir)
+	curl -LsS https://github.com/golangci/golangci-lint/releases/download/v$(GOLANGCI_LINT_VERSION)/golangci-lint-$(GOLANGCI_LINT_VERSION)-linux-$(linter_arch_name).tar.gz | tar zxv --strip=1 -C $(linter_dir)
 else
 	curl -LsS https://github.com/golangci/golangci-lint/releases/download/v$(GOLANGCI_LINT_VERSION)/golangci-lint-$(GOLANGCI_LINT_VERSION)-darwin-amd64.tar.gz | tar zxv --strip=1 -C $(linter_dir)
 endif
@@ -193,23 +213,23 @@ ifeq ($(uname),Windows)
 	curl -LsS -o $(goreleaser_dir).zip https://github.com/goreleaser/goreleaser/releases/download/$(GORELEASER_VERSION)/goreleaser_Windows_x86_64.zip
 	unzip -q $(goreleaser_dir).zip -d $(goreleaser_dir)
 else
-	curl -LsS https://github.com/goreleaser/goreleaser/releases/download/$(GORELEASER_VERSION)/goreleaser_$$(uname -s)_$$(uname -m).tar.gz | tar zx -C $(TOOLS_DIR)/goreleaser-$(GORELEASER_VERSION)
+	curl -LsS https://github.com/goreleaser/goreleaser/releases/download/$(GORELEASER_VERSION)/goreleaser_$$(uname -s)_$(goreleaser_arch_name).tar.gz | tar zx -C $(TOOLS_DIR)/goreleaser-$(GORELEASER_VERSION)
 endif
 
 ifeq ($(TRAVIS_PULL_REQUEST),false)
 
 ifneq ($(TRAVIS_TAG),)
 # travis, tagged release
-KOPIA_VERSION:=$(TRAVIS_TAG:v%=%)
+KOPIA_VERSION:=$(TRAVIS_TAG)
 else
 # travis, non-tagged release
-KOPIA_VERSION:=$(commit_date_ymd).0.$(commit_time_of_day)
+KOPIA_VERSION:=v$(commit_date_ymd).0.$(commit_time_of_day)
 endif
 
 else
 
 # non-travis, or travis PR
-KOPIA_VERSION:=$(date_ymd).0.0-$(shell git rev-parse --short HEAD)
+KOPIA_VERSION:=v$(date_ymd).0.0-$(shell git rev-parse --short HEAD)
 
 endif
 
@@ -235,5 +255,12 @@ else
 endif
 endif
 
-all-tools: $(npm) $(goreleaser) $(linter) $(hugo) $(go_bindata) windows-signing-tools
+# disable some tools on non-default architectures
+ifeq ($(kopia_arch_name),amd64)
+maybehugo=$(hugo)
+else
+maybehugo=
+endif
+
+all-tools: $(npm) $(goreleaser) $(linter) $(maybehugo) $(go_bindata) windows-signing-tools
 

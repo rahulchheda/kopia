@@ -1,4 +1,7 @@
+// +build amd64
+
 // Package stats provides helpers for simple stats
+//
 package stats
 
 import "sync/atomic"
