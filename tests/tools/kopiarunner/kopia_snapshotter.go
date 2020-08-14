@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/pkg/errors"
+
 	"github.com/kopia/kopia/tests/robustness/snap"
 	"github.com/pkg/errors"
 )
@@ -43,7 +45,7 @@ func NewKopiaSnapshotter(baseDir string) (*KopiaSnapshotter, error) {
 	}, nil
 }
 
-// Cleanup cleans up the kopia Runner
+// Cleanup cleans up the kopia Runner.
 func (ks *KopiaSnapshotter) Cleanup() {
 	if ks.Runner != nil {
 		ks.Runner.Cleanup()
@@ -115,14 +117,14 @@ func (ks *KopiaSnapshotter) CreateSnapshot(source string) (snapID string, err er
 }
 
 // RestoreSnapshot implements the Snapshotter interface, issues a kopia snapshot
-// restore command of the provided snapshot ID to the provided restore destination
+// restore command of the provided snapshot ID to the provided restore destination.
 func (ks *KopiaSnapshotter) RestoreSnapshot(snapID, restoreDir string) (err error) {
 	_, _, err = ks.Runner.Run("snapshot", "restore", snapID, restoreDir)
 	return err
 }
 
 // DeleteSnapshot implements the Snapshotter interface, issues a kopia snapshot
-// delete of the provided snapshot ID
+// delete of the provided snapshot ID.
 func (ks *KopiaSnapshotter) DeleteSnapshot(snapID string) (err error) {
 	_, _, err = ks.Runner.Run("snapshot", "delete", snapID, "--delete")
 	return err
@@ -135,7 +137,7 @@ func (ks *KopiaSnapshotter) RunGC() (err error) {
 }
 
 // ListSnapshots implements the Snapshotter interface, issues a kopia snapshot
-// list and parses the snapshot IDs
+// list and parses the snapshot IDs.
 func (ks *KopiaSnapshotter) ListSnapshots() ([]string, error) {
 	snapIDListMan, err := ks.snapIDsFromManifestList()
 	if err != nil {
@@ -175,7 +177,7 @@ func (ks *KopiaSnapshotter) snapIDsFromSnapListAll() ([]string, error) {
 }
 
 // Run implements the Snapshotter interface, issues an arbitrary kopia command and returns
-// the output
+// the output.
 func (ks *KopiaSnapshotter) Run(args ...string) (stdout, stderr string, err error) {
 	return ks.Runner.Run(args...)
 }

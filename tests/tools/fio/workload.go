@@ -11,14 +11,14 @@ import (
 )
 
 // WriteFiles writes files to the directory specified by path, up to the
-// provided size and number of files
+// provided size and number of files.
 func (fr *Runner) WriteFiles(relPath string, opt Options) error {
 	fullPath := filepath.Join(fr.LocalDataDir, relPath)
 	return fr.writeFiles(fullPath, opt)
 }
 
 func (fr *Runner) writeFiles(fullPath string, opt Options) error {
-	err := os.MkdirAll(fullPath, 0700)
+	err := os.MkdirAll(fullPath, 0o700)
 	if err != nil {
 		return errors.Wrap(err, "unable to make directory for write")
 	}
