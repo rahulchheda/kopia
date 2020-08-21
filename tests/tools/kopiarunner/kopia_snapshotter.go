@@ -1,6 +1,7 @@
 package kopiarunner
 
 import (
+	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
@@ -96,6 +97,29 @@ func (ks *KopiaSnapshotter) ConnectOrCreateS3(bucketName, pathPrefix string) err
 	return ks.ConnectOrCreateRepo(args...)
 }
 
+// ConnectOrCreateS3WithServer attempts to connect or create S3 bucket, but with Client/Server Model
+func (ks *KopiaSnapshotter) ConnectOrCreateS3WithServer(serverAddr, bucketName, pathPrefix string) error {
+	args := []string{"s3", "--bucket", bucketName, "--prefix", pathPrefix}
+
+	if err := ks.ConnectOrCreateRepo(args...); err != nil {
+		return err
+	}
+
+	if err := ks.CreateServer(serverAddr); err != nil {
+		fmt.Printf("Error in Creating Server: %v\n", err)
+		return err
+	}
+
+	if err := ks.ConnectServer(serverAddr); err != nil {
+		fmt.Printf("Error in Connecting Server: %v\n", err)
+
+		return err
+	}
+
+	return nil
+
+}
+
 // ConnectOrCreateFilesystem attempts to connect to a kopia repo in the local
 // filesystem at the path provided. It will attempt to create one there if
 // connection was unsuccessful.
@@ -103,6 +127,29 @@ func (ks *KopiaSnapshotter) ConnectOrCreateFilesystem(repoPath string) error {
 	args := []string{"filesystem", "--path", repoPath}
 
 	return ks.ConnectOrCreateRepo(args...)
+}
+
+// ConnectOrCreateFilesystemWithServer attempts to connect or create repo in locak filesystem,
+// but with Client/Server Model
+func (ks *KopiaSnapshotter) ConnectOrCreateFilesystemWithServer(repoPath, serverAddr string) error {
+	args := []string{"filesystem", "--path", repoPath}
+
+	if err := ks.ConnectOrCreateRepo(args...); err != nil {
+		return err
+	}
+
+	if err := ks.CreateServer(serverAddr); err != nil {
+		fmt.Printf("Error in Creating Server: %v\n", err)
+		return err
+	}
+
+	if err := ks.ConnectServer(serverAddr); err != nil {
+		fmt.Printf("Error in Connecting Server: %v\n", err)
+
+		return err
+	}
+
+	return nil
 }
 
 // CreateSnapshot implements the Snapshotter interface, issues a kopia snapshot
@@ -180,6 +227,22 @@ func (ks *KopiaSnapshotter) snapIDsFromSnapListAll() ([]string, error) {
 // the output.
 func (ks *KopiaSnapshotter) Run(args ...string) (stdout, stderr string, err error) {
 	return ks.Runner.Run(args...)
+}
+
+func (ks *KopiaSnapshotter) CreateServer(addr string, args ...string) error {
+	args = append([]string{"server", "start", fmt.Sprintf("--address=%s", addr)}, args...)
+	fmt.Printf("Command for Creating to server: %v\n", args)
+
+	_, _, err := ks.Runner.RunServer(args...)
+	return err
+}
+
+func (ks *KopiaSnapshotter) ConnectServer(addr string, args ...string) error {
+	args = append([]string{"repo", "connect", "server", fmt.Sprintf("--url=http://%s", addr)}, args...)
+	fmt.Printf("Command for Connecting to server: %v\n", args)
+	_, _, err := ks.Runner.Run(args...)
+
+	return err
 }
 
 func parseSnapID(lines []string) (string, error) {
