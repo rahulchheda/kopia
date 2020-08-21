@@ -1,15 +1,17 @@
 package kopiarunner
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/pkg/errors"
 
+	"github.com/kopia/kopia/internal/retry"
 	"github.com/kopia/kopia/tests/robustness/snap"
-	"github.com/pkg/errors"
 )
 
 var _ snap.Snapshotter = &KopiaSnapshotter{}
@@ -234,7 +236,15 @@ func (ks *KopiaSnapshotter) CreateServer(addr string, args ...string) error {
 	fmt.Printf("Command for Creating to server: %v\n", args)
 
 	_, _, err := ks.Runner.RunServer(args...)
-	return err
+	if err != nil {
+		return err
+	}
+	statusArgs := append([]string{"server", "status", fmt.Sprintf("--address=%s", addr)}, args...)
+	err = ks.WaitUntilServerStarted(context.TODO(), statusArgs...)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (ks *KopiaSnapshotter) ConnectServer(addr string, args ...string) error {
@@ -292,4 +302,18 @@ func parseManifestListForSnapshotIDs(output string) []string {
 	}
 
 	return ret
+}
+
+// waitForServerReady returns error if the Kopia API server fails to start before timeout
+func (ks *KopiaSnapshotter) WaitUntilServerStarted(ctx context.Context, args ...string) error {
+	if err := retry.PeriodicallyNoValue(ctx, 1*time.Second, 180, "wait for server start", func() error {
+		stdout, stderr, err := ks.Runner.Run(args...)
+		if stdout != "" || stderr != "" {
+			return errors.New(fmt.Sprintf("Server status: %s-%s", stdout, stderr))
+		}
+		return err
+	}, retry.Always); err != nil {
+		return errors.New("server failed to start")
+	}
+	return nil
 }
