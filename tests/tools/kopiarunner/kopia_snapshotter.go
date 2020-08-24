@@ -239,8 +239,8 @@ func (ks *KopiaSnapshotter) CreateServer(addr string, args ...string) error {
 	if err != nil {
 		return err
 	}
-	statusArgs := append([]string{"server", "status", fmt.Sprintf("--address=%s", addr)}, args...)
-	err = ks.WaitUntilServerStarted(context.TODO(), statusArgs...)
+	statusArgs := append([]string{"server", "status", fmt.Sprintf("--address=http://%s", addr)})
+	err = waitUntilServerStarted(ks, context.TODO(), statusArgs...)
 	if err != nil {
 		return err
 	}
@@ -305,7 +305,7 @@ func parseManifestListForSnapshotIDs(output string) []string {
 }
 
 // waitForServerReady returns error if the Kopia API server fails to start before timeout
-func (ks *KopiaSnapshotter) WaitUntilServerStarted(ctx context.Context, args ...string) error {
+func waitUntilServerStarted(ks *KopiaSnapshotter, ctx context.Context, args ...string) error {
 	if err := retry.PeriodicallyNoValue(ctx, 1*time.Second, 180, "wait for server start", func() error {
 		stdout, stderr, err := ks.Runner.Run(args...)
 		if stdout != "" || stderr != "" {

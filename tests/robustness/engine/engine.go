@@ -201,7 +201,7 @@ func (e *Engine) Init(ctx context.Context, testRepoPath, metaRepoPath string) er
 		fmt.Printf("Printing the S3 Bucket Name: %v\n", bucketName)
 		return e.InitS3WithServer(ctx, bucketName, testRepoPath, metaRepoPath, "localhost:51515")
 	default:
-		return e.InitFilesystem(ctx, testRepoPath, metaRepoPath)
+		return e.InitFilesystemWithServer(ctx, testRepoPath, metaRepoPath, "localhost:51515")
 	}
 }
 
