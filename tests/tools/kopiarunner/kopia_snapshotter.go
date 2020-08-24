@@ -308,7 +308,7 @@ func parseManifestListForSnapshotIDs(output string) []string {
 func waitUntilServerStarted(ks *KopiaSnapshotter, ctx context.Context, args ...string) error {
 	if err := retry.PeriodicallyNoValue(ctx, 1*time.Second, 180, "wait for server start", func() error {
 		stdout, stderr, err := ks.Runner.Run(args...)
-		if stdout != "" || stderr != "" {
+		if err != nil && stderr == "" {
 			return errors.New(fmt.Sprintf("Server status: %s-%s", stdout, stderr))
 		}
 		return err
