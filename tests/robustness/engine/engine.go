@@ -199,6 +199,17 @@ func (e *Engine) Init(ctx context.Context, testRepoPath, metaRepoPath string) er
 	case os.Getenv(S3BucketNameEnvKey) != "":
 		bucketName := os.Getenv(S3BucketNameEnvKey)
 		fmt.Printf("Printing the S3 Bucket Name: %v\n", bucketName)
+		return e.InitS3(ctx, bucketName, testRepoPath, metaRepoPath)
+	default:
+		return e.InitFilesystem(ctx, testRepoPath, metaRepoPath)
+	}
+}
+
+func (e *Engine) InitWithServerClientModel(ctx context.Context, testRepoPath, metaRepoPath string) error {
+	switch {
+	case os.Getenv(S3BucketNameEnvKey) != "":
+		bucketName := os.Getenv(S3BucketNameEnvKey)
+		fmt.Printf("Printing the S3 Bucket Name: %v\n", bucketName)
 		return e.InitS3WithServer(ctx, bucketName, testRepoPath, metaRepoPath, "localhost:51515")
 	default:
 		return e.InitFilesystemWithServer(ctx, testRepoPath, metaRepoPath, "localhost:51515")

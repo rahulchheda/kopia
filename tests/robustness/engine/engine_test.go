@@ -81,6 +81,47 @@ func TestEngineWritefilesBasicFS(t *testing.T) {
 	}
 }
 
+func TestEngineWritefilesBasicFSWithServer(t *testing.T) {
+	eng, err := NewEngine("")
+	if err == kopiarunner.ErrExeVariableNotSet {
+		t.Skip(err)
+	}
+
+	testenv.AssertNoError(t, err)
+
+	defer func() {
+		cleanupErr := eng.Cleanup()
+		testenv.AssertNoError(t, cleanupErr)
+
+		os.RemoveAll(fsRepoBaseDirPath) //nolint:errcheck
+	}()
+
+	ctx := context.TODO()
+	err = eng.InitFilesystemWithServer(ctx, fsDataRepoPath, fsMetadataRepoPath, "localhost:51515")
+	testenv.AssertNoError(t, err)
+
+	fileSize := int64(256 * 1024)
+	numFiles := 10
+
+	fioOpts := fio.Options{}.WithFileSize(fileSize).WithNumFiles(numFiles)
+
+	err = eng.FileWriter.WriteFiles("", fioOpts)
+	testenv.AssertNoError(t, err)
+
+	snapIDs := eng.Checker.GetSnapIDs()
+
+	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.LocalDataDir)
+	testenv.AssertNoError(t, err)
+
+	err = eng.Checker.RestoreSnapshot(ctx, snapID, os.Stdout)
+	testenv.AssertNoError(t, err)
+
+	for _, sID := range snapIDs {
+		err = eng.Checker.RestoreSnapshot(ctx, sID, os.Stdout)
+		testenv.AssertNoError(t, err)
+	}
+}
+
 func randomString(n int) string {
 	b := make([]byte, n)
 	io.ReadFull(rand.Reader, b) //nolint:errcheck
@@ -179,6 +220,48 @@ func TestWriteFilesBasicS3(t *testing.T) {
 	}
 }
 
+func TestWriteFilesBasicS3WithServer(t *testing.T) {
+	bucketName, cleanupCB := makeTempS3Bucket(t)
+	defer cleanupCB()
+
+	eng, err := NewEngine("")
+	if err == kopiarunner.ErrExeVariableNotSet {
+		t.Skip(err)
+	}
+
+	testenv.AssertNoError(t, err)
+
+	defer func() {
+		cleanupErr := eng.Cleanup()
+		testenv.AssertNoError(t, cleanupErr)
+	}()
+
+	ctx := context.TODO()
+	err = eng.InitS3WithServer(ctx, bucketName, s3DataRepoPath, s3MetadataRepoPath, "localhost:51515")
+	testenv.AssertNoError(t, err)
+
+	fileSize := int64(256 * 1024)
+	numFiles := 10
+
+	fioOpts := fio.Options{}.WithFileSize(fileSize).WithNumFiles(numFiles)
+
+	err = eng.FileWriter.WriteFiles("", fioOpts)
+	testenv.AssertNoError(t, err)
+
+	snapIDs := eng.Checker.GetLiveSnapIDs()
+
+	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.LocalDataDir)
+	testenv.AssertNoError(t, err)
+
+	err = eng.Checker.RestoreSnapshot(ctx, snapID, os.Stdout)
+	testenv.AssertNoError(t, err)
+
+	for _, sID := range snapIDs {
+		err = eng.Checker.RestoreSnapshot(ctx, sID, os.Stdout)
+		testenv.AssertNoError(t, err)
+	}
+}
+
 func TestDeleteSnapshotS3(t *testing.T) {
 	bucketName, cleanupCB := makeTempS3Bucket(t)
 	defer cleanupCB()
@@ -222,6 +305,49 @@ func TestDeleteSnapshotS3(t *testing.T) {
 	}
 }
 
+func TestDeleteSnapshotS3WithServer(t *testing.T) {
+	bucketName, cleanupCB := makeTempS3Bucket(t)
+	defer cleanupCB()
+
+	eng, err := NewEngine("")
+	if err == kopiarunner.ErrExeVariableNotSet {
+		t.Skip(err)
+	}
+
+	testenv.AssertNoError(t, err)
+
+	defer func() {
+		cleanupErr := eng.Cleanup()
+		testenv.AssertNoError(t, cleanupErr)
+	}()
+
+	ctx := context.TODO()
+	err = eng.InitS3WithServer(ctx, bucketName, s3DataRepoPath, s3MetadataRepoPath, "localhost:51515")
+	testenv.AssertNoError(t, err)
+
+	fileSize := int64(256 * 1024)
+	numFiles := 10
+
+	fioOpts := fio.Options{}.WithFileSize(fileSize).WithNumFiles(numFiles)
+
+	err = eng.FileWriter.WriteFiles("", fioOpts)
+	testenv.AssertNoError(t, err)
+
+	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.LocalDataDir)
+	testenv.AssertNoError(t, err)
+
+	err = eng.Checker.RestoreSnapshot(ctx, snapID, os.Stdout)
+	testenv.AssertNoError(t, err)
+
+	err = eng.Checker.DeleteSnapshot(ctx, snapID)
+	testenv.AssertNoError(t, err)
+
+	err = eng.Checker.RestoreSnapshot(ctx, snapID, os.Stdout)
+	if err == nil {
+		t.Fatalf("Expected an error when trying to restore a deleted snapshot")
+	}
+}
+
 func TestSnapshotVerificationFail(t *testing.T) {
 	bucketName, cleanupCB := makeTempS3Bucket(t)
 	defer cleanupCB()
@@ -240,6 +366,69 @@ func TestSnapshotVerificationFail(t *testing.T) {
 
 	ctx := context.TODO()
 	err = eng.InitS3(ctx, bucketName, s3DataRepoPath, s3MetadataRepoPath)
+	testenv.AssertNoError(t, err)
+
+	// Perform writes
+	fileSize := int64(256 * 1024)
+	numFiles := 10
+	fioOpt := fio.Options{}.WithFileSize(fileSize).WithNumFiles(numFiles)
+
+	err = eng.FileWriter.WriteFiles("", fioOpt)
+	testenv.AssertNoError(t, err)
+
+	// Take a first snapshot
+	snapID1, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.LocalDataDir)
+	testenv.AssertNoError(t, err)
+
+	// Get the metadata collected on that snapshot
+	ssMeta1, err := eng.Checker.GetSnapshotMetadata(snapID1)
+	testenv.AssertNoError(t, err)
+
+	// Do additional writes, writing 1 extra byte than before
+	err = eng.FileWriter.WriteFiles("", fioOpt.WithFileSize(fileSize+1))
+	testenv.AssertNoError(t, err)
+
+	// Take a second snapshot
+	snapID2, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.LocalDataDir)
+	testenv.AssertNoError(t, err)
+
+	// Get the second snapshot's metadata
+	ssMeta2, err := eng.Checker.GetSnapshotMetadata(snapID2)
+	testenv.AssertNoError(t, err)
+
+	// Swap second snapshot's validation data into the first's metadata
+	ssMeta1.ValidationData = ssMeta2.ValidationData
+
+	restoreDir, err := ioutil.TempDir(eng.Checker.RestoreDir, fmt.Sprintf("restore-snap-%v", snapID1))
+	testenv.AssertNoError(t, err)
+
+	defer os.RemoveAll(restoreDir) //nolint:errcheck
+
+	// Restore snapshot ID 1 with snapshot 2's validation data in metadata, expect error
+	err = eng.Checker.RestoreVerifySnapshot(ctx, snapID1, restoreDir, ssMeta1, os.Stdout)
+	if err == nil {
+		t.Fatalf("Expected an integrity error when trying to restore a snapshot with incorrect metadata")
+	}
+}
+
+func TestSnapshotVerificationFailWithServer(t *testing.T) {
+	bucketName, cleanupCB := makeTempS3Bucket(t)
+	defer cleanupCB()
+
+	eng, err := NewEngine("")
+	if err == kopiarunner.ErrExeVariableNotSet {
+		t.Skip(err)
+	}
+
+	testenv.AssertNoError(t, err)
+
+	defer func() {
+		cleanupErr := eng.Cleanup()
+		testenv.AssertNoError(t, cleanupErr)
+	}()
+
+	ctx := context.TODO()
+	err = eng.InitS3WithServer(ctx, bucketName, s3DataRepoPath, s3MetadataRepoPath, "localhost:51515")
 	testenv.AssertNoError(t, err)
 
 	// Perform writes
@@ -353,6 +542,73 @@ func TestDataPersistency(t *testing.T) {
 	testenv.AssertNoError(t, err)
 }
 
+func TestDataPersistencyWithServer(t *testing.T) {
+	tempDir, err := ioutil.TempDir("", "")
+	testenv.AssertNoError(t, err)
+
+	defer os.RemoveAll(tempDir) //nolint:errcheck
+
+	eng, err := NewEngine("")
+	if err == kopiarunner.ErrExeVariableNotSet {
+		t.Skip(err)
+	}
+
+	testenv.AssertNoError(t, err)
+
+	defer func() {
+		cleanupErr := eng.Cleanup()
+		testenv.AssertNoError(t, cleanupErr)
+	}()
+
+	dataRepoPath := filepath.Join(tempDir, "data-repo-")
+	metadataRepoPath := filepath.Join(tempDir, "metadata-repo-")
+
+	ctx := context.TODO()
+	err = eng.InitFilesystemWithServer(ctx, dataRepoPath, metadataRepoPath, "localHost:51515")
+	testenv.AssertNoError(t, err)
+
+	// Perform writes
+	fileSize := int64(256 * 1024)
+	numFiles := 10
+
+	fioOpt := fio.Options{}.WithFileSize(fileSize).WithNumFiles(numFiles)
+
+	err = eng.FileWriter.WriteFiles("", fioOpt)
+	testenv.AssertNoError(t, err)
+
+	// Take a snapshot
+	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.LocalDataDir)
+	testenv.AssertNoError(t, err)
+
+	// Get the walk data associated with the snapshot that was taken
+	dataDirWalk, err := eng.Checker.GetSnapshotMetadata(snapID)
+	testenv.AssertNoError(t, err)
+
+	// Flush the snapshot metadata to persistent storage
+	err = eng.MetaStore.FlushMetadata()
+	testenv.AssertNoError(t, err)
+
+	// Create a new engine
+	eng2, err := NewEngine("")
+	testenv.AssertNoError(t, err)
+
+	defer eng2.CleanComponents()
+
+	// Connect this engine to the same data and metadata repositories -
+	// expect that the snapshot taken above will be found in metadata,
+	// and the data will be chosen to be restored to this engine's DataDir
+	// as a starting point.
+	err = eng2.InitFilesystemWithServer(ctx, dataRepoPath, metadataRepoPath, "localhost:51515")
+	testenv.AssertNoError(t, err)
+
+	err = eng2.Checker.RestoreSnapshotToPath(ctx, snapID, eng2.FileWriter.LocalDataDir, os.Stdout)
+	testenv.AssertNoError(t, err)
+
+	// Compare the data directory of the second engine with the fingerprint
+	// of the snapshot taken earlier. They should match.
+	err = fswalker.NewWalkCompare().Compare(ctx, eng2.FileWriter.LocalDataDir, dataDirWalk.ValidationData, os.Stdout)
+	testenv.AssertNoError(t, err)
+}
 func TestPickActionWeighted(t *testing.T) {
 	for _, tc := range []struct {
 		name             string
@@ -489,6 +745,48 @@ func TestActionsFilesystem(t *testing.T) {
 	}
 }
 
+func TestActionsFilesystemWithServer(t *testing.T) {
+	eng, err := NewEngine("")
+	if err == kopiarunner.ErrExeVariableNotSet {
+		t.Skip(err)
+	}
+
+	testenv.AssertNoError(t, err)
+
+	defer func() {
+		cleanupErr := eng.Cleanup()
+		testenv.AssertNoError(t, cleanupErr)
+
+		os.RemoveAll(fsRepoBaseDirPath) //nolint:errcheck
+	}()
+
+	ctx := context.TODO()
+	err = eng.InitFilesystemWithServer(ctx, fsDataRepoPath, fsMetadataRepoPath, "localhost:51515")
+	testenv.AssertNoError(t, err)
+
+	actionOpts := ActionOpts{
+		WriteRandomFilesActionKey: map[string]string{
+			MaxDirDepthField:         "20",
+			MaxFileSizeField:         strconv.Itoa(10 * 1024 * 1024),
+			MinFileSizeField:         strconv.Itoa(10 * 1024 * 1024),
+			MaxNumFilesPerWriteField: "10",
+			MinNumFilesPerWriteField: "10",
+			MaxDedupePercentField:    "100",
+			MinDedupePercentField:    "100",
+			DedupePercentStepField:   "1",
+			IOLimitPerWriteAction:    "0",
+		},
+	}
+
+	numActions := 10
+	for loop := 0; loop < numActions; loop++ {
+		err := eng.RandomAction(actionOpts)
+		if !(err == nil || err == ErrNoOp) {
+			t.Error("Hit error", err)
+		}
+	}
+}
+
 func TestActionsS3(t *testing.T) {
 	bucketName, cleanupCB := makeTempS3Bucket(t)
 	defer cleanupCB()
@@ -532,6 +830,48 @@ func TestActionsS3(t *testing.T) {
 	}
 }
 
+func TestActionsS3WithServer(t *testing.T) {
+	bucketName, cleanupCB := makeTempS3Bucket(t)
+	defer cleanupCB()
+
+	eng, err := NewEngine("")
+	if err == kopiarunner.ErrExeVariableNotSet {
+		t.Skip(err)
+	}
+
+	testenv.AssertNoError(t, err)
+
+	defer func() {
+		cleanupErr := eng.Cleanup()
+		testenv.AssertNoError(t, cleanupErr)
+	}()
+
+	ctx := context.TODO()
+	err = eng.InitS3WithServer(ctx, bucketName, s3DataRepoPath, s3MetadataRepoPath, "localhost:51515")
+	testenv.AssertNoError(t, err)
+
+	actionOpts := ActionOpts{
+		WriteRandomFilesActionKey: map[string]string{
+			MaxDirDepthField:         "20",
+			MaxFileSizeField:         strconv.Itoa(10 * 1024 * 1024),
+			MinFileSizeField:         strconv.Itoa(10 * 1024 * 1024),
+			MaxNumFilesPerWriteField: "10",
+			MinNumFilesPerWriteField: "10",
+			MaxDedupePercentField:    "100",
+			MinDedupePercentField:    "100",
+			DedupePercentStepField:   "1",
+			IOLimitPerWriteAction:    "0",
+		},
+	}
+
+	numActions := 10
+	for loop := 0; loop < numActions; loop++ {
+		err := eng.RandomAction(actionOpts)
+		if !(err == nil || err == ErrNoOp) {
+			t.Error("Hit error", err)
+		}
+	}
+}
 func TestIOLimitPerWriteAction(t *testing.T) {
 	// Instruct a write action to write an enormous amount of data
 	// that should take longer than this timeout without "io_limit",
@@ -589,6 +929,62 @@ func TestIOLimitPerWriteAction(t *testing.T) {
 	}
 }
 
+func TestIOLimitPerWriteActionWithServer(t *testing.T) {
+	// Instruct a write action to write an enormous amount of data
+	// that should take longer than this timeout without "io_limit",
+	// but finish in less time with "io_limit". Command instructs fio
+	// to generate 100 files x 10 MB each = 1 GB of i/o. The limit is
+	// set to 1 MB.
+	const timeout = 10 * time.Second
+
+	eng, err := NewEngine("")
+	if err == kopiarunner.ErrExeVariableNotSet {
+		t.Skip(err)
+	}
+
+	testenv.AssertNoError(t, err)
+
+	defer func() {
+		cleanupErr := eng.Cleanup()
+		testenv.AssertNoError(t, cleanupErr)
+
+		os.RemoveAll(fsRepoBaseDirPath) //nolint:errcheck
+	}()
+
+	ctx := context.TODO()
+	err = eng.InitFilesystemWithServer(ctx, fsDataRepoPath, fsMetadataRepoPath, "localhost:51515")
+	testenv.AssertNoError(t, err)
+
+	actionOpts := ActionOpts{
+		ActionControlActionKey: map[string]string{
+			string(SnapshotRootDirActionKey):          strconv.Itoa(0),
+			string(RestoreSnapshotActionKey):          strconv.Itoa(0),
+			string(DeleteRandomSnapshotActionKey):     strconv.Itoa(0),
+			string(WriteRandomFilesActionKey):         strconv.Itoa(1),
+			string(DeleteRandomSubdirectoryActionKey): strconv.Itoa(0),
+		},
+		WriteRandomFilesActionKey: map[string]string{
+			MaxDirDepthField:         "2",
+			MaxFileSizeField:         strconv.Itoa(10 * 1024 * 1024),
+			MinFileSizeField:         strconv.Itoa(10 * 1024 * 1024),
+			MaxNumFilesPerWriteField: "100",
+			MinNumFilesPerWriteField: "100",
+			IOLimitPerWriteAction:    strconv.Itoa(1 * 1024 * 1024),
+		},
+	}
+
+	st := time.Now()
+
+	numActions := 1
+	for loop := 0; loop < numActions; loop++ {
+		err := eng.RandomAction(actionOpts)
+		testenv.AssertNoError(t, err)
+	}
+
+	if time.Since(st) > timeout {
+		t.Errorf("IO limit parameter did not cut down on the fio runtime")
+	}
+}
 func TestStatsPersist(t *testing.T) {
 	tmpDir, err := ioutil.TempDir("", "stats-persist-test")
 	testenv.AssertNoError(t, err)
