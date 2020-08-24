@@ -122,6 +122,18 @@ func (ks *KopiaSnapshotter) ConnectOrCreateS3WithServer(serverAddr, bucketName, 
 
 }
 
+func (ks *KopiaSnapshotter) ConnectS3WithDeployedServer(serverAddr, bucketName, pathPrefix string) error {
+
+	if err := ks.ConnectServer(serverAddr); err != nil {
+		fmt.Printf("Error in Connecting Server: %v\n", err)
+
+		return err
+	}
+
+	return nil
+
+}
+
 // ConnectOrCreateFilesystem attempts to connect to a kopia repo in the local
 // filesystem at the path provided. It will attempt to create one there if
 // connection was unsuccessful.

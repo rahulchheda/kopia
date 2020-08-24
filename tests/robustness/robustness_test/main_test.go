@@ -23,6 +23,8 @@ var eng *engine.Engine
 // Server and Client Model
 var engServerClient *engine.Engine
 
+var engList []*engine.Engine
+
 const (
 	dataSubPath     = "robustness-data"
 	metadataSubPath = "robustness-metadata"
@@ -59,12 +61,25 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
+	engList, err = engine.NewEngineList("", 3)
+	switch {
+	case err == kopiarunner.ErrExeVariableNotSet || errors.Is(err, fio.ErrEnvNotSet):
+		fmt.Println("Skipping robustness tests if KOPIA_EXE is not set")
+		os.Exit(0)
+	case err != nil:
+		fmt.Printf("error on engine with server/client model creation: %s\n", err.Error())
+		os.Exit(1)
+	}
+
 	dataRepoPath := path.Join(*repoPathPrefix, dataSubPath)
 	metadataRepoPath := path.Join(*repoPathPrefix, metadataSubPath)
 
 	// Try to reconcile metadata if it is out of sync with the repo state
 	eng.Checker.RecoveryMode = true
 	engServerClient.Checker.RecoveryMode = true
+	for i := range engList {
+		engList[i].Checker.RecoveryMode = true
+	}
 
 	// Initialize the engine, connecting it to the repositories
 	err = eng.Init(context.Background(), dataRepoPath, metadataRepoPath)
@@ -85,7 +100,25 @@ func TestMain(m *testing.M) {
 		fmt.Printf("error initializing engine with server/client model for S3: %s\n", err.Error())
 		os.Exit(1)
 	}
+	fmt.Printf("Creating the Engines List")
+	err = engine.InitEngineList(engList, context.Background(), dataRepoPath, metadataRepoPath)
+	if err != nil {
+		for i := range engList {
+			engList[i].CleanComponents()
+			fmt.Printf("error initializing engine for S3: %s\n", err.Error())
+			os.Exit(1)
+		}
+	}
+	fmt.Printf("Done with creation")
 
+	for i := range engList {
+		_, err = engList[i].ExecAction(engine.RestoreIntoDataDirectoryActionKey, nil)
+		if err != nil && err != engine.ErrNoOp {
+			eng.Cleanup() //nolint:errcheck
+			fmt.Printf("error restoring into the data directory: %s\n", err.Error())
+			os.Exit(1)
+		}
+	}
 	// Restore a random snapshot into the data directory
 	_, err = eng.ExecAction(engine.RestoreIntoDataDirectoryActionKey, nil)
 	if err != nil && err != engine.ErrNoOp {
@@ -112,6 +145,13 @@ func TestMain(m *testing.M) {
 	err = engServerClient.Cleanup()
 	if err != nil {
 		panic(err)
+	}
+
+	for i := range engList {
+		err = engList[i].Cleanup()
+		if err != nil {
+			panic(err)
+		}
 	}
 
 	os.Exit(result)
