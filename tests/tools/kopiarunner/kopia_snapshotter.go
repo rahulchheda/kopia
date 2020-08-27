@@ -112,7 +112,6 @@ func (ks *KopiaSnapshotter) ConnectOrCreateS3WithServer(serverAddr, bucketName, 
 	}
 
 	if err := ks.ConnectServer(serverAddr); err != nil {
-		fmt.Pr
 		return err
 	}
 
@@ -143,7 +142,6 @@ func (ks *KopiaSnapshotter) ConnectOrCreateFilesystemWithServer(repoPath, server
 	}
 
 	if err := ks.ConnectServer(serverAddr); err != nil {
-
 		return err
 	}
 
