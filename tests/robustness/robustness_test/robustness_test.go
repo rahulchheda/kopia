@@ -2,47 +2,87 @@
 
 package robustness
 
-// import (
-// 	"fmt"
-// 	"strconv"
-// 	"testing"
-// 	"time"
+import (
+	"fmt"
+	"strconv"
+	"testing"
 
-// 	"github.com/kopia/kopia/tests/robustness/engine"
-// 	"github.com/kopia/kopia/tests/testenv"
-// )
+	"golang.org/x/sync/errgroup"
 
-// func TestManySmallFiles(t *testing.T) {
-// 	fileSize := 4096
-// 	numFiles := 10000
+	"github.com/kopia/kopia/tests/robustness/engine"
+	"github.com/kopia/kopia/tests/testenv"
+)
 
-// 	fileWriteOpts := map[string]string{
-// 		engine.MaxDirDepthField:         strconv.Itoa(1),
-// 		engine.MaxFileSizeField:         strconv.Itoa(fileSize),
-// 		engine.MinFileSizeField:         strconv.Itoa(fileSize),
-// 		engine.MaxNumFilesPerWriteField: strconv.Itoa(numFiles),
-// 		engine.MinNumFilesPerWriteField: strconv.Itoa(numFiles),
-// 	}
+func TestManySmallFiles(t *testing.T) {
+	fileSize := 4096
+	numFiles := 10000
 
-// 	_, err := eng.ExecAction(engine.WriteRandomFilesActionKey, fileWriteOpts)
-// 	testenv.AssertNoError(t, err)
+	fileWriteOpts := map[string]string{
+		engine.MaxDirDepthField:         strconv.Itoa(1),
+		engine.MaxFileSizeField:         strconv.Itoa(fileSize),
+		engine.MinFileSizeField:         strconv.Itoa(fileSize),
+		engine.MaxNumFilesPerWriteField: strconv.Itoa(numFiles),
+		engine.MinNumFilesPerWriteField: strconv.Itoa(numFiles),
+	}
 
-// 	snapOut, err := eng.ExecAction(engine.SnapshotRootDirActionKey, nil)
-// 	testenv.AssertNoError(t, err)
+	fmt.Printf("Printing the length of engList: %v", len(engList))
+	// _, err := eng.ExecAction(engine.WriteRandomFilesActionKey, fileWriteOpts)
+	// testenv.AssertNoError(t, err)
 
-// 	_, err = eng.ExecAction(engine.RestoreSnapshotActionKey, snapOut)
-// 	testenv.AssertNoError(t, err)
+	// snapOut, err := eng.ExecAction(engine.SnapshotRootDirActionKey, nil)
+	// testenv.AssertNoError(t, err)
 
-// 	_, err = engServerClient.ExecAction(engine.WriteRandomFilesActionKey, fileWriteOpts)
-// 	testenv.AssertNoError(t, err)
+	// _, err = eng.ExecAction(engine.RestoreSnapshotActionKey, snapOut)
+	// testenv.AssertNoError(t, err)
 
-// 	snapOut, err = engServerClient.ExecAction(engine.SnapshotRootDirActionKey, nil)
-// 	testenv.AssertNoError(t, err)
+	// _, err = engServerClient.ExecAction(engine.WriteRandomFilesActionKey, fileWriteOpts)
+	// testenv.AssertNoError(t, err)
 
-// 	_, err = engServerClient.ExecAction(engine.RestoreSnapshotActionKey, snapOut)
-// 	testenv.AssertNoError(t, err)
+	// snapOut, err = engServerClient.ExecAction(engine.SnapshotRootDirActionKey, nil)
+	// testenv.AssertNoError(t, err)
 
-// }
+	// _, err = engServerClient.ExecAction(engine.RestoreSnapshotActionKey, snapOut)
+	// testenv.AssertNoError(t, err)
+
+	var errs errgroup.Group
+	for i := range engList {
+		errs.Go(func() error {
+			if _, err := engList[i].ExecAction(engine.WriteRandomFilesActionKey, fileWriteOpts); err != nil {
+				return err
+			}
+			return nil
+		})
+	}
+
+	err := errs.Wait()
+	testenv.AssertNoError(t, err)
+
+	var snapOut map[string]string
+	for i := range engList {
+		errs.Go(func() error {
+			if snapOut, err = engList[i].ExecAction(engine.SnapshotRootDirActionKey, nil); err != nil {
+				return err
+			}
+			return nil
+		})
+	}
+
+	err = errs.Wait()
+	testenv.AssertNoError(t, err)
+
+	for i := range engList {
+		errs.Go(func() error {
+			if _, err := engList[i].ExecAction(engine.RestoreSnapshotActionKey, snapOut); err != nil {
+				return err
+			}
+			return nil
+		})
+	}
+
+	err = errs.Wait()
+	testenv.AssertNoError(t, err)
+
+}
 
 // func TestOneLargeFile(t *testing.T) {
 // 	fileSize := 40 * 1024 * 1024

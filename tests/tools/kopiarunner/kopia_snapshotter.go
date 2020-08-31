@@ -107,6 +107,29 @@ func (ks *KopiaSnapshotter) ConnectOrCreateS3WithServer(serverAddr, bucketName, 
 		return err
 	}
 
+	if err := ks.CreateTLSServer(serverAddr); err != nil {
+		fmt.Printf("Error in Creating Server: %v\n", err)
+		return err
+	}
+
+	if err := ks.ConnectServer(serverAddr); err != nil {
+		fmt.Printf("Error in Connecting Server: %v\n", err)
+
+		return err
+	}
+
+	return nil
+
+}
+
+// ConnectOrCreateS3WithServer attempts to connect or create S3 bucket, but with Client/Server Model
+func (ks *KopiaSnapshotter) ConnectOrCreateS3WithTLSServer(serverAddr, bucketName, pathPrefix string) error {
+	args := []string{"s3", "--bucket", bucketName, "--prefix", pathPrefix}
+
+	if err := ks.ConnectOrCreateRepo(args...); err != nil {
+		return err
+	}
+
 	if err := ks.CreateServer(serverAddr); err != nil {
 		fmt.Printf("Error in Creating Server: %v\n", err)
 		return err
@@ -241,6 +264,24 @@ func (ks *KopiaSnapshotter) snapIDsFromSnapListAll() ([]string, error) {
 // the output.
 func (ks *KopiaSnapshotter) Run(args ...string) (stdout, stderr string, err error) {
 	return ks.Runner.Run(args...)
+}
+
+func (ks *KopiaSnapshotter) CreateTLSServer(addr string, args ...string) error {
+	args = append([]string{"server", "start", fmt.Sprintf("--address=%s", addr), "--tls-generate-cert", "--tls-cert-file ~/my.cert", " --tls-key-file ~/my.key"}, args...)
+	fmt.Printf("Command for Creating to server: %v\n", args)
+
+	stdout, _, err := ks.Runner.RunServer(args...)
+	if err != nil {
+		return err
+	}
+	statusArgs := append([]string{"server", "status", fmt.Sprintf("--address=http://%s", addr)})
+	err = waitUntilServerStarted(ks, context.TODO(), statusArgs...)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Printing STDOUT: %v", stdout)
+	return nil
 }
 
 func (ks *KopiaSnapshotter) CreateServer(addr string, args ...string) error {
