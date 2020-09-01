@@ -5,8 +5,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/pkg/errors"
-
 	"github.com/kopia/kopia/tests/robustness/snap"
 	"github.com/pkg/errors"
 )
