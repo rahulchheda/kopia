@@ -3,8 +3,10 @@
 package robustness
 
 import (
+	"fmt"
 	"strconv"
 	"testing"
+	"time"
 
 	"golang.org/x/sync/errgroup"
 
@@ -195,66 +197,83 @@ func TestManySmallFilesAcrossDirecoryTree(t *testing.T) {
 
 }
 
-// // func TestRandomized(t *testing.T) {
-// // 	st := time.Now()
-
-// // 	opts := engine.ActionOpts{
-// // 		engine.ActionControlActionKey: map[string]string{
-// // 			string(engine.SnapshotRootDirActionKey):          strconv.Itoa(2),
-// // 			string(engine.RestoreRandomSnapshotActionKey):    strconv.Itoa(2),
-// // 			string(engine.DeleteRandomSnapshotActionKey):     strconv.Itoa(1),
-// // 			string(engine.WriteRandomFilesActionKey):         strconv.Itoa(8),
-// // 			string(engine.DeleteRandomSubdirectoryActionKey): strconv.Itoa(1),
-// // 		},
-// // 		engine.WriteRandomFilesActionKey: map[string]string{
-// // 			engine.IOLimitPerWriteAction: fmt.Sprintf("%d", 1*1024*1024*1024),
-// // 		},
-// // 	}
-
-// // 	// Perform actions until the timer expires, at least until one action
-// // 	// has been performed
-// // 	for time.Since(st) <= *randomizedTestDur || eng.RunStats.ActionCounter == 0 {
-// // 		err := eng.RandomAction(opts)
-// // 		testenv.AssertNoError(t, err)
-// // 	}
-// // }
-
-// func TestRandomizedSmall(t *testing.T) {
+// func TestRandomized(t *testing.T) {
 // 	st := time.Now()
 
 // 	opts := engine.ActionOpts{
 // 		engine.ActionControlActionKey: map[string]string{
 // 			string(engine.SnapshotRootDirActionKey):          strconv.Itoa(2),
-// 			string(engine.RestoreSnapshotActionKey):          strconv.Itoa(2),
+// 			string(engine.RestoreRandomSnapshotActionKey):    strconv.Itoa(2),
 // 			string(engine.DeleteRandomSnapshotActionKey):     strconv.Itoa(1),
 // 			string(engine.WriteRandomFilesActionKey):         strconv.Itoa(8),
 // 			string(engine.DeleteRandomSubdirectoryActionKey): strconv.Itoa(1),
 // 		},
 // 		engine.WriteRandomFilesActionKey: map[string]string{
-// 			engine.IOLimitPerWriteAction:    fmt.Sprintf("%d", 512*1024*1024),
-// 			engine.MaxNumFilesPerWriteField: strconv.Itoa(100),
-// 			engine.MaxFileSizeField:         strconv.Itoa(64 * 1024 * 1024),
-// 			engine.MaxDirDepthField:         strconv.Itoa(3),
+// 			engine.IOLimitPerWriteAction: fmt.Sprintf("%d", 1*1024*1024*1024),
 // 		},
 // 	}
 
-// 	for time.Since(st) <= *randomizedTestDur {
+// 	// Perform actions until the timer expires, at least until one action
+// 	// has been performed
+// 	for time.Since(st) <= *randomizedTestDur || eng.RunStats.ActionCounter == 0 {
 // 		err := eng.RandomAction(opts)
-// 		if err == engine.ErrNoOp {
-// 			t.Log("Random action resulted in no-op")
-// 			err = nil
-// 		}
 // 		testenv.AssertNoError(t, err)
 // 	}
 
 // 	st = time.Now()
-// 	for time.Since(st) <= *randomizedTestDur {
-// 		err := engServerClient.RandomAction(opts)
-// 		if err == engine.ErrNoOp {
-// 			t.Log("Random action resulted in no-op")
-// 			err = nil
+// 	for time.Since(st) <= *randomizedTestDur || eng.RunStats.ActionCounter == 0 {
+// 		for i := range engList {
+// 			errs.Go(func() error {
+// 				if snapOut, err = engList[i].RandomAction(opts); err != nil {
+// 					return err
+// 				}
+// 				return nil
+// 			})
 // 		}
 // 		testenv.AssertNoError(t, err)
 // 	}
 
 // }
+
+func TestRandomizedSmall(t *testing.T) {
+	st := time.Now()
+
+	opts := engine.ActionOpts{
+		engine.ActionControlActionKey: map[string]string{
+			string(engine.SnapshotRootDirActionKey):          strconv.Itoa(2),
+			string(engine.RestoreSnapshotActionKey):          strconv.Itoa(2),
+			string(engine.DeleteRandomSnapshotActionKey):     strconv.Itoa(1),
+			string(engine.WriteRandomFilesActionKey):         strconv.Itoa(8),
+			string(engine.DeleteRandomSubdirectoryActionKey): strconv.Itoa(1),
+		},
+		engine.WriteRandomFilesActionKey: map[string]string{
+			engine.IOLimitPerWriteAction:    fmt.Sprintf("%d", 512*1024*1024),
+			engine.MaxNumFilesPerWriteField: strconv.Itoa(100),
+			engine.MaxFileSizeField:         strconv.Itoa(64 * 1024 * 1024),
+			engine.MaxDirDepthField:         strconv.Itoa(3),
+		},
+	}
+
+	for time.Since(st) <= *randomizedTestDur {
+		err := eng.RandomAction(opts)
+		if err == engine.ErrNoOp {
+			t.Log("Random action resulted in no-op")
+			err = nil
+		}
+		testenv.AssertNoError(t, err)
+	}
+
+	st = time.Now()
+	var errs errgroup.Group
+
+	for time.Since(st) <= *randomizedTestDur {
+		for i := range engList {
+			errs.Go(func() error {
+				return engList[i].RandomAction(opts)
+			})
+		}
+		err := errs.Wait()
+		testenv.AssertNoError(t, err)
+	}
+
+}
