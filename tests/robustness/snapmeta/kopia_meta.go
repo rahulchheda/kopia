@@ -74,6 +74,10 @@ func (store *kopiaMetadata) ConnectOrCreateS3WithServer(bucketName, pathPrefix, 
 	return store.snap.ConnectOrCreateS3WithServer(bucketName, pathPrefix, addr)
 }
 
+func (store *kopiaMetadata) ConnectWithDeployedServer(serverAddr string) error {
+	return store.snap.ConnectWithDeployedServer(serverAddr)
+}
+
 func (store *kopiaMetadata) ConnectOrCreateFilesystemWithServer(path, addr string) error {
 	return store.snap.ConnectOrCreateFilesystemWithServer(path, addr)
 }

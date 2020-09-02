@@ -214,6 +214,17 @@ func (e *Engine) Init(ctx context.Context, testRepoPath, metaRepoPath string) er
 	}
 }
 
+func (e *Engine) InitWithServerMultipleClientModel(ctx context.Context, testRepoPath, metaRepoPath string) error {
+	switch {
+	case os.Getenv(S3BucketNameEnvKey) != "":
+		bucketName := os.Getenv(S3BucketNameEnvKey)
+		fmt.Printf("Printing the S3 Bucket Name: %v\n", bucketName)
+		return e.InitS3WithDeployedServer(ctx, bucketName, testRepoPath, metaRepoPath, "localhost:51515")
+	default:
+		return e.InitFilesystemWithServer(ctx, testRepoPath, metaRepoPath, "localhost:51515")
+	}
+}
+
 // InitS3 attempts to connect to a test repo and metadata repo on S3. If connection
 // is successful, the engine is populated with the metadata associated with the
 // snapshot in that repo. A new repo will be created if one does not already
@@ -317,7 +328,47 @@ func (e *Engine) InitS3WithServer(ctx context.Context, bucketName, testRepoPath,
 	return e.init(ctx)
 }
 
-// InitS3WithServer intializes the Engine with InitFilesystem and with addition to that it uses server/client model
+func (e *Engine) InitS3WithDeployedServer(ctx context.Context, bucketName, testRepoPath, metaRepoPath, addr string) error {
+	err := e.MetaStore.ConnectWithDeployedServer(addr)
+	if err != nil {
+		fmt.Printf("Got error from Create Server func: %v\n", err)
+		return err
+	}
+	fmt.Printf("Got Outside Create Server func\n")
+
+	err = e.MetaStore.LoadMetadata()
+	if err != nil {
+		return err
+	}
+
+	err = e.TestRepo.ConnectWithDeployedServer(addr)
+	if err != nil {
+		return err
+	}
+
+	_, _, err = e.TestRepo.Run("policy", "set", "--global", "--keep-latest", strconv.Itoa(1<<31-1))
+	if err != nil {
+		return err
+	}
+
+	err = e.Checker.VerifySnapshotMetadata()
+	if err != nil {
+		return err
+	}
+
+	snapIDs := e.Checker.GetLiveSnapIDs()
+	if len(snapIDs) > 0 {
+		randSnapID := snapIDs[rand.Intn(len(snapIDs))] //nolint:gosec
+
+		err = e.Checker.RestoreSnapshotToPath(ctx, randSnapID, e.FileWriter.LocalDataDir, os.Stdout)
+		if err != nil {
+			return err
+		}
+	}
+
+	return e.init(ctx)
+}
+
 func (e *Engine) InitFilesystemWithServer(ctx context.Context, testRepoPath, metaRepoPath, addr string) error {
 	err := e.MetaStore.ConnectOrCreateFilesystemWithServer(addr, metaRepoPath)
 	if err != nil {
@@ -330,4 +381,42 @@ func (e *Engine) InitFilesystemWithServer(ctx context.Context, testRepoPath, met
 	}
 
 	return e.init(ctx)
+}
+
+func (e *Engine) InitFilesystemWithWithDeployedServer(ctx context.Context, testRepoPath, metaRepoPath, addr string) error {
+	err := e.MetaStore.ConnectWithDeployedServer(addr)
+	if err != nil {
+		return err
+	}
+
+	err = e.TestRepo.ConnectWithDeployedServer(addr)
+	if err != nil {
+		return err
+	}
+
+	return e.init(ctx)
+}
+
+func NewEngineList(workingDir string, clientCount int) ([]*Engine, error) {
+	var engineList []*Engine
+	for i := 0; i < clientCount; i++ {
+		engine, err := NewEngine(workingDir)
+		if err != nil {
+			return nil, err
+		}
+		engineList = append(engineList, engine)
+	}
+	return engineList, nil
+}
+
+func InitEngineList(engineList []*Engine, ctx context.Context, testRepoPath, metaRepoPath string) error {
+	if err := engineList[0].Init(ctx, testRepoPath, metaRepoPath); err != nil {
+		return err
+	}
+	for i := range engineList {
+		if err := engineList[i].InitWithServerMultipleClientModel(ctx, testRepoPath, metaRepoPath); err != nil {
+			return err
+		}
+	}
+	return nil
 }
