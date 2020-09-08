@@ -10,8 +10,10 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/kopia/kopia/tests/robustness/checker"
@@ -25,6 +27,14 @@ import (
 const (
 	// S3BucketNameEnvKey is the environment variable required to connect to a repo on S3
 	S3BucketNameEnvKey = "S3_BUCKET_NAME"
+	// EngineModeEnvKey is the environment variable required to switch between basic and server/client model
+	EngineModeEnvKey = "ENGINE_MODE"
+	// EngineModeBasic is a constant used to check the engineMode
+	EngineModeBasic = "BASIC"
+	// EngineModeServer is a constant used to check the engineMode
+	EngineModeServer = "SERVER"
+	// DefaultAddr is used for setting the address of Kopia Server
+	defaultAddr = "localhost:51515"
 )
 
 var (
@@ -46,6 +56,7 @@ type Engine struct {
 	Checker         *checker.Checker
 	cleanupRoutines []func()
 	baseDirPath     string
+	serverCmd       *exec.Cmd
 
 	RunStats        Stats
 	CumulativeStats Stats
@@ -103,7 +114,7 @@ func NewEngine(workingDir string) (*Engine, error) {
 
 	e.MetaStore = snapStore
 
-	e.setupLogging()
+	e.setupLogging() //nolint:errcheck
 
 	// Create the data integrity checker
 	chk, err := checker.NewChecker(kopiaSnapper, snapStore, fswalker.NewWalkCompare(), baseDirPath)
@@ -113,6 +124,8 @@ func NewEngine(workingDir string) (*Engine, error) {
 		e.CleanComponents() //nolint:errcheck
 		return nil, err
 	}
+
+	e.cleanupRoutines = append(e.cleanupRoutines, e.cleanUpServer)
 
 	e.Checker = chk
 
@@ -194,10 +207,19 @@ func (e *Engine) CleanComponents() {
 // - If S3_BUCKET_NAME is set, initialize S3
 // - Else initialize filesystem
 func (e *Engine) Init(ctx context.Context, testRepoPath, metaRepoPath string) error {
+	bucketName := os.Getenv(S3BucketNameEnvKey)
+	engineMode := os.Getenv(EngineModeEnvKey)
+
 	switch {
-	case os.Getenv(S3BucketNameEnvKey) != "":
-		bucketName := os.Getenv(S3BucketNameEnvKey)
+	case bucketName != "" && engineMode == EngineModeBasic:
 		return e.InitS3(ctx, bucketName, testRepoPath, metaRepoPath)
+
+	case bucketName != "" && engineMode == EngineModeServer:
+		return e.InitS3WithServer(ctx, bucketName, testRepoPath, metaRepoPath, defaultAddr)
+
+	case bucketName == "" && engineMode == EngineModeServer:
+		return e.InitFilesystemWithServer(ctx, testRepoPath, metaRepoPath, defaultAddr)
+
 	default:
 		return e.InitFilesystem(ctx, testRepoPath, metaRepoPath)
 	}
@@ -207,7 +229,7 @@ func (e *Engine) Init(ctx context.Context, testRepoPath, metaRepoPath string) er
 // is successful, the engine is populated with the metadata associated with the
 // snapshot in that repo. A new repo will be created if one does not already
 // exist.
-func (e *Engine) InitS3(ctx context.Context, bucketName string, testRepoPath, metaRepoPath string) error {
+func (e *Engine) InitS3(ctx context.Context, bucketName, testRepoPath, metaRepoPath string) error {
 	err := e.MetaStore.ConnectOrCreateS3(bucketName, metaRepoPath)
 	if err != nil {
 		return err
@@ -263,4 +285,45 @@ func (e *Engine) init(ctx context.Context) error {
 	}
 
 	return e.Checker.VerifySnapshotMetadata()
+}
+
+// InitS3WithServer initializes the Engine with InitS3 for use with the server/client model
+func (e *Engine) InitS3WithServer(ctx context.Context, bucketName, testRepoPath, metaRepoPath, addr string) error {
+	if err := e.MetaStore.ConnectOrCreateS3(bucketName, metaRepoPath); err != nil {
+		return err
+	}
+
+	cmd, err := e.TestRepo.ConnectOrCreateS3WithServer(addr, bucketName, testRepoPath)
+	if err != nil {
+		return err
+	}
+	e.serverCmd = cmd
+
+	return e.init(ctx)
+}
+
+// InitFilesystemWithServer initializes the Engine for testing the server/client model with a local filesystem repository
+func (e *Engine) InitFilesystemWithServer(ctx context.Context, testRepoPath, metaRepoPath, addr string) error {
+	if err := e.MetaStore.ConnectOrCreateFilesystem(metaRepoPath); err != nil {
+		return err
+	}
+
+	cmd, err := e.TestRepo.ConnectOrCreateFilesystemWithServer(addr, testRepoPath)
+	if err != nil {
+		return err
+	}
+	e.serverCmd = cmd
+
+	return e.init(ctx)
+}
+
+// cleanUpServer cleans up the server process
+func (e *Engine) cleanUpServer() {
+	if e.serverCmd != nil {
+		e.serverCmd.SysProcAttr = &syscall.SysProcAttr{
+			Pdeathsig: syscall.SIGTERM,
+		}
+
+		e.serverCmd.Run() //nolint:errcheck
+	}
 }

@@ -213,7 +213,7 @@ robustness-tests: dist-binary
 robustness-status: dist-binary
 	FIO_DOCKER_IMAGE=$(FIO_DOCKER_TAG) \
 	KOPIA_EXE=$(KOPIA_INTEGRATION_EXE) \
-	$(GO_TEST) -v -tags=utils -run=RobustnessStatus github.com/kopia/kopia/tests/robustness/utils_test
+	$(GO_TEST) -tags=utils -run=RobustnessStatus github.com/kopia/kopia/tests/robustness/utils_test
 
 else 
 
@@ -224,7 +224,7 @@ robustness-tests:
 
 robustness-status:
 	FIO_DOCKER_IMAGE=$(FIO_DOCKER_TAG) \
-	$(GO_TEST) -v -tags=utils -run=RobustnessStatus github.com/kopia/kopia/tests/robustness/utils_test
+	$(GO_TEST) -tags=utils -run=RobustnessStatus github.com/kopia/kopia/tests/robustness/utils_test
 
 endif
 
