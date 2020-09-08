@@ -86,13 +86,16 @@ func (kr *Runner) RunAsync(args ...string) (*exec.Cmd, error) {
 	// nolint:gosec
 	c := exec.Command(kr.Exe, cmdArgs...)
 	c.Env = append(os.Environ(), kr.environment...)
-
+	log.Printf("running final: '%s %v'", kr.Exe, cmdArgs)
 	errOut := &bytes.Buffer{}
 	c.Stderr = errOut
 	err := c.Start()
+	log.Println("Start done")
 	if err != nil {
+		log.Printf("In error block: %v\n", err)
 		return nil, err
 	}
 
+	log.Println("Func done")
 	return c, nil
 }
