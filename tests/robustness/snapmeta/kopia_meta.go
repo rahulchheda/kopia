@@ -77,22 +77,10 @@ func (store *kopiaMetadata) ConnectOrCreateS3WithServer(serverAddr, bucketName, 
 	return store.snap.ConnectOrCreateS3WithServer(serverAddr, bucketName, pathPrefix)
 }
 
-// ConnectOrCreateS3WithTLSServer implements the RepoManager interface, creates a TLS server
-// connects it a repo in an S3 bucket and creates a client to perform operations.
-func (store *kopiaMetadata) ConnectOrCreateS3WithTLSServer(serverAddr, bucketName, pathPrefix string) (*exec.Cmd, error) {
-	return store.snap.ConnectOrCreateS3WithTLSServer(serverAddr, bucketName, pathPrefix)
-}
-
 // ConnectOrCreateFilesystemWithServer implements the RepoManager interface, creates a server
 // connects it a repo in the filesystem and creates a client to perform operations.
 func (store *kopiaMetadata) ConnectOrCreateFilesystemWithServer(repoPath, serverAddr string) (*exec.Cmd, error) {
 	return store.snap.ConnectOrCreateFilesystemWithServer(repoPath, serverAddr)
-}
-
-// ConnectOrCreateFilesystemWithTLSServer implements the RepoManager interface, creates a TLS server
-// connects it a repo in the filesystem and creates a client to perform operations.
-func (store *kopiaMetadata) ConnectOrCreateFilesystemWithTLSServer(repoPath, serverAddr string) (*exec.Cmd, error) {
-	return store.snap.ConnectOrCreateFilesystemWithTLSServer(repoPath, serverAddr)
 }
 
 // LoadMetadata implements the DataPersister interface, restores the latest

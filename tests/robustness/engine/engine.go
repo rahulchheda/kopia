@@ -33,8 +33,6 @@ const (
 	EngineModeBasic = "BASIC"
 	// EngineModeServer is a constant used to check the engineMode
 	EngineModeServer = "SERVER"
-	// EngineModeTLSServer is a constant used to check the engineMode
-	EngineModeTLSServer = "TLS_SERVER"
 	// DefaultAddr is used for setting the address of Kopia Server
 	defaultAddr = "localhost:51515"
 )
@@ -221,14 +219,8 @@ func (e *Engine) Init(ctx context.Context, testRepoPath, metaRepoPath string) er
 	case bucketName != "" && engineMode == EngineModeServer:
 		return e.InitS3WithServer(ctx, bucketName, testRepoPath, metaRepoPath, defaultAddr)
 
-	case bucketName != "" && engineMode == EngineModeTLSServer:
-		return e.InitS3WithTLSServer(ctx, bucketName, testRepoPath, metaRepoPath, defaultAddr)
-
 	case bucketName == "" && engineMode == EngineModeServer:
 		return e.InitFilesystemWithServer(ctx, testRepoPath, metaRepoPath, defaultAddr)
-
-	case bucketName == "" && engineMode == EngineModeTLSServer:
-		return e.InitFilesystemWithTLSServer(ctx, testRepoPath, metaRepoPath, defaultAddr)
 
 	default:
 		return e.InitFilesystem(ctx, testRepoPath, metaRepoPath)
@@ -312,21 +304,6 @@ func (e *Engine) InitS3WithServer(ctx context.Context, bucketName, testRepoPath,
 	return e.init(ctx)
 }
 
-// InitS3WithTLSServer initializes the Engine with InitS3 for use with the TLS server/client model
-func (e *Engine) InitS3WithTLSServer(ctx context.Context, bucketName, testRepoPath, metaRepoPath, addr string) error {
-	if err := e.MetaStore.ConnectOrCreateS3(bucketName, metaRepoPath); err != nil {
-		return err
-	}
-
-	cmd, err := e.TestRepo.ConnectOrCreateS3WithTLSServer(addr, bucketName, testRepoPath)
-	if err != nil {
-		return err
-	}
-	e.serverCmd = cmd
-
-	return e.init(ctx)
-}
-
 // InitFilesystemWithServer initializes the Engine for testing the server/client model with a local filesystem repository
 func (e *Engine) InitFilesystemWithServer(ctx context.Context, testRepoPath, metaRepoPath, addr string) error {
 	if err := e.MetaStore.ConnectOrCreateFilesystem(metaRepoPath); err != nil {
@@ -334,21 +311,6 @@ func (e *Engine) InitFilesystemWithServer(ctx context.Context, testRepoPath, met
 	}
 
 	cmd, err := e.TestRepo.ConnectOrCreateFilesystemWithServer(addr, testRepoPath)
-	if err != nil {
-		return err
-	}
-	e.serverCmd = cmd
-
-	return e.init(ctx)
-}
-
-// InitFilesystemWithTLSServer initializes the Engine for testing the TLS server/client model with a local filesystem repository
-func (e *Engine) InitFilesystemWithTLSServer(ctx context.Context, testRepoPath, metaRepoPath, addr string) error {
-	if err := e.MetaStore.ConnectOrCreateFilesystem(metaRepoPath); err != nil {
-		return err
-	}
-
-	cmd, err := e.TestRepo.ConnectOrCreateFilesystemWithTLSServer(addr, testRepoPath)
 	if err != nil {
 		return err
 	}

@@ -108,23 +108,17 @@ func (ks *KopiaSnapshotter) ConnectOrCreateS3(bucketName, pathPrefix string) err
 	return ks.ConnectOrCreateRepo(args...)
 }
 
-// ConnectOrCreateS3WithServer attempts to connect or create S3 bucket, but with server/client Model
+// ConnectOrCreateS3WithServer attempts to connect or create S3 bucket, but with TLS client/server Model
 func (ks *KopiaSnapshotter) ConnectOrCreateS3WithServer(serverAddr, bucketName, pathPrefix string) (*exec.Cmd, error) {
-	args := []string{"s3", "--bucket", bucketName, "--prefix", pathPrefix}
-	return ks.createAndConnectServer(serverAddr, args...)
-}
-
-// ConnectOrCreateS3WithTLSServer attempts to connect or create S3 bucket, but with TLS client/server Model
-func (ks *KopiaSnapshotter) ConnectOrCreateS3WithTLSServer(serverAddr, bucketName, pathPrefix string) (*exec.Cmd, error) {
 	repoArgs := []string{"s3", "--bucket", bucketName, "--prefix", pathPrefix}
-	return ks.createAndConnectTLSServer(serverAddr, DefaultTLSCertPath, DefaultTLSKeyPath, repoArgs...)
+	return ks.createAndConnectServer(serverAddr, DefaultTLSCertPath, DefaultTLSKeyPath, repoArgs...)
 }
 
-// ConnectOrCreateFilesystemWithTLSServer attempts to connect or create repo in local filesystem,
+// ConnectOrCreateFilesystemWithServer attempts to connect or create repo in local filesystem,
 // but with TLS server/client Model
-func (ks *KopiaSnapshotter) ConnectOrCreateFilesystemWithTLSServer(serverAddr, repoPath string) (*exec.Cmd, error) {
+func (ks *KopiaSnapshotter) ConnectOrCreateFilesystemWithServer(serverAddr, repoPath string) (*exec.Cmd, error) {
 	repoArgs := []string{"filesystem", "--path", repoPath}
-	return ks.createAndConnectTLSServer(serverAddr, DefaultTLSCertPath, DefaultTLSKeyPath, repoArgs...)
+	return ks.createAndConnectServer(serverAddr, DefaultTLSCertPath, DefaultTLSKeyPath, repoArgs...)
 }
 
 // ConnectOrCreateFilesystem attempts to connect to a kopia repo in the local
@@ -134,13 +128,6 @@ func (ks *KopiaSnapshotter) ConnectOrCreateFilesystem(repoPath string) error {
 	args := []string{"filesystem", "--path", repoPath}
 
 	return ks.ConnectOrCreateRepo(args...)
-}
-
-// ConnectOrCreateFilesystemWithServer attempts to connect or create repo in local filesystem,
-// but with server/client Model
-func (ks *KopiaSnapshotter) ConnectOrCreateFilesystemWithServer(serverAddr, repoPath string) (*exec.Cmd, error) {
-	args := []string{"filesystem", "--path", repoPath}
-	return ks.createAndConnectServer(serverAddr, args...)
 }
 
 // CreateSnapshot implements the Snapshotter interface, issues a kopia snapshot
@@ -229,14 +216,6 @@ func (ks *KopiaSnapshotter) CreateServer(addr string, args ...string) (*exec.Cmd
 
 }
 
-// CreateTLSServer creates a new instance of Kopia TLS Server with provided address
-func (ks *KopiaSnapshotter) CreateTLSServer(addr string, args ...string) (*exec.Cmd, error) {
-	args = append([]string{"server", "start", "--address", addr}, args...)
-	fmt.Printf("Command for Creating to server: %v\n", args)
-
-	return ks.Runner.RunAsync(args...)
-}
-
 // ConnectServer creates a new client, and connect it to Kopia Server with provided address.
 func (ks *KopiaSnapshotter) ConnectServer(addr string, args ...string) error {
 	args = append([]string{"repo", "connect", "server", "--url", addr}, args...)
@@ -307,35 +286,8 @@ func (ks *KopiaSnapshotter) waitUntilServerStarted(ctx context.Context, addr str
 	return nil
 }
 
-// createAndConnectServer creates Repository and a server/client model for interaction
-func (ks *KopiaSnapshotter) createAndConnectServer(serverAddr string, args ...string) (*exec.Cmd, error) {
-	var cmd *exec.Cmd
-	var err error
-
-	if err = ks.ConnectOrCreateRepo(args...); err != nil {
-		return nil, err
-	}
-
-	if cmd, err = ks.CreateServer(serverAddr); err != nil {
-		return nil, err
-	}
-
-	serverAddr = fmt.Sprintf("http://%v", serverAddr)
-
-	err = ks.waitUntilServerStarted(context.TODO(), serverAddr)
-	if err != nil {
-		return cmd, err
-	}
-
-	if err = ks.ConnectServer(serverAddr); err != nil {
-		return nil, err
-	}
-
-	return cmd, err
-}
-
-// createAndConnectTLSServer creates Repository and a TLS server/client model for interaction
-func (ks *KopiaSnapshotter) createAndConnectTLSServer(serverAddr string, tlsCertFile string, tlsKeyFile string, args ...string) (*exec.Cmd, error) {
+// createAndConnectServer creates Repository and a TLS server/client model for interaction
+func (ks *KopiaSnapshotter) createAndConnectServer(serverAddr string, tlsCertFile string, tlsKeyFile string, args ...string) (*exec.Cmd, error) {
 	var cmd *exec.Cmd
 	var err error
 
@@ -344,7 +296,7 @@ func (ks *KopiaSnapshotter) createAndConnectTLSServer(serverAddr string, tlsCert
 	}
 
 	serverArgs := append([]string{"--tls-generate-cert", "--tls-cert-file", tlsCertFile, "--tls-key-file", tlsKeyFile})
-	if cmd, err = ks.CreateTLSServer(serverAddr, serverArgs...); err != nil {
+	if cmd, err = ks.CreateServer(serverAddr, serverArgs...); err != nil {
 		return nil, err
 	}
 

@@ -24,6 +24,4 @@ type RepoManager interface {
 	ConnectOrCreateFilesystem(path string) error
 	ConnectOrCreateS3WithServer(serverAddr, bucketName, pathPrefix string) (*exec.Cmd, error)
 	ConnectOrCreateFilesystemWithServer(serverAddr, repoPath string) (*exec.Cmd, error)
-	ConnectOrCreateS3WithTLSServer(serverAddr, bucketName, pathPrefix string) (*exec.Cmd, error)
-	ConnectOrCreateFilesystemWithTLSServer(serverAddr, repoPath string) (*exec.Cmd, error)
 }
