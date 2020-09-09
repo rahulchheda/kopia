@@ -13,7 +13,7 @@ type Store interface {
 	Indexer
 }
 
-type Indexer interface {
+type Indexer interface { //nolint:golint
 	AddToIndex(key, indexName string)
 	RemoveFromIndex(key, indexName string)
 	GetKeys(indexName string) (ret []string)

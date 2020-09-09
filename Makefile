@@ -50,7 +50,7 @@ play:
 	go run cmd/playground/main.go
 
 lint: $(linter)
-	$(linter) --deadline $(LINTER_DEADLINE) run $(linter_flags)
+	$(linter) --deadline $(LINTER_DEADLINE) run
 
 lint-and-log: $(linter)
 	$(linter) --deadline $(LINTER_DEADLINE) run $(linter_flags) | tee .linterr.txt
@@ -183,10 +183,10 @@ dev-deps:
 	GO111MODULE=off go get -u github.com/sqs/goreturns
 
 test-with-coverage:
-	$(GO_TEST) -count=1 -coverprofile=tmp.cov --coverpkg $(COVERAGE_PACKAGES) -timeout 90s $(shell go list ./...)
+	$(GO_TEST) -count=1 -coverprofile=tmp.cov --coverpkg $(COVERAGE_PACKAGES) -timeout 300s $(shell go list ./...)
 
 test-with-coverage-pkgonly:
-	$(GO_TEST) -count=1 -coverprofile=tmp.cov -timeout 90s github.com/kopia/kopia/...
+	$(GO_TEST) -count=1 -coverprofile=tmp.cov -timeout 300s github.com/kopia/kopia/...
 
 test:
 	$(GO_TEST) -count=1 -timeout $(UNIT_TESTS_TIMEOUT) ./...

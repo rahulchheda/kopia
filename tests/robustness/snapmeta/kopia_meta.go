@@ -119,7 +119,7 @@ func (store *kopiaMetadata) LoadMetadata() error {
 
 	defer os.Remove(metadataPath) //nolint:errcheck
 
-	f, err := os.Open(metadataPath) //nolint:gosec
+	f, err := os.Open(filepath.Clean(metadataPath))
 	if err != nil {
 		return err
 	}
@@ -143,6 +143,7 @@ func (store *kopiaMetadata) GetPersistDir() string {
 // as a snapshot create.
 func (store *kopiaMetadata) FlushMetadata() error {
 	metadataPath := filepath.Join(store.persistenceDir, metadataStoreFileName)
+
 	f, err := os.Create(metadataPath)
 	if err != nil {
 		return err

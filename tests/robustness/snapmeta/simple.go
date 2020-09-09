@@ -72,7 +72,7 @@ func (s *Simple) AddToIndex(key, indexName string) {
 	s.Idx.AddToIndex(key, indexName)
 }
 
-// RemoveFromIndex implements the Indexer interface RemoveFromIndex method
+// RemoveFromIndex implements the Indexer interface RemoveFromIndex method.
 func (s *Simple) RemoveFromIndex(key, indexName string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -80,7 +80,7 @@ func (s *Simple) RemoveFromIndex(key, indexName string) {
 	s.Idx.RemoveFromIndex(key, indexName)
 }
 
-// GetKeys implements the Indexer interface GetKeys method
+// GetKeys implements the Indexer interface GetKeys method.
 func (s *Simple) GetKeys(indexName string) []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()

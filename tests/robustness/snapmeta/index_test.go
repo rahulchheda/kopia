@@ -8,7 +8,9 @@ func TestIndex(t *testing.T) {
 	idx := Index{}
 
 	const snapshotIndexName = "snapshotIndex"
+
 	const snapIDKey = "snapID1"
+
 	idx.AddToIndex(snapIDKey, snapshotIndexName)
 
 	keys := idx.GetKeys(snapshotIndexName)

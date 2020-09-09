@@ -20,9 +20,7 @@ const (
 	metadataSubPath = "robustness-metadata"
 )
 
-var (
-	repoPathPrefix = flag.String("repo-path-prefix", "", "Point the robustness tests at this path prefix")
-)
+var repoPathPrefix = flag.String("repo-path-prefix", "", "Point the robustness tests at this path prefix")
 
 func TestMain(m *testing.M) {
 	flag.Parse()

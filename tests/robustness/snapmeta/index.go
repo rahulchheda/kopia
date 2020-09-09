@@ -1,8 +1,8 @@
 package snapmeta
 
-type Index map[string]map[string]struct{}
+type Index map[string]map[string]struct{} //nolint:golint
 
-func (idx Index) AddToIndex(key, indexName string) {
+func (idx Index) AddToIndex(key, indexName string) { //nolint:golint
 	if _, ok := idx[indexName]; !ok {
 		idx[indexName] = make(map[string]struct{})
 	}
@@ -10,7 +10,7 @@ func (idx Index) AddToIndex(key, indexName string) {
 	idx[indexName][key] = struct{}{}
 }
 
-func (idx Index) RemoveFromIndex(key, indexName string) {
+func (idx Index) RemoveFromIndex(key, indexName string) { //nolint:golint
 	if _, ok := idx[indexName]; !ok {
 		return
 	}
@@ -18,7 +18,7 @@ func (idx Index) RemoveFromIndex(key, indexName string) {
 	delete(idx[indexName], key)
 }
 
-func (idx Index) GetKeys(indexName string) (ret []string) {
+func (idx Index) GetKeys(indexName string) (ret []string) { //nolint:golint
 	if _, ok := idx[indexName]; !ok {
 		return ret
 	}

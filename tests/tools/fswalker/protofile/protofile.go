@@ -5,6 +5,7 @@ package protofile
 import (
 	"bytes"
 	"io/ioutil"
+	"path/filepath"
 
 	// nolint:staticcheck
 	"github.com/golang/protobuf/proto"
@@ -22,5 +23,5 @@ func WriteTextProto(path string, pb proto.Message) error {
 	blob = bytes.ReplaceAll(blob, []byte("<"), []byte("{"))
 	blob = bytes.ReplaceAll(blob, []byte(">"), []byte("}"))
 
-	return ioutil.WriteFile(path, blob, 0o644) //nolint:gosec
+	return ioutil.WriteFile(filepath.Clean(path), blob, 0o644) //nolint:gosec //G306
 }

@@ -25,32 +25,32 @@ import (
 )
 
 const (
-	// S3BucketNameEnvKey is the environment variable required to connect to a repo on S3
+	// S3BucketNameEnvKey is the environment variable required to connect to a repo on S3.
 	S3BucketNameEnvKey = "S3_BUCKET_NAME"
-	// EngineModeEnvKey is the environment variable required to switch between basic and server/client model
+	// EngineModeEnvKey is the environment variable required to switch between basic and server/client model.
 	EngineModeEnvKey = "ENGINE_MODE"
-	// EngineModeBasic is a constant used to check the engineMode
+	// EngineModeBasic is a constant used to check the engineMode.
 	EngineModeBasic = "BASIC"
-	// EngineModeServer is a constant used to check the engineMode
+	// EngineModeServer is a constant used to check the engineMode.
 	EngineModeServer = "SERVER"
-	// EngineModeTLSServer is a constant used to check the engineMode
+	// EngineModeTLSServer is a constant used to check the engineMode.
 	EngineModeTLSServer = "TLS_SERVER"
-	// DefaultAddr is used for setting the address of Kopia Server
+	// DefaultAddr is used for setting the address of Kopia Server.
 	defaultAddr = "localhost:51515"
 )
 
 var (
-	// ErrNoOp is thrown when an action could not do anything useful
+	// ErrNoOp is thrown when an action could not do anything useful.
 	ErrNoOp = fmt.Errorf("no-op")
 	// ErrCannotPerformIO is returned if the engine determines there is not enough space
-	// to write files
+	// to write files.
 	ErrCannotPerformIO = fmt.Errorf("cannot perform i/o")
-	// ErrS3BucketNameEnvUnset is the error returned when the S3BucketNameEnvKey environment variable is not set
+	// ErrS3BucketNameEnvUnset is the error returned when the S3BucketNameEnvKey environment variable is not set.
 	ErrS3BucketNameEnvUnset = fmt.Errorf("environment variable required: %v", S3BucketNameEnvKey)
 	noSpaceOnDeviceMatchStr = "no space left on device"
 )
 
-// Engine is the outer level testing framework for robustness testing
+// Engine is the outer level testing framework for robustness testing.
 type Engine struct {
 	FileWriter      *fio.Runner
 	TestRepo        snap.Snapshotter
@@ -89,7 +89,7 @@ func NewEngine(workingDir string) (*Engine, error) {
 	// Fill the file writer
 	e.FileWriter, err = fio.NewRunner()
 	if err != nil {
-		e.CleanComponents() //nolint:errcheck
+		e.CleanComponents()
 		return nil, err
 	}
 
@@ -98,7 +98,7 @@ func NewEngine(workingDir string) (*Engine, error) {
 	// Fill Snapshotter interface
 	kopiaSnapper, err := kopiarunner.NewKopiaSnapshotter(baseDirPath)
 	if err != nil {
-		e.CleanComponents() //nolint:errcheck
+		e.CleanComponents()
 		return nil, err
 	}
 
@@ -108,7 +108,7 @@ func NewEngine(workingDir string) (*Engine, error) {
 	// Fill the snapshot store interface
 	snapStore, err := snapmeta.New(baseDirPath)
 	if err != nil {
-		e.CleanComponents() //nolint:errcheck
+		e.CleanComponents()
 		return nil, err
 	}
 
@@ -123,25 +123,24 @@ func NewEngine(workingDir string) (*Engine, error) {
 	e.cleanupRoutines = append(e.cleanupRoutines, chk.Cleanup)
 
 	if err != nil {
-		e.CleanComponents() //nolint:errcheck
+		e.CleanComponents()
 		return nil, err
 	}
 
-	e.cleanupRoutines = append(e.cleanupRoutines, e.cleanUpServer)
-
-	e.cleanupRoutines = append(e.cleanupRoutines, e.cleanUpTLSCertKeyPair)
+	e.cleanupRoutines = append(e.cleanupRoutines, e.cleanUpServer, e.cleanUpTLSCertKeyPair)
 
 	e.Checker = chk
 
 	return e, nil
 }
 
-// Cleanup cleans up after each component of the test engine
+// Cleanup cleans up after each component of the test engine.
 func (e *Engine) Cleanup() error {
 	// Perform a snapshot action to capture the state of the data directory
 	// at the end of the run
 	lastWriteEntry := e.EngineLog.FindLastThisRun(WriteRandomFilesActionKey)
 	lastSnapEntry := e.EngineLog.FindLastThisRun(SnapshotRootDirActionKey)
+
 	if lastWriteEntry != nil {
 		if lastSnapEntry == nil || lastSnapEntry.Idx < lastWriteEntry.Idx {
 			// Only force a final snapshot if the data tree has been modified since the last snapshot
@@ -181,6 +180,7 @@ func (e *Engine) setupLogging() error {
 	dirPath := e.MetaStore.GetPersistDir()
 
 	newLogPath := filepath.Join(dirPath, e.formatLogName())
+
 	f, err := os.Create(newLogPath)
 	if err != nil {
 		return err
@@ -198,7 +198,7 @@ func (e *Engine) formatLogName() string {
 	return fmt.Sprintf("Log_%s", st.Format("2006_01_02_15_04_05"))
 }
 
-// CleanComponents cleans up each component part of the test engine
+// CleanComponents cleans up each component part of the test engine.
 func (e *Engine) CleanComponents() {
 	for _, f := range e.cleanupRoutines {
 		f()
@@ -209,7 +209,7 @@ func (e *Engine) CleanComponents() {
 
 // Init initializes the Engine to a repository location according to the environment setup.
 // - If S3_BUCKET_NAME is set, initialize S3
-// - Else initialize filesystem
+// - Else initialize filesystem.
 func (e *Engine) Init(ctx context.Context, testRepoPath, metaRepoPath string) error {
 	bucketName := os.Getenv(S3BucketNameEnvKey)
 	engineMode := os.Getenv(EngineModeEnvKey)
@@ -297,7 +297,7 @@ func (e *Engine) init(ctx context.Context) error {
 	return e.Checker.VerifySnapshotMetadata()
 }
 
-// InitS3WithServer initializes the Engine with InitS3 for use with the server/client model
+// InitS3WithServer initializes the Engine with InitS3 for use with the server/client model.
 func (e *Engine) InitS3WithServer(ctx context.Context, bucketName, testRepoPath, metaRepoPath, addr string) error {
 	if err := e.MetaStore.ConnectOrCreateS3(bucketName, metaRepoPath); err != nil {
 		return err
@@ -307,12 +307,13 @@ func (e *Engine) InitS3WithServer(ctx context.Context, bucketName, testRepoPath,
 	if err != nil {
 		return err
 	}
+
 	e.serverCmd = cmd
 
 	return e.init(ctx)
 }
 
-// InitS3WithTLSServer initializes the Engine with InitS3 for use with the TLS server/client model
+// InitS3WithTLSServer initializes the Engine with InitS3 for use with the TLS server/client model.
 func (e *Engine) InitS3WithTLSServer(ctx context.Context, bucketName, testRepoPath, metaRepoPath, addr string) error {
 	if err := e.MetaStore.ConnectOrCreateS3(bucketName, metaRepoPath); err != nil {
 		return err
@@ -322,12 +323,13 @@ func (e *Engine) InitS3WithTLSServer(ctx context.Context, bucketName, testRepoPa
 	if err != nil {
 		return err
 	}
+
 	e.serverCmd = cmd
 
 	return e.init(ctx)
 }
 
-// InitFilesystemWithServer initializes the Engine for testing the server/client model with a local filesystem repository
+// InitFilesystemWithServer initializes the Engine for testing the server/client model with a local filesystem repository.
 func (e *Engine) InitFilesystemWithServer(ctx context.Context, testRepoPath, metaRepoPath, addr string) error {
 	if err := e.MetaStore.ConnectOrCreateFilesystem(metaRepoPath); err != nil {
 		return err
@@ -337,12 +339,13 @@ func (e *Engine) InitFilesystemWithServer(ctx context.Context, testRepoPath, met
 	if err != nil {
 		return err
 	}
+
 	e.serverCmd = cmd
 
 	return e.init(ctx)
 }
 
-// InitFilesystemWithTLSServer initializes the Engine for testing the TLS server/client model with a local filesystem repository
+// InitFilesystemWithTLSServer initializes the Engine for testing the TLS server/client model with a local filesystem repository.
 func (e *Engine) InitFilesystemWithTLSServer(ctx context.Context, testRepoPath, metaRepoPath, addr string) error {
 	if err := e.MetaStore.ConnectOrCreateFilesystem(metaRepoPath); err != nil {
 		return err
@@ -352,12 +355,13 @@ func (e *Engine) InitFilesystemWithTLSServer(ctx context.Context, testRepoPath, 
 	if err != nil {
 		return err
 	}
+
 	e.serverCmd = cmd
 
 	return e.init(ctx)
 }
 
-// cleanUpServer cleans up the server process
+// cleanUpServer cleans up the server process.
 func (e *Engine) cleanUpServer() {
 	if e.serverCmd != nil {
 		e.serverCmd.SysProcAttr = &syscall.SysProcAttr{
@@ -368,11 +372,12 @@ func (e *Engine) cleanUpServer() {
 	}
 }
 
-// cleanUpTLSCertKeyPair cleans up the server process
+// cleanUpTLSCertKeyPair cleans up the server process.
 func (e *Engine) cleanUpTLSCertKeyPair() {
 	if err := os.Remove(kopiarunner.DefaultTLSCertPath); err != nil {
 		log.Println(err)
 	}
+
 	if err := os.Remove(kopiarunner.DefaultTLSKeyPath); err != nil {
 		log.Println(err)
 	}

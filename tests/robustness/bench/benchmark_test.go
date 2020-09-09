@@ -17,9 +17,7 @@ const (
 	metadataSubPath = "bench/robustness-metadata"
 )
 
-var (
-	repoPathPrefix = flag.String("repo-path-prefix", "", "Point the robustness tests at this path prefix")
-)
+var repoPathPrefix = flag.String("repo-path-prefix", "", "Point the robustness tests at this path prefix")
 
 func BenchmarkContent0Metadata0Dedup100(b *testing.B)     { benchmarkCacheSize(0, 0, 100, b) }
 func BenchmarkContent500Metadata0Dedup100(b *testing.B)   { benchmarkCacheSize(500, 0, 100, b) }
@@ -78,8 +76,9 @@ func benchmarkCacheSize(contentCacheSizeMB, metadataCacheSizeMB, dedupPcnt int, 
 	}
 
 	b.ResetTimer()
+
 	for i := 0; i < b.N; i++ {
-		_, err := eng.TestRepo.CreateSnapshot(eng.FileWriter.LocalDataDir)
+		_, err = eng.TestRepo.CreateSnapshot(eng.FileWriter.LocalDataDir)
 		if err != nil {
 			b.Fatalf("snapshot error: %s", err)
 		}

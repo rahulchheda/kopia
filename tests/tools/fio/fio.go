@@ -6,10 +6,11 @@ package fio
 
 import (
 	"bytes"
+	"crypto/rand"
 	"fmt"
 	"io/ioutil"
 	"log"
-	"math/rand"
+	"math/big"
 	"os"
 	"os/exec"
 	"path"
@@ -161,13 +162,18 @@ func (fr *Runner) verifySetupWithTestWrites() error {
 		fileSizeB    = 1 << 20 // 1 MiB
 	)
 
-	nrFiles := rand.Intn(maxTestFiles) + 1 //nolint:gosec
+	nrFilesBig, err := rand.Int(rand.Reader, big.NewInt(int64(maxTestFiles)))
+	if err != nil {
+		return err
+	}
+
+	nrFiles := int(nrFilesBig.Int64()) + 1
 
 	opt := Options{}.WithNumFiles(nrFiles).WithFileSize(fileSizeB)
 
 	defer fr.DeleteRelDir("test") //nolint:errcheck
 
-	err := fr.WriteFiles(subDirPath, opt)
+	err = fr.WriteFiles(subDirPath, opt)
 	if err != nil {
 		return errors.Wrap(err, "unable to perform writes")
 	}

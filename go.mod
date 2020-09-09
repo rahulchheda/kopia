@@ -11,14 +11,16 @@ require (
 	github.com/alecthomas/units v0.0.0-20190924025748-f65c72e2690d // indirect
 	github.com/aws/aws-sdk-go v1.31.3
 	github.com/bgentry/speakeasy v0.1.0
+	github.com/bombsimon/wsl v1.2.8 // indirect
 	github.com/chmduquesne/rollinghash v4.0.0+incompatible
+	github.com/daixiang0/gci v0.2.4 // indirect
 	github.com/efarrer/iothrottler v0.0.1
 	github.com/fatih/color v1.9.0
 	github.com/foomo/htpasswd v0.0.0-20200116085101-e3a90e78da9c
 	github.com/gofrs/flock v0.7.1
 	github.com/golang/protobuf v1.4.2
 	github.com/google/fswalker v0.2.1-0.20200214223026-f0e929ba4126
-	github.com/google/go-cmp v0.4.0
+	github.com/google/go-cmp v0.5.1
 	github.com/google/readahead v0.0.0-20161222183148-eaceba169032 // indirect
 	github.com/google/uuid v1.1.1
 	github.com/google/wire v0.4.0 // indirect
@@ -40,20 +42,21 @@ require (
 	github.com/skratchdot/open-golang v0.0.0-20200116055534-eef842397966
 	github.com/stretchr/testify v1.5.1
 	github.com/studio-b12/gowebdav v0.0.0-20200303150724-9380631c29a1
+	github.com/tetafro/godot v0.4.8 // indirect
 	github.com/tg123/go-htpasswd v1.0.0
 	github.com/zalando/go-keyring v0.0.0-20200121091418-667557018717
 	go.opencensus.io v0.22.3
 	gocloud.dev v0.19.0
-	golang.org/x/crypto v0.0.0-20200510223506-06a226fb4e37
+	golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9
 	golang.org/x/exp v0.0.0-20200513190911-00229845015e
 	golang.org/x/mod v0.3.0
-	golang.org/x/net v0.0.0-20200520182314-0ba52f642ac2
+	golang.org/x/net v0.0.0-20200625001655-4c5254603344
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d
-	golang.org/x/sync v0.0.0-20200317015054-43a5402ce75a
-	golang.org/x/tools v0.0.0-20200521155704-91d71f6c2f04 // indirect
+	golang.org/x/sync v0.0.0-20200625203802-6e8e738ad208
 	google.golang.org/api v0.25.0
 	google.golang.org/protobuf v1.23.0
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	gopkg.in/ini.v1 v1.56.0 // indirect
 	gopkg.in/kothar/go-backblaze.v0 v0.0.0-20191215213626-7594ed38700f
+	mvdan.cc/gofumpt v0.0.0-20200802201014-ab5a8192947d // indirect
 )

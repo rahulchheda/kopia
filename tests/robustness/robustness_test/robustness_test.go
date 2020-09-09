@@ -129,6 +129,7 @@ func TestRandomizedSmall(t *testing.T) {
 		err := eng.RandomAction(opts)
 		if err == engine.ErrNoOp {
 			t.Log("Random action resulted in no-op")
+
 			err = nil
 		}
 

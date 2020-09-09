@@ -65,7 +65,7 @@ func TestMain(m *testing.M) {
 	// Restore a random snapshot into the data directory
 	_, err = eng.ExecAction(engine.RestoreIntoDataDirectoryActionKey, nil)
 	if err != nil && err != engine.ErrNoOp {
-		eng.Cleanup() //nolint:errcheck
+		eng.Cleanup()
 		fmt.Printf("error restoring into the data directory: %s\n", err.Error())
 		os.Exit(1)
 	}
