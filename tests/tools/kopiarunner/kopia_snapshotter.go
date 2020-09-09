@@ -31,6 +31,8 @@ const (
 	parallelFlag            = "--parallel"
 	DefaultTLSCertPath      = "/repo/kopiaserver.cert"
 	DefaultTLSKeyPath       = "/repo/kopiaserver.key"
+	retryCount              = 180
+	retryInterval           = 1 * time.Second
 )
 
 // Flag value settings
@@ -210,7 +212,6 @@ func (ks *KopiaSnapshotter) Run(args ...string) (stdout, stderr string, err erro
 // CreateServer creates a new instance of Kopia Server with provided address
 func (ks *KopiaSnapshotter) CreateServer(addr string, args ...string) (*exec.Cmd, error) {
 	args = append([]string{"server", "start", "--address", addr}, args...)
-	fmt.Printf("Command for Creating to server: %v\n", args)
 
 	return ks.Runner.RunAsync(args...)
 
@@ -308,7 +309,6 @@ func (ks *KopiaSnapshotter) createAndConnectServer(serverAddr string, tlsCertFil
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("Identified Server Fingerprint: %v\n", fingerprint)
 
 	serverAddr = fmt.Sprintf("https://%v", serverAddr)
 
@@ -346,7 +346,7 @@ func getFingerPrintFromCert(path string) (string, error) {
 }
 
 func certKeyExist(ctx context.Context, tlsCertFile, tlsKeyFile string) error {
-	if err := retry.PeriodicallyNoValue(ctx, 1*time.Second, 180, "wait for server start", func() error {
+	if err := retry.PeriodicallyNoValue(ctx, retryInterval, retryCount, "waiting for server to start", func() error {
 		if _, err := os.Stat(tlsCertFile); os.IsNotExist(err) != false {
 			return err
 		}
