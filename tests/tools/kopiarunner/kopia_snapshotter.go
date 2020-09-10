@@ -33,6 +33,7 @@ const (
 	DefaultTLSKeyPath       = "/repo/kopiaserver.key"
 	retryCount              = 180
 	retryInterval           = 1 * time.Second
+	waitingForServerString  = "waiting for server to start"
 )
 
 // Flag value settings
@@ -277,7 +278,7 @@ func parseManifestListForSnapshotIDs(output string) []string {
 // waitUntilServerStarted returns error if the Kopia API server fails to start before timeout
 func (ks *KopiaSnapshotter) waitUntilServerStarted(ctx context.Context, addr string, serverStatusArgs ...string) error {
 	statusArgs := append([]string{"server", "status", "--address", addr}, serverStatusArgs...)
-	if err := retry.PeriodicallyNoValue(ctx, 1*time.Second, 180, "wait for server start", func() error {
+	if err := retry.PeriodicallyNoValue(ctx, retryInterval, retryCount, waitingForServerString, func() error {
 		_, _, err := ks.Runner.Run(statusArgs...)
 		return err
 	}, retry.Always); err != nil {

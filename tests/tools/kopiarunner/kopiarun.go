@@ -89,8 +89,8 @@ func (kr *Runner) RunAsync(args ...string) (*exec.Cmd, error) {
 
 	errOut := &bytes.Buffer{}
 	c.Stderr = errOut
-	err := c.Start()
 
+	err := c.Start()
 	if err != nil {
 		return nil, err
 	}
