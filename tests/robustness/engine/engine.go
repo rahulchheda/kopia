@@ -132,6 +132,8 @@ func NewEngine(workingDir string) (*Engine, error) {
 
 	e.cleanupRoutines = append(e.cleanupRoutines, e.cleanUpServer)
 
+	e.cleanupRoutines = append(e.cleanupRoutines, e.cleanUpTLSCertKeyPair)
+
 	e.Checker = chk
 
 	return e, nil
@@ -338,5 +340,15 @@ func (e *Engine) cleanUpServer() {
 		}
 
 		e.serverCmd.Run() //nolint:errcheck
+	}
+}
+
+// cleanUpTLSCertKeyPair cleans up the server process
+func (e *Engine) cleanUpTLSCertKeyPair() {
+	if err := os.Remove(kopiarunner.DefaultTLSCertPath); err != nil {
+		log.Println(err)
+	}
+	if err := os.Remove(kopiarunner.DefaultTLSKeyPath); err != nil {
+		log.Println(err)
 	}
 }
