@@ -14,8 +14,7 @@ type Store interface {
 }
 
 type Indexer interface {
-	AddToIndex(key, indexName string)
-	RemoveFromIndex(key, indexName string)
+	IndexOperation(key string, indexMap map[string]bool)
 	GetKeys(indexName string) (ret []string)
 }
 

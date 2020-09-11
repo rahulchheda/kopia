@@ -133,7 +133,7 @@ func (chk *Checker) VerifySnapshotMetadata() error {
 			log.Printf("Metadata present for snapID %v but not found in list of repo snapshots", metaSnapID)
 			if chk.RecoveryMode {
 				chk.snapshotMetadataStore.Delete(metaSnapID)
-				chk.snapshotMetadataStore.RemoveFromIndex(metaSnapID, liveSnapshotsIdxName)
+				chk.snapshotMetadataStore.IndexOperation(metaSnapID, map[string]bool{liveSnapshotsIdxName: false})
 			} else {
 				errCount++
 			}
@@ -202,8 +202,7 @@ func (chk *Checker) TakeSnapshot(ctx context.Context, sourceDir string) (snapID 
 		return snapID, err
 	}
 
-	chk.snapshotMetadataStore.AddToIndex(snapID, allSnapshotsIdxName)
-	chk.snapshotMetadataStore.AddToIndex(snapID, liveSnapshotsIdxName)
+	chk.snapshotMetadataStore.IndexOperation(snapID, map[string]bool{allSnapshotsIdxName: true, liveSnapshotsIdxName: false})
 
 	return snapID, nil
 }
@@ -292,8 +291,7 @@ func (chk *Checker) DeleteSnapshot(ctx context.Context, snapID string) error {
 		return err
 	}
 
-	chk.snapshotMetadataStore.AddToIndex(ssMeta.SnapID, deletedSnapshotsIdxName)
-	chk.snapshotMetadataStore.RemoveFromIndex(ssMeta.SnapID, liveSnapshotsIdxName)
+	chk.snapshotMetadataStore.IndexOperation(ssMeta.SnapID, map[string]bool{deletedSnapshotsIdxName: true, liveSnapshotsIdxName: false})
 
 	return nil
 }

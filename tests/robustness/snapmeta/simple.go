@@ -24,7 +24,9 @@ type Simple struct {
 func NewSimple() *Simple {
 	return &Simple{
 		Data: make(map[string][]byte),
-		Idx:  Index(make(map[string]map[string]struct{})),
+		Idx: Index{
+			index: (make(map[string]map[string]struct{})),
+		},
 	}
 }
 
@@ -86,4 +88,19 @@ func (s *Simple) GetKeys(indexName string) []string {
 	defer s.mu.Unlock()
 
 	return s.Idx.GetKeys(indexName)
+}
+
+// IndexOperation implements the Indexer interface IndexOperation method
+// To add a particular indexKey use true, and to remove use false
+func (s *Simple) IndexOperation(key string, indexMap map[string]bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for indexKey, op := range indexMap {
+		if op {
+			s.Idx.AddToIndex(key, indexKey)
+		} else {
+			s.Idx.RemoveFromIndex(key, indexKey)
+		}
+	}
 }
