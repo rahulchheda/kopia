@@ -14,7 +14,7 @@ type Store interface {
 }
 
 type Indexer interface {
-	IndexOperation(key string, indexMap map[string]bool)
+	IndexOperation(indexOperations ...OperationEntry) error
 	GetKeys(indexName string) (ret []string)
 }
 
