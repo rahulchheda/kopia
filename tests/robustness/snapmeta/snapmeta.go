@@ -15,7 +15,7 @@ type Store interface {
 
 // Indexer describes methods surrounding categorization of keys via a named index.
 type Indexer interface {
-	IndexOperation(key string, indexMap map[string]bool)
+	IndexOperation(indexOperations ...OperationEntry) error
 	GetKeys(indexName string) (ret []string)
 }
 

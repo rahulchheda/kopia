@@ -39,6 +39,12 @@ const (
 	RemoveFromIndexOperation Operation = "removeFromIndex"
 )
 
+type OperationEntry struct {
+	Operation Operation
+	Key       string
+	Data      interface{}
+}
+
 // Store implements the Storer interface Store method.
 func (s *Simple) Store(key string, val []byte) error {
 	buf := make([]byte, len(val))
@@ -101,55 +107,38 @@ func (s *Simple) GetKeys(indexName string) []string {
 
 // IndexOperation implements the Indexer interface IndexOperation method
 // To add a particular indexKey use true, and to remove use false
-func (s *Simple) IndexOperation(key string, indexMap map[Operation]interface{}) error {
+func (s *Simple) IndexOperation(operationEntrys ...OperationEntry) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	for indexOperation, value := range indexMap {
-		switch indexOperation {
+	for _, op := range operationEntrys {
+		switch op.Operation {
+
 		case StoreOperation:
-			// StoreOperation value is map[string][]byte
-			storeValue, ok := value.(map[string][]byte)
+			// StoreOperation value is []byte
+			storeValue, ok := op.Data.([]byte)
 			if !ok {
 				return errors.New("Unknown value for Store Operation")
 			}
-			for i, v := range storeValue {
-				if err := s.Store(i, v); err != nil {
-					return err
-				}
-			}
-
+			s.Store(op.Key, storeValue)
 		case DeleteOperation:
-			// DeleteOperation value is []string
-			deleteValue, ok := value.([]string)
-			if !ok {
-				return errors.New("Unknown value for Delete Operation")
-			}
-			for _, v := range deleteValue {
-				s.Delete(v)
-			}
-
+			//DeleteOperation value is string
+			s.Delete(op.Key)
 		case AddToIndexOperation:
-			// AddToIndexOperation value is map[string]string
-			addToIndexValue, ok := value.(map[string]string)
+			// AddToIndexOperation value is string
+			addToIndexValue, ok := op.Data.(string)
 			if !ok {
 				return errors.New("Unknown value for AddToIndex Operation")
 			}
-			for i, v := range addToIndexValue {
-				s.AddToIndex(i, v)
-			}
-
+			s.AddToIndex(op.Key, addToIndexValue)
 		case RemoveFromIndexOperation:
-			// RemoveToIndexOperation value is map[string]string
-			removeFromIndexValue, ok := value.(map[string]string)
+			// RemoveToIndexOperation value is string
+			removeFromIndexValue, ok := op.Data.(string)
 			if !ok {
 				return errors.New("Unknown value for Remove From Index Operation")
 			}
-			for i, v := range removeFromIndexValue {
-				s.RemoveFromIndex(i, v)
-			}
+			s.RemoveFromIndex(op.Key, removeFromIndexValue)
 		}
-
 	}
 
 	return nil
