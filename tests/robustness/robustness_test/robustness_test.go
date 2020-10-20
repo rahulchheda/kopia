@@ -4,12 +4,14 @@ package robustness
 
 import (
 	"fmt"
+	"log"
 	"strconv"
 	"testing"
 	"time"
 
 	"github.com/kopia/kopia/tests/robustness/engine"
 	"github.com/kopia/kopia/tests/testenv"
+	"golang.org/x/sync/errgroup"
 )
 
 func TestManySmallFiles(t *testing.T) {
@@ -23,15 +25,67 @@ func TestManySmallFiles(t *testing.T) {
 		engine.MaxNumFilesPerWriteField: strconv.Itoa(numFiles),
 		engine.MinNumFilesPerWriteField: strconv.Itoa(numFiles),
 	}
+	var errs errgroup.Group
+	//b := &strings.Builder{}
+	log.Printf("Printing the length: %v", len(eng.Checker))
+	for i := range eng.Checker {
+		func(index int) {
+			errs.Go(func() error {
+				log.Printf("Printing the Engine: %v", index)
+				_, err := eng.ExecAction(engine.WriteRandomFilesActionKey, fileWriteOpts, index)
+				if err != nil {
+					return err
+				}
 
-	_, err := eng.ExecAction(engine.WriteRandomFilesActionKey, fileWriteOpts)
+				snapOut, err := eng.ExecAction(engine.SnapshotRootDirActionKey, nil, index)
+				if err != nil {
+					return err
+				}
+				_, err = eng.ExecAction(engine.RestoreSnapshotActionKey, snapOut, index)
+				return err
+
+			})
+		}(i)
+	}
+
+	err := errs.Wait()
 	testenv.AssertNoError(t, err)
 
-	snapOut, err := eng.ExecAction(engine.SnapshotRootDirActionKey, nil)
-	testenv.AssertNoError(t, err)
+	// for i := range eng.Checker {
+	// 	func(index int) {
+	// 		errs.Go(func() error {
+	// 			snapOut, err := eng.ExecAction(engine.SnapshotRootDirActionKey, nil, i)
+	// 			if err != nil {
+	// 				return err
+	// 			}
+	// 			_, err = eng.ExecAction(engine.RestoreSnapshotActionKey, snapOut, i)
+	// 			return err
 
-	_, err = eng.ExecAction(engine.RestoreSnapshotActionKey, snapOut)
-	testenv.AssertNoError(t, err)
+	// 		})
+	// 	}(i)
+	// }
+
+	// err = errs.Wait()
+	// testenv.AssertNoError(t, err)
+
+	// for i := range eng.Checker {
+	// 	func(index int) {
+	// 		errs.Go(func() error {
+	// 			_, err := eng.ExecAction(engine.RestoreSnapshotActionKey, snapOut, i)
+	// 			return err
+
+	// 		})
+	// 	}(i)
+	// }
+
+	// err = errs.Wait()
+	// testenv.AssertNoError(t, err)
+
+	// snapOut, err := eng.ExecAction(engine.SnapshotRootDirActionKey, nil)
+	// testenv.AssertNoError(t, err)
+
+	// _, err = eng.ExecAction(engine.RestoreSnapshotActionKey, snapOut)
+	// testenv.AssertNoError(t, err)
 }
 
 func TestOneLargeFile(t *testing.T) {
@@ -46,14 +100,32 @@ func TestOneLargeFile(t *testing.T) {
 		engine.MinNumFilesPerWriteField: strconv.Itoa(numFiles),
 	}
 
-	_, err := eng.ExecAction(engine.WriteRandomFilesActionKey, fileWriteOpts)
+	var errs errgroup.Group
+	//b := &strings.Builder{}
+	log.Printf("Printing the length: %v", len(eng.Checker))
+	for i := 0; i < eng.RunnerCount; i++ {
+		func(index int) {
+			errs.Go(func() error {
+				log.Printf("Printing the Engine: %v", index)
+				_, err := eng.ExecAction(engine.WriteRandomFilesActionKey, fileWriteOpts, index)
+				if err != nil {
+					return err
+				}
+
+				snapOut, err := eng.ExecAction(engine.SnapshotRootDirActionKey, nil, index)
+				if err != nil {
+					return err
+				}
+				_, err = eng.ExecAction(engine.RestoreSnapshotActionKey, snapOut, index)
+				return err
+
+			})
+		}(i)
+	}
+
+	err := errs.Wait()
 	testenv.AssertNoError(t, err)
 
-	snapOut, err := eng.ExecAction(engine.SnapshotRootDirActionKey, nil)
-	testenv.AssertNoError(t, err)
-
-	_, err = eng.ExecAction(engine.RestoreSnapshotActionKey, snapOut)
-	testenv.AssertNoError(t, err)
 }
 
 func TestManySmallFilesAcrossDirecoryTree(t *testing.T) {
@@ -72,39 +144,29 @@ func TestManySmallFilesAcrossDirecoryTree(t *testing.T) {
 		engine.ActionRepeaterField:      strconv.Itoa(actionRepeats),
 	}
 
-	_, err := eng.ExecAction(engine.WriteRandomFilesActionKey, fileWriteOpts)
-	testenv.AssertNoError(t, err)
+	var errs errgroup.Group
+	//b := &strings.Builder{}
+	log.Printf("Printing the length: %v", len(eng.Checker))
+	for i := 0; i < eng.RunnerCount; i++ {
+		func(index int) {
+			errs.Go(func() error {
+				log.Printf("Printing the Engine: %v", index)
+				_, err := eng.ExecAction(engine.WriteRandomFilesActionKey, fileWriteOpts, index)
+				if err != nil {
+					return err
+				}
 
-	snapOut, err := eng.ExecAction(engine.SnapshotRootDirActionKey, nil)
-	testenv.AssertNoError(t, err)
+				snapOut, err := eng.ExecAction(engine.SnapshotRootDirActionKey, nil, index)
+				if err != nil {
+					return err
+				}
+				_, err = eng.ExecAction(engine.RestoreSnapshotActionKey, snapOut, index)
+				return err
 
-	_, err = eng.ExecAction(engine.RestoreSnapshotActionKey, snapOut)
-	testenv.AssertNoError(t, err)
+			})
+		}(i)
+	}
 }
-
-// func TestRandomized(t *testing.T) {
-// 	st := time.Now()
-
-// 	opts := engine.ActionOpts{
-// 		engine.ActionControlActionKey: map[string]string{
-// 			string(engine.SnapshotRootDirActionKey):          strconv.Itoa(2),
-// 			string(engine.RestoreRandomSnapshotActionKey):    strconv.Itoa(2),
-// 			string(engine.DeleteRandomSnapshotActionKey):     strconv.Itoa(1),
-// 			string(engine.WriteRandomFilesActionKey):         strconv.Itoa(8),
-// 			string(engine.DeleteRandomSubdirectoryActionKey): strconv.Itoa(1),
-// 		},
-// 		engine.WriteRandomFilesActionKey: map[string]string{
-// 			engine.IOLimitPerWriteAction: fmt.Sprintf("%d", 1*1024*1024*1024),
-// 		},
-// 	}
-
-// 	// Perform actions until the timer expires, at least until one action
-// 	// has been performed
-// 	for time.Since(st) <= *randomizedTestDur || eng.RunStats.ActionCounter == 0 {
-// 		err := eng.RandomAction(opts)
-// 		testenv.AssertNoError(t, err)
-// 	}
-// }
 
 func TestRandomizedSmall(t *testing.T) {
 	st := time.Now()
@@ -125,13 +187,24 @@ func TestRandomizedSmall(t *testing.T) {
 		},
 	}
 
-	for time.Since(st) <= *randomizedTestDur {
-		err := eng.RandomAction(opts)
-		if err == engine.ErrNoOp {
-			t.Log("Random action resulted in no-op")
-			err = nil
-		}
+	var errs errgroup.Group
+	//b := &strings.Builder{}
+	log.Printf("Printing the length: %v", len(eng.Checker))
+	for i := 0; i < eng.RunnerCount; i++ {
+		func(index int) {
+			errs.Go(func() error {
+				log.Printf("Printing the Engine: %v", index)
+				for time.Since(st) <= *randomizedTestDur {
+					err := eng.RandomAction(opts, index)
+					if err == engine.ErrNoOp {
+						t.Log("Random action resulted in no-op")
+						err = nil
+					}
 
-		testenv.AssertNoError(t, err)
+					testenv.AssertNoError(t, err)
+				}
+				return nil
+			})
+		}(i)
 	}
 }

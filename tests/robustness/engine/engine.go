@@ -35,6 +35,8 @@ const (
 	EngineModeServer = "SERVER"
 	// DefaultAddr is used for setting the address of Kopia Server
 	defaultAddr = "localhost:51515"
+	// DefaultRunnerCount is used for setting the number of concurrent clients to be spawned.
+	DefaultRunnerCount = 3
 )
 
 var (
@@ -50,10 +52,10 @@ var (
 
 // Engine is the outer level testing framework for robustness testing
 type Engine struct {
-	FileWriter      *fio.Runner
-	TestRepo        snap.Snapshotter
+	FileWriter      []*fio.Runner
+	TestRepo        []snap.Snapshotter
 	MetaStore       snapmeta.Persister
-	Checker         *checker.Checker
+	Checker         []*checker.Checker
 	cleanupRoutines []func()
 	baseDirPath     string
 	serverCmd       *exec.Cmd
@@ -61,6 +63,7 @@ type Engine struct {
 	RunStats        Stats
 	CumulativeStats Stats
 	EngineLog       Log
+	RunnerCount     int
 }
 
 // NewEngine instantiates a new Engine and returns its pointer. It is
@@ -82,27 +85,20 @@ func NewEngine(workingDir string) (*Engine, error) {
 			CreationTime:   time.Now(),
 			PerActionStats: make(map[ActionKey]*ActionStats),
 		},
+		RunnerCount: DefaultRunnerCount,
 	}
 
 	// Fill the file writer
-	e.FileWriter, err = fio.NewRunner()
-	if err != nil {
-		e.CleanComponents() //nolint:errcheck
-		return nil, err
-	}
-
-	e.cleanupRoutines = append(e.cleanupRoutines, e.FileWriter.Cleanup)
+	multipleFileWriter := make([]*fio.Runner, e.RunnerCount)
+	multipleSnapshotter := make([]snap.Snapshotter, e.RunnerCount)
+	multipleChecker := make([]*checker.Checker, e.RunnerCount)
 
 	// Fill Snapshotter interface
-	kopiaSnapper, err := kopiarunner.NewKopiaSnapshotter(baseDirPath)
+	kopiaSnapper, err := kopiarunner.NewMultipleKopiaSnapshotter(baseDirPath, e.RunnerCount)
 	if err != nil {
 		e.CleanComponents() //nolint:errcheck
 		return nil, err
 	}
-
-	e.cleanupRoutines = append(e.cleanupRoutines, kopiaSnapper.Cleanup)
-	e.TestRepo = kopiaSnapper
-
 	// Fill the snapshot store interface
 	snapStore, err := snapmeta.New(baseDirPath)
 	if err != nil {
@@ -110,32 +106,53 @@ func NewEngine(workingDir string) (*Engine, error) {
 		return nil, err
 	}
 
-	e.cleanupRoutines = append(e.cleanupRoutines, snapStore.Cleanup)
+	for i := 0; i < e.RunnerCount; i++ {
+		var snapshotter snap.Snapshotter
+		singleChecker, err := checker.NewChecker(kopiaSnapper[i], snapStore, fswalker.NewWalkCompare(), baseDirPath)
+		fileWriter, err := fio.NewRunner()
+		if err != nil {
+			e.CleanComponents() //nolint:errcheck
+			return nil, err
+		}
+		multipleFileWriter[i] = fileWriter
+		log.Printf("FileWriter Init: %v", i)
 
-	e.MetaStore = snapStore
+		e.cleanupRoutines = append(e.cleanupRoutines, fileWriter.Cleanup)
 
-	e.setupLogging() //nolint:errcheck
+		//e.cleanupRoutines = append(e.cleanupRoutines, kopiaSnapper.Cleanup)
+		snapshotter = kopiaSnapper[i]
+		multipleSnapshotter[i] = snapshotter
 
-	// Create the data integrity checker
-	chk, err := checker.NewChecker(kopiaSnapper, snapStore, fswalker.NewWalkCompare(), baseDirPath)
-	e.cleanupRoutines = append(e.cleanupRoutines, chk.Cleanup)
+		e.cleanupRoutines = append(e.cleanupRoutines, snapStore.Cleanup)
 
-	if err != nil {
-		e.CleanComponents() //nolint:errcheck
-		return nil, err
+		e.MetaStore = snapStore
+
+		e.setupLogging() //nolint:errcheck
+
+		// Create the data integrity checker
+		e.cleanupRoutines = append(e.cleanupRoutines, singleChecker.Cleanup)
+		if err != nil {
+			e.CleanComponents() //nolint:errcheck
+			return nil, err
+		}
+		multipleChecker[i] = singleChecker
+
+		// if err != nil {
+		// 	e.CleanComponents() //nolint:errcheck
+		// 	return nil, err
+		// }
+		e.cleanupRoutines = append(e.cleanupRoutines, e.cleanUpServer, e.cleanUpTLSCertKeyPair)
 	}
-
-	e.cleanupRoutines = append(e.cleanupRoutines, e.cleanUpServer)
-
-	e.cleanupRoutines = append(e.cleanupRoutines, e.cleanUpTLSCertKeyPair)
-
-	e.Checker = chk
+	//e.Checker = chk
+	e.FileWriter = multipleFileWriter
+	e.TestRepo = multipleSnapshotter
+	e.Checker = multipleChecker
 
 	return e, nil
 }
 
 // Cleanup cleans up after each component of the test engine
-func (e *Engine) Cleanup() error {
+func (e *Engine) Cleanup(index int) error {
 	// Perform a snapshot action to capture the state of the data directory
 	// at the end of the run
 	lastWriteEntry := e.EngineLog.FindLastThisRun(WriteRandomFilesActionKey)
@@ -143,7 +160,7 @@ func (e *Engine) Cleanup() error {
 	if lastWriteEntry != nil {
 		if lastSnapEntry == nil || lastSnapEntry.Idx < lastWriteEntry.Idx {
 			// Only force a final snapshot if the data tree has been modified since the last snapshot
-			e.ExecAction(SnapshotRootDirActionKey, make(map[string]string)) //nolint:errcheck
+			e.ExecAction(SnapshotRootDirActionKey, make(map[string]string), index) //nolint:errcheck
 		}
 	}
 
@@ -213,8 +230,8 @@ func (e *Engine) Init(ctx context.Context, testRepoPath, metaRepoPath string) er
 	engineMode := os.Getenv(EngineModeEnvKey)
 
 	switch {
-	case bucketName != "" && engineMode == EngineModeBasic:
-		return e.InitS3(ctx, bucketName, testRepoPath, metaRepoPath)
+	// case bucketName != "" && engineMode == EngineModeBasic:
+	// 	return e.InitS3(ctx, bucketName, testRepoPath, metaRepoPath)
 
 	case bucketName != "" && engineMode == EngineModeServer:
 		return e.InitS3WithServer(ctx, bucketName, testRepoPath, metaRepoPath, defaultAddr)
@@ -222,46 +239,47 @@ func (e *Engine) Init(ctx context.Context, testRepoPath, metaRepoPath string) er
 	case bucketName == "" && engineMode == EngineModeServer:
 		return e.InitFilesystemWithServer(ctx, testRepoPath, metaRepoPath, defaultAddr)
 
-	default:
-		return e.InitFilesystem(ctx, testRepoPath, metaRepoPath)
+		// default:
+		// 	return e.InitFilesystem(ctx, testRepoPath, metaRepoPath)
 	}
+	return nil
 }
 
 // InitS3 attempts to connect to a test repo and metadata repo on S3. If connection
 // is successful, the engine is populated with the metadata associated with the
 // snapshot in that repo. A new repo will be created if one does not already
 // exist.
-func (e *Engine) InitS3(ctx context.Context, bucketName, testRepoPath, metaRepoPath string) error {
-	err := e.MetaStore.ConnectOrCreateS3(bucketName, metaRepoPath)
-	if err != nil {
-		return err
-	}
+// func (e *Engine) InitS3(ctx context.Context, bucketName, testRepoPath, metaRepoPath string) error {
+// 	err := e.MetaStore.ConnectOrCreateS3(bucketName, metaRepoPath)
+// 	if err != nil {
+// 		return err
+// 	}
 
-	err = e.TestRepo.ConnectOrCreateS3(bucketName, testRepoPath)
-	if err != nil {
-		return err
-	}
+// 	err = e.TestRepo.ConnectOrCreateS3(bucketName, testRepoPath)
+// 	if err != nil {
+// 		return err
+// 	}
 
-	return e.init(ctx)
-}
+// 	return e.init(ctx)
+// }
 
 // InitFilesystem attempts to connect to a test repo and metadata repo on the local
 // filesystem. If connection is successful, the engine is populated with the
 // metadata associated with the snapshot in that repo. A new repo will be created if
 // one does not already exist.
-func (e *Engine) InitFilesystem(ctx context.Context, testRepoPath, metaRepoPath string) error {
-	err := e.MetaStore.ConnectOrCreateFilesystem(metaRepoPath)
-	if err != nil {
-		return err
-	}
+// func (e *Engine) InitFilesystem(ctx context.Context, testRepoPath, metaRepoPath string) error {
+// 	err := e.MetaStore.ConnectOrCreateFilesystem(metaRepoPath)
+// 	if err != nil {
+// 		return err
+// 	}
 
-	err = e.TestRepo.ConnectOrCreateFilesystem(testRepoPath)
-	if err != nil {
-		return err
-	}
+// 	err = e.TestRepo.ConnectOrCreateFilesystem(testRepoPath)
+// 	if err != nil {
+// 		return err
+// 	}
 
-	return e.init(ctx)
-}
+// 	return e.init(ctx)
+// }
 
 func (e *Engine) init(ctx context.Context) error {
 	err := e.MetaStore.LoadMetadata()
@@ -281,12 +299,23 @@ func (e *Engine) init(ctx context.Context) error {
 		return err
 	}
 
-	_, _, err = e.TestRepo.Run("policy", "set", "--global", "--keep-latest", strconv.Itoa(1<<31-1), "--compression", "s2-default")
-	if err != nil {
-		return err
+	for i := 0; i < e.RunnerCount; i++ {
+		_, _, err = e.TestRepo[i].Run("policy", "set", "--global", "--keep-latest", strconv.Itoa(1<<31-1), "--compression", "s2-default")
+		if err != nil {
+			return err
+		}
 	}
-
-	return e.Checker.VerifySnapshotMetadata()
+	for i := 0; i < e.RunnerCount; i++ {
+		if err := e.Checker[i].VerifySnapshotMetadata(); err != nil {
+			return err
+		}
+	}
+	for i := 0; i < e.RunnerCount; i++ {
+		if err := e.Checker[i].VerifySnapshotMetadata(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // InitS3WithServer initializes the Engine with InitS3 for use with the server/client model
@@ -295,11 +324,18 @@ func (e *Engine) InitS3WithServer(ctx context.Context, bucketName, testRepoPath,
 		return err
 	}
 
-	cmd, err := e.TestRepo.ConnectOrCreateS3WithServer(addr, bucketName, testRepoPath)
+	cmd, fingerprint, err := e.TestRepo[0].ConnectOrCreateS3WithServer(addr, bucketName, testRepoPath)
 	if err != nil {
 		return err
 	}
 	e.serverCmd = cmd
+
+	for i := 0; i < e.RunnerCount; i++ {
+		clientArgs := append([]string{"--server-cert-fingerprint", fingerprint, fmt.Sprintf("--override-username=engine-%v", i), fmt.Sprintf("--override-hostname=engine-%v", i)})
+		if err = e.TestRepo[i].ConnectServer(fmt.Sprintf("https://%v", defaultAddr), clientArgs...); err != nil {
+			return err
+		}
+	}
 
 	return e.init(ctx)
 }
@@ -310,11 +346,18 @@ func (e *Engine) InitFilesystemWithServer(ctx context.Context, testRepoPath, met
 		return err
 	}
 
-	cmd, err := e.TestRepo.ConnectOrCreateFilesystemWithServer(addr, testRepoPath)
+	cmd, fingerprint, err := e.TestRepo[0].ConnectOrCreateFilesystemWithServer(addr, testRepoPath)
 	if err != nil {
 		return err
 	}
 	e.serverCmd = cmd
+
+	for i := 1; i < e.RunnerCount; i++ {
+		clientArgs := append([]string{"--server-cert-fingerprint", fingerprint})
+		if err = e.TestRepo[i].ConnectServer(fmt.Sprintf("https://%v", defaultAddr), clientArgs...); err != nil {
+			return err
+		}
+	}
 
 	return e.init(ctx)
 }

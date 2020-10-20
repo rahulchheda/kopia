@@ -15,6 +15,7 @@ import (
 	"github.com/kopia/kopia/tests/robustness/engine"
 	"github.com/kopia/kopia/tests/tools/fio"
 	"github.com/kopia/kopia/tests/tools/kopiarunner"
+	"golang.org/x/sync/errgroup"
 )
 
 var eng *engine.Engine
@@ -50,7 +51,9 @@ func TestMain(m *testing.M) {
 	metadataRepoPath := path.Join(*repoPathPrefix, metadataSubPath)
 
 	// Try to reconcile metadata if it is out of sync with the repo state
-	eng.Checker.RecoveryMode = true
+	for i := 0; i < engine.DefaultRunnerCount; i++ {
+		eng.Checker[i].RecoveryMode = true
+	}
 
 	// Initialize the engine, connecting it to the repositories
 	err = eng.Init(context.Background(), dataRepoPath, metadataRepoPath)
@@ -61,18 +64,48 @@ func TestMain(m *testing.M) {
 		fmt.Printf("error initializing engine for S3: %s\n", err.Error())
 		os.Exit(1)
 	}
-
 	// Restore a random snapshot into the data directory
-	_, err = eng.ExecAction(engine.RestoreIntoDataDirectoryActionKey, nil)
-	if err != nil && err != engine.ErrNoOp {
-		eng.Cleanup() //nolint:errcheck
-		fmt.Printf("error restoring into the data directory: %s\n", err.Error())
-		os.Exit(1)
+	var errs errgroup.Group
+	for i := range eng.Checker {
+		func(index int) {
+			errs.Go(func() error {
+				_, err = eng.ExecAction(engine.RestoreIntoDataDirectoryActionKey, nil, index)
+				if err != nil && err != engine.ErrNoOp {
+					eng.Cleanup(index) //nolint:errcheck
+					fmt.Printf("error restoring into the data directory: %s\n", err.Error())
+					panic(err)
+					//return err
+					//os.Exit(1)
+
+				}
+				return nil
+
+			})
+		}(i)
+	}
+
+	err = errs.Wait()
+	if err != nil {
+		panic(err)
 	}
 
 	result := m.Run()
 
-	err = eng.Cleanup()
+	var errsCleaner errgroup.Group
+	for i := range eng.Checker {
+		func(index int) {
+			errs.Go(func() error {
+				err = eng.Cleanup(i)
+				if err != nil {
+					//return err
+					panic(err)
+				}
+				return nil
+
+			})
+		}(i)
+	}
+	err = errsCleaner.Wait()
 	if err != nil {
 		panic(err)
 	}

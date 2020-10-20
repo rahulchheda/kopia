@@ -132,8 +132,17 @@ func (chk *Checker) VerifySnapshotMetadata() error {
 		if _, ok := liveMap[metaSnapID]; !ok {
 			log.Printf("Metadata present for snapID %v but not found in list of repo snapshots", metaSnapID)
 			if chk.RecoveryMode {
-				chk.snapshotMetadataStore.Delete(metaSnapID)
-				chk.snapshotMetadataStore.IndexOperation(metaSnapID, map[string]bool{liveSnapshotsIdxName: false})
+				chk.snapshotMetadataStore.IndexOperation(
+					snapmeta.OperationEntry{
+						Operation: snapmeta.DeleteOperation,
+						Key:       metaSnapID,
+					},
+					snapmeta.OperationEntry{
+						Operation: snapmeta.RemoveFromIndexOperation,
+						Key:       metaSnapID,
+						Data:      liveSnapshotsIdxName,
+					},
+				)
 			} else {
 				errCount++
 			}
@@ -201,8 +210,18 @@ func (chk *Checker) TakeSnapshot(ctx context.Context, sourceDir string) (snapID 
 	if err != nil {
 		return snapID, err
 	}
-
-	chk.snapshotMetadataStore.IndexOperation(snapID, map[string]bool{allSnapshotsIdxName: true, liveSnapshotsIdxName: false})
+	chk.snapshotMetadataStore.IndexOperation(
+		snapmeta.OperationEntry{
+			Operation: snapmeta.AddToIndexOperation,
+			Key:       snapID,
+			Data:      allSnapshotsIdxName,
+		},
+		snapmeta.OperationEntry{
+			Operation: snapmeta.RemoveFromIndexOperation,
+			Key:       snapID,
+			Data:      liveSnapshotsIdxName,
+		},
+	)
 
 	return snapID, nil
 }
@@ -291,7 +310,18 @@ func (chk *Checker) DeleteSnapshot(ctx context.Context, snapID string) error {
 		return err
 	}
 
-	chk.snapshotMetadataStore.IndexOperation(ssMeta.SnapID, map[string]bool{deletedSnapshotsIdxName: true, liveSnapshotsIdxName: false})
+	chk.snapshotMetadataStore.IndexOperation(
+		snapmeta.OperationEntry{
+			Operation: snapmeta.AddToIndexOperation,
+			Key:       snapID,
+			Data:      deletedSnapshotsIdxName,
+		},
+		snapmeta.OperationEntry{
+			Operation: snapmeta.RemoveFromIndexOperation,
+			Key:       snapID,
+			Data:      liveSnapshotsIdxName,
+		},
+	)
 
 	return nil
 }
@@ -302,7 +332,11 @@ func (chk *Checker) saveSnapshotMetadata(ssMeta *SnapshotMetadata) error {
 		return err
 	}
 
-	err = chk.snapshotMetadataStore.Store(ssMeta.SnapID, ssMetaRaw)
+	err = chk.snapshotMetadataStore.IndexOperation(snapmeta.OperationEntry{
+		Operation: snapmeta.StoreOperation,
+		Key:       ssMeta.SnapID,
+		Data:      ssMetaRaw,
+	})
 	if err != nil {
 		return err
 	}

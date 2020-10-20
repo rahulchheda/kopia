@@ -7,9 +7,7 @@ import "github.com/kopia/kopia/tests/robustness/snap"
 // Store describes the ability to store and retrieve
 // a buffer of metadata, indexed by a string key.
 type Store interface {
-	Store(key string, val []byte) error
 	Load(key string) ([]byte, error)
-	Delete(key string)
 	Indexer
 }
 
