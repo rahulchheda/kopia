@@ -214,11 +214,11 @@ robustness-tool-tests: export KOPIA_EXE ?= $(KOPIA_INTEGRATION_EXE)
 robustness-tool-tests: build-integration-test-binary $(gotestsum)
 	KOPIA_EXE=$(KOPIA_INTEGRATION_EXE) \
 	FIO_DOCKER_IMAGE=$(FIO_DOCKER_TAG) \
-	$(GO_TEST)  -v -count=1 github.com/kopia/kopia/tests/tools/... github.com/kopia/kopia/tests/robustness/engine/... $(TEST_FLAGS)
+	$(GO_TEST) -count=1 github.com/kopia/kopia/tests/tools/... github.com/kopia/kopia/tests/robustness/engine/... $(TEST_FLAGS)
 
 stress-test: $(gotestsum)
 	KOPIA_LONG_STRESS_TEST=1 $(GO_TEST) -count=1 -timeout 200s github.com/kopia/kopia/tests/stress_test
-	$(GO_TEST)  -v -count=1 -timeout 200s github.com/kopia/kopia/tests/repository_stress_test
+	$(GO_TEST) -count=1 -timeout 200s github.com/kopia/kopia/tests/repository_stress_test
 
 layering-test:
 ifneq ($(uname),Windows)
