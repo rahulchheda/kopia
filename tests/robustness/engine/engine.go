@@ -140,14 +140,8 @@ func NewEngine(workingDir string) (*Engine, error) {
 			return nil, err
 		}
 		multipleChecker[i] = singleChecker
-
-		// if err != nil {
-		// 	e.CleanComponents() //nolint:errcheck
-		// 	return nil, err
-		// }
 		e.cleanupRoutines = append(e.cleanupRoutines, e.cleanUpServer, e.cleanUpTLSCertKeyPair)
 	}
-	//e.Checker = chk
 	e.FileWriter = multipleFileWriter
 	e.TestRepo = multipleSnapshotter
 	e.Checker = multipleChecker
