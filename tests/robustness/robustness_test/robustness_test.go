@@ -50,42 +50,6 @@ func TestManySmallFiles(t *testing.T) {
 
 	err := errs.Wait()
 	testenv.AssertNoError(t, err)
-
-	// for i := range eng.Checker {
-	// 	func(index int) {
-	// 		errs.Go(func() error {
-	// 			snapOut, err := eng.ExecAction(engine.SnapshotRootDirActionKey, nil, i)
-	// 			if err != nil {
-	// 				return err
-	// 			}
-	// 			_, err = eng.ExecAction(engine.RestoreSnapshotActionKey, snapOut, i)
-	// 			return err
-
-	// 		})
-	// 	}(i)
-	// }
-
-	// err = errs.Wait()
-	// testenv.AssertNoError(t, err)
-
-	// for i := range eng.Checker {
-	// 	func(index int) {
-	// 		errs.Go(func() error {
-	// 			_, err := eng.ExecAction(engine.RestoreSnapshotActionKey, snapOut, i)
-	// 			return err
-
-	// 		})
-	// 	}(i)
-	// }
-
-	// err = errs.Wait()
-	// testenv.AssertNoError(t, err)
-
-	// snapOut, err := eng.ExecAction(engine.SnapshotRootDirActionKey, nil)
-	// testenv.AssertNoError(t, err)
-
-	// _, err = eng.ExecAction(engine.RestoreSnapshotActionKey, snapOut)
-	// testenv.AssertNoError(t, err)
 }
 
 func TestOneLargeFile(t *testing.T) {
@@ -188,7 +152,6 @@ func TestRandomizedSmall(t *testing.T) {
 	}
 
 	var errs errgroup.Group
-	//b := &strings.Builder{}
 	log.Printf("Printing the length: %v", len(eng.Checker))
 	for i := 0; i < eng.RunnerCount; i++ {
 		func(index int) {
