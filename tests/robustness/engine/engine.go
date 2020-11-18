@@ -34,7 +34,7 @@ const (
 	EngineModeBasic = "BASIC"
 	// EngineModeServer is a constant used to check the engineMode
 	EngineModeServer = "SERVER"
-	// DefaultAddr is used for setting the address of Kopia Server
+	// defaultAddr is used for setting the address of Kopia Server
 	defaultAddr = "localhost:51515"
 )
 
