@@ -25,17 +25,16 @@ import (
 var _ snap.Snapshotter = &KopiaSnapshotter{}
 
 const (
-	consoleLogLevelWarningFlag = "--log-level=warning"
-	contentCacheSizeMBFlag     = "--content-cache-size-mb"
-	metadataCacheSizeMBFlag    = "--metadata-cache-size-mb"
-	noCheckForUpdatesFlag      = "--no-check-for-updates"
-	noProgressFlag             = "--no-progress"
-	parallelFlag               = "--parallel"
-	DefaultTLSCertPath         = "/repo/kopiaserver.cert"
-	DefaultTLSKeyPath          = "/repo/kopiaserver.key"
-	retryCount                 = 180
-	retryInterval              = 1 * time.Second
-	waitingForServerString     = "waiting for server to start"
+	contentCacheSizeMBFlag  = "--content-cache-size-mb"
+	metadataCacheSizeMBFlag = "--metadata-cache-size-mb"
+	noCheckForUpdatesFlag   = "--no-check-for-updates"
+	noProgressFlag          = "--no-progress"
+	parallelFlag            = "--parallel"
+	DefaultTLSCertPath      = "/repo/kopiaserver.cert"
+	DefaultTLSKeyPath       = "/repo/kopiaserver.key"
+	retryCount              = 180
+	retryInterval           = 1 * time.Second
+	waitingForServerString  = "waiting for server to start"
 
 	// Flag value settings.
 	contentCacheSizeSettingMB  = 500
@@ -274,7 +273,7 @@ func parseManifestListForSnapshotIDs(output string) []string {
 	return ret
 }
 
-// waitUntilServerStarted returns error if the Kopia API server fails to start before timeout
+// waitUntilServerStarted returns error if the Kopia API server fails to start before timeout.
 func (ks *KopiaSnapshotter) waitUntilServerStarted(ctx context.Context, addr string, serverStatusArgs ...string) error {
 	statusArgs := append([]string{"server", "status", "--address", addr}, serverStatusArgs...)
 	if err := retry.PeriodicallyNoValue(ctx, retryInterval, retryCount, waitingForServerString, func() error { //nolint:wsl
@@ -287,7 +286,7 @@ func (ks *KopiaSnapshotter) waitUntilServerStarted(ctx context.Context, addr str
 	return nil
 }
 
-// createAndConnectServer creates Repository and a TLS server/client model for interaction
+// createAndConnectServer creates Repository and a TLS server/client model for interaction.
 func (ks *KopiaSnapshotter) createAndConnectServer(serverAddr string, args ...string) (*exec.Cmd, error) {
 	var cmd *exec.Cmd
 
@@ -334,7 +333,7 @@ func (ks *KopiaSnapshotter) createAndConnectServer(serverAddr string, args ...st
 }
 
 func getFingerPrintFromCert(path string) (string, error) {
-	pemData, err := ioutil.ReadFile(path)
+	pemData, err := ioutil.ReadFile(path) //nolint:gosec
 	if err != nil {
 		return "", err
 	}
@@ -356,10 +355,10 @@ func getFingerPrintFromCert(path string) (string, error) {
 
 func certKeyExist(ctx context.Context, tlsCertFile, tlsKeyFile string) error {
 	if err := retry.PeriodicallyNoValue(ctx, retryInterval, retryCount, "waiting for server to start", func() error {
-		if _, err := os.Stat(tlsCertFile); os.IsNotExist(err) != false {
+		if _, err := os.Stat(tlsCertFile); os.IsNotExist(err) {
 			return err
 		}
-		if _, err := os.Stat(tlsKeyFile); os.IsNotExist(err) != false {
+		if _, err := os.Stat(tlsKeyFile); os.IsNotExist(err) {
 			return err
 		}
 		return nil

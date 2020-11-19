@@ -28,13 +28,13 @@ import (
 const (
 	// S3BucketNameEnvKey is the environment variable required to connect to a repo on S3.
 	S3BucketNameEnvKey = "S3_BUCKET_NAME"
-	// EngineModeEnvKey is the environment variable required to switch between basic and server/client model
+	// EngineModeEnvKey is the environment variable required to switch between basic and server/client model.
 	EngineModeEnvKey = "ENGINE_MODE"
-	// EngineModeBasic is a constant used to check the engineMode
+	// EngineModeBasic is a constant used to check the engineMode.
 	EngineModeBasic = "BASIC"
-	// EngineModeServer is a constant used to check the engineMode
+	// EngineModeServer is a constant used to check the engineMode.
 	EngineModeServer = "SERVER"
-	// defaultAddr is used for setting the address of Kopia Server
+	// defaultAddr is used for setting the address of Kopia Server.
 	defaultAddr = "localhost:51515"
 )
 
@@ -300,7 +300,7 @@ func (e *Engine) init(ctx context.Context) error {
 	return e.Checker.VerifySnapshotMetadata()
 }
 
-// InitS3WithServer initializes the Engine with InitS3 for use with the server/client model
+// InitS3WithServer initializes the Engine with InitS3 for use with the server/client model.
 func (e *Engine) InitS3WithServer(ctx context.Context, bucketName, testRepoPath, metaRepoPath, addr string) error {
 	if err := e.MetaStore.ConnectOrCreateS3(bucketName, metaRepoPath); err != nil {
 		return err
@@ -316,7 +316,7 @@ func (e *Engine) InitS3WithServer(ctx context.Context, bucketName, testRepoPath,
 	return e.init(ctx)
 }
 
-// InitFilesystemWithServer initializes the Engine for testing the server/client model with a local filesystem repository
+// InitFilesystemWithServer initializes the Engine for testing the server/client model with a local filesystem repository.
 func (e *Engine) InitFilesystemWithServer(ctx context.Context, testRepoPath, metaRepoPath, addr string) error {
 	if err := e.MetaStore.ConnectOrCreateFilesystem(metaRepoPath); err != nil {
 		return err
@@ -332,7 +332,7 @@ func (e *Engine) InitFilesystemWithServer(ctx context.Context, testRepoPath, met
 	return e.init(ctx)
 }
 
-// cleanUpServer cleans up the server process
+// cleanUpServer cleans up the server process.
 func (e *Engine) cleanUpServer() {
 	if e.serverCmd != nil {
 		e.serverCmd.SysProcAttr = &syscall.SysProcAttr{
