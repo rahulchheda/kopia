@@ -71,13 +71,13 @@ func NewCLITest(t *testing.T) *CLITest {
 		t.Skip()
 	}
 
-	configDir := os.TempDir()
+	configDir := t.TempDir()
 
 	cleanName := strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(
 		t.Name(),
 		"/", "_"), "\\", "_"), ":", "_")
 
-	logsDir := filepath.Join(os.TempDir(), "kopia-logs", cleanName+"."+clock.Now().Local().Format("20060102150405"))
+	logsDir := filepath.Join(t.TempDir(), "kopia-logs", cleanName+"."+clock.Now().Local().Format("20060102150405"))
 
 	t.Cleanup(func() {
 		if t.Failed() {
@@ -116,7 +116,7 @@ func NewCLITest(t *testing.T) *CLITest {
 
 	return &CLITest{
 		startTime:                    clock.Now(),
-		RepoDir:                      os.TempDir(),
+		RepoDir:                      t.TempDir(),
 		ConfigDir:                    configDir,
 		Exe:                          filepath.FromSlash(exe),
 		fixedArgs:                    fixedArgs,
