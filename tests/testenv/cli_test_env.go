@@ -71,7 +71,7 @@ func NewCLITest(t *testing.T) *CLITest {
 		t.Skip()
 	}
 
-	configDir := t.TempDir()
+	configDir := os.TempDir()
 
 	cleanName := strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(
 		t.Name(),
@@ -116,7 +116,7 @@ func NewCLITest(t *testing.T) *CLITest {
 
 	return &CLITest{
 		startTime:                    clock.Now(),
-		RepoDir:                      t.TempDir(),
+		RepoDir:                      os.TempDir(),
 		ConfigDir:                    configDir,
 		Exe:                          filepath.FromSlash(exe),
 		fixedArgs:                    fixedArgs,

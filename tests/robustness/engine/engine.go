@@ -132,8 +132,6 @@ func NewEngine(workingDir string) (*Engine, error) {
 
 	e.cleanupRoutines = append(e.cleanupRoutines, e.cleanUpServer)
 
-	e.cleanupRoutines = append(e.cleanupRoutines, e.cleanUpTLSCertKeyPair)
-
 	e.Checker = chk
 
 	return e, nil
@@ -312,6 +310,7 @@ func (e *Engine) InitS3WithServer(ctx context.Context, bucketName, testRepoPath,
 	if err != nil {
 		return err
 	}
+
 	e.serverCmd = cmd
 
 	return e.init(ctx)
@@ -327,6 +326,7 @@ func (e *Engine) InitFilesystemWithServer(ctx context.Context, testRepoPath, met
 	if err != nil {
 		return err
 	}
+
 	e.serverCmd = cmd
 
 	return e.init(ctx)
@@ -340,15 +340,5 @@ func (e *Engine) cleanUpServer() {
 		}
 
 		e.serverCmd.Run() //nolint:errcheck
-	}
-}
-
-// cleanUpTLSCertKeyPair cleans up the server process
-func (e *Engine) cleanUpTLSCertKeyPair() {
-	if err := os.Remove(kopiarunner.DefaultTLSCertPath); err != nil {
-		log.Println(err)
-	}
-	if err := os.Remove(kopiarunner.DefaultTLSKeyPath); err != nil {
-		log.Println(err)
 	}
 }

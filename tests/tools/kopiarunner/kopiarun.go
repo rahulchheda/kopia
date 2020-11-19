@@ -81,7 +81,6 @@ func (kr *Runner) Run(args ...string) (stdout, stderr string, err error) {
 func (kr *Runner) RunAsync(args ...string) (*exec.Cmd, error) {
 	argsStr := strings.Join(args, " ")
 	log.Printf("running async '%s %v'", kr.Exe, argsStr)
-	//nolint:gosec //G204
 	cmdArgs := append(append([]string(nil), kr.fixedArgs...), args...)
 	//nolint:gosec //G204
 	c := exec.Command(kr.Exe, cmdArgs...)
