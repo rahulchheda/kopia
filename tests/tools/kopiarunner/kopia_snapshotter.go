@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -24,17 +25,15 @@ import (
 var _ snap.Snapshotter = &KopiaSnapshotter{}
 
 const (
-	contentCacheSizeMBFlag  = "--content-cache-size-mb"
-	metadataCacheSizeMBFlag = "--metadata-cache-size-mb"
-	noCheckForUpdatesFlag   = "--no-check-for-updates"
-	noProgressFlag          = "--no-progress"
-	parallelFlag            = "--parallel"
-	DefaultTLSCertPath      = "/repo/kopiaserver.cert"
-	DefaultTLSKeyPath       = "/repo/kopiaserver.key"
-	retryCount              = 180
-	retryInterval           = 1 * time.Second
-	waitingForServerString  = "waiting for server to start"
-)
+	consoleLogLevelWarningFlag = "--log-level=warning"
+	contentCacheSizeMBFlag     = "--content-cache-size-mb"
+	metadataCacheSizeMBFlag    = "--metadata-cache-size-mb"
+	noCheckForUpdatesFlag      = "--no-check-for-updates"
+	noProgressFlag             = "--no-progress"
+	parallelFlag               = "--parallel"
+	retryCount                 = 180
+	retryInterval              = 1 * time.Second
+	waitingForServerString     = "waiting for server to start"
 
 // Flag value settings
 var (
@@ -111,17 +110,17 @@ func (ks *KopiaSnapshotter) ConnectOrCreateS3(bucketName, pathPrefix string) err
 	return ks.ConnectOrCreateRepo(args...)
 }
 
-// ConnectOrCreateS3WithServer attempts to connect or create S3 bucket, but with TLS client/server Model
+// ConnectOrCreateS3WithServer attempts to connect or create S3 bucket, but with TLS client/server Model.
 func (ks *KopiaSnapshotter) ConnectOrCreateS3WithServer(serverAddr, bucketName, pathPrefix string) (*exec.Cmd, error) {
 	repoArgs := []string{"s3", "--bucket", bucketName, "--prefix", pathPrefix}
-	return ks.createAndConnectServer(serverAddr, DefaultTLSCertPath, DefaultTLSKeyPath, repoArgs...)
+	return ks.createAndConnectServer(serverAddr, repoArgs...)
 }
 
 // ConnectOrCreateFilesystemWithServer attempts to connect or create repo in local filesystem,
-// but with TLS server/client Model
+// but with TLS server/client Model.
 func (ks *KopiaSnapshotter) ConnectOrCreateFilesystemWithServer(serverAddr, repoPath string) (*exec.Cmd, error) {
 	repoArgs := []string{"filesystem", "--path", repoPath}
-	return ks.createAndConnectServer(serverAddr, DefaultTLSCertPath, DefaultTLSKeyPath, repoArgs...)
+	return ks.createAndConnectServer(serverAddr, repoArgs...)
 }
 
 // ConnectOrCreateFilesystem attempts to connect to a kopia repo in the local
@@ -210,12 +209,11 @@ func (ks *KopiaSnapshotter) Run(args ...string) (stdout, stderr string, err erro
 	return ks.Runner.Run(args...)
 }
 
-// CreateServer creates a new instance of Kopia Server with provided address
+// CreateServer creates a new instance of Kopia Server with provided address.
 func (ks *KopiaSnapshotter) CreateServer(addr string, args ...string) (*exec.Cmd, error) {
 	args = append([]string{"server", "start", "--address", addr}, args...)
 
 	return ks.Runner.RunAsync(args...)
-
 }
 
 // ConnectServer creates a new client, and connect it to Kopia Server with provided address.
@@ -278,7 +276,7 @@ func parseManifestListForSnapshotIDs(output string) []string {
 // waitUntilServerStarted returns error if the Kopia API server fails to start before timeout
 func (ks *KopiaSnapshotter) waitUntilServerStarted(ctx context.Context, addr string, serverStatusArgs ...string) error {
 	statusArgs := append([]string{"server", "status", "--address", addr}, serverStatusArgs...)
-	if err := retry.PeriodicallyNoValue(ctx, retryInterval, retryCount, waitingForServerString, func() error {
+	if err := retry.PeriodicallyNoValue(ctx, retryInterval, retryCount, waitingForServerString, func() error { //nolint:wsl
 		_, _, err := ks.Runner.Run(statusArgs...)
 		return err
 	}, retry.Always); err != nil {
@@ -289,20 +287,28 @@ func (ks *KopiaSnapshotter) waitUntilServerStarted(ctx context.Context, addr str
 }
 
 // createAndConnectServer creates Repository and a TLS server/client model for interaction
-func (ks *KopiaSnapshotter) createAndConnectServer(serverAddr string, tlsCertFile string, tlsKeyFile string, args ...string) (*exec.Cmd, error) {
+func (ks *KopiaSnapshotter) createAndConnectServer(serverAddr string, args ...string) (*exec.Cmd, error) {
 	var cmd *exec.Cmd
-	var err error
 
-	if err = ks.ConnectOrCreateRepo(args...); err != nil {
+	var err error
+	if err := ks.ConnectOrCreateRepo(args...); err != nil {
 		return nil, err
 	}
 
-	serverArgs := append([]string{"--tls-generate-cert", "--tls-cert-file", tlsCertFile, "--tls-key-file", tlsKeyFile})
+	tempDir, err := ioutil.TempDir("", "kopia")
+	if err != nil {
+		return nil, err
+	}
+
+	tlsCertFile := filepath.Join(tempDir, "kopiaserver.cert")
+	tlsKeyFile := filepath.Join(tempDir, "kopiaserver.key")
+
+	serverArgs := []string{"--tls-generate-cert", "--tls-cert-file", tlsCertFile, "--tls-key-file", tlsKeyFile}
 	if cmd, err = ks.CreateServer(serverAddr, serverArgs...); err != nil {
 		return nil, err
 	}
 
-	if err = certKeyExist(context.TODO(), DefaultTLSCertPath, DefaultTLSKeyPath); err != nil {
+	if err := certKeyExist(context.TODO(), tlsCertFile, tlsKeyFile); err != nil {
 		return nil, err
 	}
 
@@ -318,8 +324,8 @@ func (ks *KopiaSnapshotter) createAndConnectServer(serverAddr string, tlsCertFil
 		return cmd, err
 	}
 
-	clientArgs := append([]string{"--server-cert-fingerprint", fingerprint})
-	if err = ks.ConnectServer(serverAddr, clientArgs...); err != nil {
+	clientArgs := []string{"--server-cert-fingerprint", fingerprint}
+	if err := ks.ConnectServer(serverAddr, clientArgs...); err != nil {
 		return nil, err
 	}
 
@@ -332,7 +338,7 @@ func getFingerPrintFromCert(path string) (string, error) {
 		return "", err
 	}
 
-	block, rest := pem.Decode([]byte(pemData))
+	block, rest := pem.Decode([]byte(pemData)) //nolint:unconvert
 	if block == nil || len(rest) > 0 {
 		return "", errors.New("pem decoding error")
 	}
@@ -343,6 +349,7 @@ func getFingerPrintFromCert(path string) (string, error) {
 	}
 
 	fingerprint := sha256.Sum256(cert.Raw)
+
 	return hex.EncodeToString(fingerprint[:]), nil
 }
 
@@ -358,5 +365,6 @@ func certKeyExist(ctx context.Context, tlsCertFile, tlsKeyFile string) error {
 	}, retry.Always); err != nil {
 		return errors.New("unable to find TLS Certs")
 	}
+
 	return nil
 }
