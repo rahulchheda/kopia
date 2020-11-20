@@ -34,6 +34,7 @@ const (
 	retryCount                 = 180
 	retryInterval              = 1 * time.Second
 	waitingForServerString     = "waiting for server to start"
+)
 
 // Flag value settings
 var (
