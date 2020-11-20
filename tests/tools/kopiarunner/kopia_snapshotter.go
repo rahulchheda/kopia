@@ -25,16 +25,16 @@ import (
 var _ snap.Snapshotter = &KopiaSnapshotter{}
 
 const (
-	contentCacheSizeMBFlag  = "--content-cache-size-mb"
-	metadataCacheSizeMBFlag = "--metadata-cache-size-mb"
-	noCheckForUpdatesFlag   = "--no-check-for-updates"
-	noProgressFlag          = "--no-progress"
-	parallelFlag            = "--parallel"
-	DefaultTLSCertPath      = "/repo/kopiaserver.cert"
-	DefaultTLSKeyPath       = "/repo/kopiaserver.key"
-	retryCount              = 180
-	retryInterval           = 1 * time.Second
-	waitingForServerString  = "waiting for server to start"
+	consoleLogLevelWarningFlag = "--log-level=warning"
+	contentCacheSizeMBFlag     = "--content-cache-size-mb"
+	metadataCacheSizeMBFlag    = "--metadata-cache-size-mb"
+	noCheckForUpdatesFlag      = "--no-check-for-updates"
+	noProgressFlag             = "--no-progress"
+	parallelFlag               = "--parallel"
+	retryCount                 = 180
+	retryInterval              = 1 * time.Second
+	waitingForServerString     = "waiting for server to start"
+)
 
 	// Flag value settings.
 	contentCacheSizeSettingMB  = 500
