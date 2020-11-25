@@ -307,7 +307,7 @@ func (ks *KopiaSnapshotter) createAndConnectServer(serverAddr string, args ...st
 		return nil, err
 	}
 
-	if err := certKeyExist(context.TODO(), tlsCertFile, tlsKeyFile); err != nil {
+	if err = certKeyExist(context.TODO(), tlsCertFile, tlsKeyFile); err != nil {
 		return nil, err
 	}
 
@@ -318,12 +318,12 @@ func (ks *KopiaSnapshotter) createAndConnectServer(serverAddr string, args ...st
 
 	serverAddr = fmt.Sprintf("https://%v", serverAddr)
 
-	if err := ks.waitUntilServerStarted(context.TODO(), serverAddr, "--server-cert-fingerprint", fingerprint); err != nil {
+	if err = ks.waitUntilServerStarted(context.TODO(), serverAddr, "--server-cert-fingerprint", fingerprint); err != nil {
 		return cmd, err
 	}
 
 	clientArgs := []string{"--server-cert-fingerprint", fingerprint}
-	if err := ks.ConnectServer(serverAddr, clientArgs...); err != nil {
+	if err = ks.ConnectServer(serverAddr, clientArgs...); err != nil {
 		return nil, err
 	}
 
