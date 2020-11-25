@@ -291,9 +291,12 @@ func (ks *KopiaSnapshotter) createAndConnectServer(serverAddr string, args ...st
 		return nil, err
 	}
 
-	tempDir, err := ioutil.TempDir("", "kopia")
-	if err != nil {
-		return nil, err
+	var tempDir string
+
+	var tempDirErr error
+
+	if tempDir, tempDirErr = ioutil.TempDir("", "kopia"); tempDirErr != nil {
+		return nil, tempDirErr
 	}
 
 	tlsCertFile := filepath.Join(tempDir, "kopiaserver.cert")
@@ -303,31 +306,36 @@ func (ks *KopiaSnapshotter) createAndConnectServer(serverAddr string, args ...st
 
 	var cmd *exec.Cmd
 
-	if cmd, err = ks.CreateServer(serverAddr, serverArgs...); err != nil {
+	var cmdErr error
+
+	if cmd, cmdErr = ks.CreateServer(serverAddr, serverArgs...); cmdErr != nil {
+		return nil, cmdErr
+	}
+
+	if err := certKeyExist(context.TODO(), tlsCertFile, tlsKeyFile); err != nil {
 		return nil, err
 	}
 
-	if err = certKeyExist(context.TODO(), tlsCertFile, tlsKeyFile); err != nil {
-		return nil, err
-	}
+	var fingerprint string
 
-	fingerprint, err := getFingerPrintFromCert(tlsCertFile)
-	if err != nil {
-		return nil, err
+	var fingerprintError error
+
+	if fingerprint, fingerprintError = getFingerPrintFromCert(tlsCertFile); fingerprintError != nil {
+		return nil, fingerprintError
 	}
 
 	serverAddr = fmt.Sprintf("https://%v", serverAddr)
 
-	if err = ks.waitUntilServerStarted(context.TODO(), serverAddr, "--server-cert-fingerprint", fingerprint); err != nil {
+	if err := ks.waitUntilServerStarted(context.TODO(), serverAddr, "--server-cert-fingerprint", fingerprint); err != nil {
 		return cmd, err
 	}
 
 	clientArgs := []string{"--server-cert-fingerprint", fingerprint}
-	if err = ks.ConnectServer(serverAddr, clientArgs...); err != nil {
+	if err := ks.ConnectServer(serverAddr, clientArgs...); err != nil {
 		return nil, err
 	}
 
-	return cmd, err
+	return cmd, nil
 }
 
 func getFingerPrintFromCert(path string) (string, error) {
