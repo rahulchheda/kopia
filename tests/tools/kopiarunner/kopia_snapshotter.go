@@ -275,6 +275,7 @@ func parseManifestListForSnapshotIDs(output string) []string {
 // waitUntilServerStarted returns error if the Kopia API server fails to start before timeout.
 func (ks *KopiaSnapshotter) waitUntilServerStarted(ctx context.Context, addr string, serverStatusArgs ...string) error {
 	statusArgs := append([]string{"server", "status", "--address", addr}, serverStatusArgs...)
+
 	if err := retry.PeriodicallyNoValue(ctx, retryInterval, retryCount, waitingForServerString, func() error {
 		_, _, err := ks.Runner.Run(statusArgs...)
 		return err
@@ -287,9 +288,6 @@ func (ks *KopiaSnapshotter) waitUntilServerStarted(ctx context.Context, addr str
 
 // createAndConnectServer creates Repository and a TLS server/client model for interaction.
 func (ks *KopiaSnapshotter) createAndConnectServer(serverAddr string, args ...string) (*exec.Cmd, error) {
-	var cmd *exec.Cmd
-
-	var err error
 	if err := ks.ConnectOrCreateRepo(args...); err != nil {
 		return nil, err
 	}
@@ -303,6 +301,9 @@ func (ks *KopiaSnapshotter) createAndConnectServer(serverAddr string, args ...st
 	tlsKeyFile := filepath.Join(tempDir, "kopiaserver.key")
 
 	serverArgs := []string{"--tls-generate-cert", "--tls-cert-file", tlsCertFile, "--tls-key-file", tlsKeyFile}
+
+	var cmd *exec.Cmd
+	var err error
 	if cmd, err = ks.CreateServer(serverAddr, serverArgs...); err != nil {
 		return nil, err
 	}
@@ -318,8 +319,7 @@ func (ks *KopiaSnapshotter) createAndConnectServer(serverAddr string, args ...st
 
 	serverAddr = fmt.Sprintf("https://%v", serverAddr)
 
-	err = ks.waitUntilServerStarted(context.TODO(), serverAddr, "--server-cert-fingerprint", fingerprint)
-	if err != nil {
+	if err := ks.waitUntilServerStarted(context.TODO(), serverAddr, "--server-cert-fingerprint", fingerprint); err != nil {
 		return cmd, err
 	}
 
