@@ -25,15 +25,14 @@ import (
 var _ snap.Snapshotter = &KopiaSnapshotter{}
 
 const (
-	consoleLogLevelWarningFlag = "--log-level=warning"
-	contentCacheSizeMBFlag     = "--content-cache-size-mb"
-	metadataCacheSizeMBFlag    = "--metadata-cache-size-mb"
-	noCheckForUpdatesFlag      = "--no-check-for-updates"
-	noProgressFlag             = "--no-progress"
-	parallelFlag               = "--parallel"
-	retryCount                 = 180
-	retryInterval              = 1 * time.Second
-	waitingForServerString     = "waiting for server to start"
+	contentCacheSizeMBFlag  = "--content-cache-size-mb"
+	metadataCacheSizeMBFlag = "--metadata-cache-size-mb"
+	noCheckForUpdatesFlag   = "--no-check-for-updates"
+	noProgressFlag          = "--no-progress"
+	parallelFlag            = "--parallel"
+	retryCount              = 180
+	retryInterval           = 1 * time.Second
+	waitingForServerString  = "waiting for server to start"
 
 	// Flag value settings.
 	contentCacheSizeSettingMB  = 500
@@ -303,7 +302,7 @@ func (ks *KopiaSnapshotter) createAndConnectServer(serverAddr string, args ...st
 	serverArgs := []string{"--tls-generate-cert", "--tls-cert-file", tlsCertFile, "--tls-key-file", tlsKeyFile}
 
 	var cmd *exec.Cmd
-	var err error
+
 	if cmd, err = ks.CreateServer(serverAddr, serverArgs...); err != nil {
 		return nil, err
 	}
