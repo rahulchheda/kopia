@@ -77,7 +77,7 @@ func NewCLITest(t *testing.T) *CLITest {
 		t.Name(),
 		"/", "_"), "\\", "_"), ":", "_")
 
-	logsDir := filepath.Join(t.TempDir(), "kopia-logs", cleanName+"."+clock.Now().Local().Format("20060102150405"))
+	logsDir := filepath.Join(os.TempDir(), "kopia-logs", cleanName+"."+clock.Now().Local().Format("20060102150405"))
 
 	t.Cleanup(func() {
 		if t.Failed() {
