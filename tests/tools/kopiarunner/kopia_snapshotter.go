@@ -298,6 +298,7 @@ func (ks *KopiaSnapshotter) createAndConnectServer(serverAddr string, args ...st
 	if tempDir, tempDirErr = ioutil.TempDir("", "kopia"); tempDirErr != nil {
 		return nil, tempDirErr
 	}
+
 	defer os.RemoveAll(tempDir) // nolint:errcheck
 
 	tlsCertFile := filepath.Join(tempDir, "kopiaserver.cert")
