@@ -22,7 +22,11 @@ func (e *Engine) SaveLog() error {
 		return err
 	}
 
-	return e.MetaStore.Store(engineLogsStoreKey, b)
+	return e.MetaStore.IndexOperation(snapmeta.OperationEntry{
+		Operation: snapmeta.StoreOperation,
+		Key:       engineLogsStoreKey,
+		Data:      b,
+	})
 }
 
 // LoadLog loads the engine log from the metadata store.
@@ -54,7 +58,11 @@ func (e *Engine) SaveStats() error {
 		return err
 	}
 
-	return e.MetaStore.Store(engineStatsStoreKey, cumulStatRaw)
+	return e.MetaStore.IndexOperation(snapmeta.OperationEntry{
+		Operation: snapmeta.StoreOperation,
+		Key:       engineStatsStoreKey,
+		Data:      cumulStatRaw,
+	})
 }
 
 // LoadStats loads the engine Stats from the metadata store.

@@ -57,6 +57,21 @@ func NewKopiaSnapshotter(baseDir string) (*KopiaSnapshotter, error) {
 	}, nil
 }
 
+func NewMultipleKopiaSnapshotter(baseDir string, count int) ([]*KopiaSnapshotter, error) {
+	var multipleKopiaSnapshotter []*KopiaSnapshotter
+	for i := 0; i < count; i++ {
+		var kopiaSnapshotter KopiaSnapshotter
+		runner, err := NewRunner(baseDir)
+		if err != nil {
+			return nil, err
+		}
+		kopiaSnapshotter.Runner = runner
+		multipleKopiaSnapshotter = append(multipleKopiaSnapshotter, &kopiaSnapshotter)
+	}
+
+	return multipleKopiaSnapshotter, nil
+}
+
 // Cleanup cleans up the kopia Runner.
 func (ks *KopiaSnapshotter) Cleanup() {
 	if ks.Runner != nil {
@@ -108,15 +123,25 @@ func (ks *KopiaSnapshotter) ConnectOrCreateS3(bucketName, pathPrefix string) err
 	return ks.ConnectOrCreateRepo(args...)
 }
 
+<<<<<<< HEAD
 // ConnectOrCreateS3WithServer attempts to connect or create S3 bucket, but with TLS client/server Model.
 func (ks *KopiaSnapshotter) ConnectOrCreateS3WithServer(serverAddr, bucketName, pathPrefix string) (*exec.Cmd, error) {
+=======
+// ConnectOrCreateS3WithServer attempts to connect or create S3 bucket, but with TLS client/server Model
+func (ks *KopiaSnapshotter) ConnectOrCreateS3WithServer(serverAddr, bucketName, pathPrefix string) (*exec.Cmd, string, error) {
+>>>>>>> f48090bb... Got the robustness_test working fine
 	repoArgs := []string{"s3", "--bucket", bucketName, "--prefix", pathPrefix}
 	return ks.createAndConnectServer(serverAddr, repoArgs...)
 }
 
 // ConnectOrCreateFilesystemWithServer attempts to connect or create repo in local filesystem,
+<<<<<<< HEAD
 // but with TLS server/client Model.
 func (ks *KopiaSnapshotter) ConnectOrCreateFilesystemWithServer(serverAddr, repoPath string) (*exec.Cmd, error) {
+=======
+// but with TLS server/client Model
+func (ks *KopiaSnapshotter) ConnectOrCreateFilesystemWithServer(serverAddr, repoPath string) (*exec.Cmd, string, error) {
+>>>>>>> f48090bb... Got the robustness_test working fine
 	repoArgs := []string{"filesystem", "--path", repoPath}
 	return ks.createAndConnectServer(serverAddr, repoArgs...)
 }
