@@ -140,7 +140,7 @@ func NewEngine(workingDir string) (*Engine, error) {
 			return nil, err
 		}
 		multipleChecker[i] = singleChecker
-		e.cleanupRoutines = append(e.cleanupRoutines, e.cleanUpServer, e.cleanUpTLSCertKeyPair)
+		e.cleanupRoutines = append(e.cleanupRoutines, e.cleanUpServer)
 	}
 	e.FileWriter = multipleFileWriter
 	e.TestRepo = multipleSnapshotter

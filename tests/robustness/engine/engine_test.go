@@ -147,134 +147,134 @@ func makeTempS3Bucket(t *testing.T) (bucketName string, cleanupCB func()) {
 	}
 }
 
-// func TestWriteFilesBasicS3(t *testing.T) {
-// 	bucketName, cleanupCB := makeTempS3Bucket(t)
-// 	defer cleanupCB()
+func TestWriteFilesBasicS3(t *testing.T) {
+	bucketName, cleanupCB := makeTempS3Bucket(t)
+	defer cleanupCB()
 
-// 	eng, err := NewEngine("")
-// 	if err == kopiarunner.ErrExeVariableNotSet || errors.Is(err, fio.ErrEnvNotSet) {
-// 		t.Skip(err)
-// 	}
+	eng, err := NewEngine("")
+	if err == kopiarunner.ErrExeVariableNotSet || errors.Is(err, fio.ErrEnvNotSet) {
+		t.Skip(err)
+	}
 
-// 	testenv.AssertNoError(t, err)
+	testenv.AssertNoError(t, err)
 
-// 	defer func() {
-// 		cleanupErr := eng.Cleanup()
-// 		testenv.AssertNoError(t, cleanupErr)
-// 	}()
+	defer func() {
+		cleanupErr := eng.Cleanup()
+		testenv.AssertNoError(t, cleanupErr)
+	}()
 
-// 	ctx := context.TODO()
-// 	err = eng.InitS3(ctx, bucketName, s3DataRepoPath, s3MetadataRepoPath)
-// 	testenv.AssertNoError(t, err)
+	ctx := context.TODO()
+	err = eng.InitS3(ctx, bucketName, s3DataRepoPath, s3MetadataRepoPath)
+	testenv.AssertNoError(t, err)
 
-// 	fileSize := int64(256 * 1024)
-// 	numFiles := 10
+	fileSize := int64(256 * 1024)
+	numFiles := 10
 
-// 	fioOpts := fio.Options{}.WithFileSize(fileSize).WithNumFiles(numFiles)
+	fioOpts := fio.Options{}.WithFileSize(fileSize).WithNumFiles(numFiles)
 
-// 	err = eng.FileWriter.WriteFiles("", fioOpts)
-// 	testenv.AssertNoError(t, err)
+	err = eng.FileWriter.WriteFiles("", fioOpts)
+	testenv.AssertNoError(t, err)
 
-// 	snapIDs := eng.Checker.GetLiveSnapIDs()
+	snapIDs := eng.Checker.GetLiveSnapIDs()
 
-// 	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.LocalDataDir)
-// 	testenv.AssertNoError(t, err)
+	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.LocalDataDir)
+	testenv.AssertNoError(t, err)
 
-// 	err = eng.Checker.RestoreSnapshot(ctx, snapID, os.Stdout)
-// 	testenv.AssertNoError(t, err)
+	err = eng.Checker.RestoreSnapshot(ctx, snapID, os.Stdout)
+	testenv.AssertNoError(t, err)
 
-// 	for _, sID := range snapIDs {
-// 		err = eng.Checker.RestoreSnapshot(ctx, sID, os.Stdout)
-// 		testenv.AssertNoError(t, err)
-// 	}
-// }
+	for _, sID := range snapIDs {
+		err = eng.Checker.RestoreSnapshot(ctx, sID, os.Stdout)
+		testenv.AssertNoError(t, err)
+	}
+}
 
-// func TestDeleteSnapshotS3(t *testing.T) {
-// 	bucketName, cleanupCB := makeTempS3Bucket(t)
-// 	defer cleanupCB()
+func TestDeleteSnapshotS3(t *testing.T) {
+	bucketName, cleanupCB := makeTempS3Bucket(t)
+	defer cleanupCB()
 
-// 	eng, err := NewEngine("")
-// 	if err == kopiarunner.ErrExeVariableNotSet || errors.Is(err, fio.ErrEnvNotSet) {
-// 		t.Skip(err)
-// 	}
+	eng, err := NewEngine("")
+	if err == kopiarunner.ErrExeVariableNotSet || errors.Is(err, fio.ErrEnvNotSet) {
+		t.Skip(err)
+	}
 
-// 	testenv.AssertNoError(t, err)
+	testenv.AssertNoError(t, err)
 
-// 	defer func() {
-// 		cleanupErr := eng.Cleanup()
-// 		testenv.AssertNoError(t, cleanupErr)
-// 	}()
+	defer func() {
+		cleanupErr := eng.Cleanup()
+		testenv.AssertNoError(t, cleanupErr)
+	}()
 
-// 	ctx := context.TODO()
-// 	err = eng.InitS3(ctx, bucketName, s3DataRepoPath, s3MetadataRepoPath)
-// 	testenv.AssertNoError(t, err)
+	ctx := context.TODO()
+	err = eng.InitS3(ctx, bucketName, s3DataRepoPath, s3MetadataRepoPath)
+	testenv.AssertNoError(t, err)
 
-// 	fileSize := int64(256 * 1024)
-// 	numFiles := 10
+	fileSize := int64(256 * 1024)
+	numFiles := 10
 
-// 	fioOpts := fio.Options{}.WithFileSize(fileSize).WithNumFiles(numFiles)
+	fioOpts := fio.Options{}.WithFileSize(fileSize).WithNumFiles(numFiles)
 
-// 	err = eng.FileWriter.WriteFiles("", fioOpts)
-// 	testenv.AssertNoError(t, err)
+	err = eng.FileWriter.WriteFiles("", fioOpts)
+	testenv.AssertNoError(t, err)
 
-// 	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.LocalDataDir)
-// 	testenv.AssertNoError(t, err)
+	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.LocalDataDir)
+	testenv.AssertNoError(t, err)
 
-// 	err = eng.Checker.RestoreSnapshot(ctx, snapID, os.Stdout)
-// 	testenv.AssertNoError(t, err)
+	err = eng.Checker.RestoreSnapshot(ctx, snapID, os.Stdout)
+	testenv.AssertNoError(t, err)
 
-// 	err = eng.Checker.DeleteSnapshot(ctx, snapID)
-// 	testenv.AssertNoError(t, err)
+	err = eng.Checker.DeleteSnapshot(ctx, snapID)
+	testenv.AssertNoError(t, err)
 
-// 	err = eng.Checker.RestoreSnapshot(ctx, snapID, os.Stdout)
-// 	if err == nil {
-// 		t.Fatalf("Expected an error when trying to restore a deleted snapshot")
-// 	}
-// }
+	err = eng.Checker.RestoreSnapshot(ctx, snapID, os.Stdout)
+	if err == nil {
+		t.Fatalf("Expected an error when trying to restore a deleted snapshot")
+	}
+}
 
-// func TestSnapshotVerificationFail(t *testing.T) {
-// 	bucketName, cleanupCB := makeTempS3Bucket(t)
-// 	defer cleanupCB()
+func TestSnapshotVerificationFail(t *testing.T) {
+	bucketName, cleanupCB := makeTempS3Bucket(t)
+	defer cleanupCB()
 
-// 	eng, err := NewEngine("")
-// 	if err == kopiarunner.ErrExeVariableNotSet || errors.Is(err, fio.ErrEnvNotSet) {
-// 		t.Skip(err)
-// 	}
+	eng, err := NewEngine("")
+	if err == kopiarunner.ErrExeVariableNotSet || errors.Is(err, fio.ErrEnvNotSet) {
+		t.Skip(err)
+	}
 
-// 	testenv.AssertNoError(t, err)
+	testenv.AssertNoError(t, err)
 
-// 	defer func() {
-// 		cleanupErr := eng.Cleanup()
-// 		testenv.AssertNoError(t, cleanupErr)
-// 	}()
+	defer func() {
+		cleanupErr := eng.Cleanup()
+		testenv.AssertNoError(t, cleanupErr)
+	}()
 
-// 	ctx := context.TODO()
-// 	err = eng.InitS3(ctx, bucketName, s3DataRepoPath, s3MetadataRepoPath)
-// 	testenv.AssertNoError(t, err)
+	ctx := context.TODO()
+	err = eng.InitS3(ctx, bucketName, s3DataRepoPath, s3MetadataRepoPath)
+	testenv.AssertNoError(t, err)
 
-// 	// Perform writes
-// 	fileSize := int64(256 * 1024)
-// 	numFiles := 10
-// 	fioOpt := fio.Options{}.WithFileSize(fileSize).WithNumFiles(numFiles)
+	// Perform writes
+	fileSize := int64(256 * 1024)
+	numFiles := 10
+	fioOpt := fio.Options{}.WithFileSize(fileSize).WithNumFiles(numFiles)
 
-// 	err = eng.FileWriter.WriteFiles("", fioOpt)
-// 	testenv.AssertNoError(t, err)
+	err = eng.FileWriter.WriteFiles("", fioOpt)
+	testenv.AssertNoError(t, err)
 
-// 	// Take a first snapshot
-// 	snapID1, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.LocalDataDir)
-// 	testenv.AssertNoError(t, err)
+	// Take a first snapshot
+	snapID1, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.LocalDataDir)
+	testenv.AssertNoError(t, err)
 
-// 	// Get the metadata collected on that snapshot
-// 	ssMeta1, err := eng.Checker.GetSnapshotMetadata(snapID1)
-// 	testenv.AssertNoError(t, err)
+	// Get the metadata collected on that snapshot
+	ssMeta1, err := eng.Checker.GetSnapshotMetadata(snapID1)
+	testenv.AssertNoError(t, err)
 
-// 	// Do additional writes, writing 1 extra byte than before
-// 	err = eng.FileWriter.WriteFiles("", fioOpt.WithFileSize(fileSize+1))
-// 	testenv.AssertNoError(t, err)
+	// Do additional writes, writing 1 extra byte than before
+	err = eng.FileWriter.WriteFiles("", fioOpt.WithFileSize(fileSize+1))
+	testenv.AssertNoError(t, err)
 
-// 	// Take a second snapshot
-// 	snapID2, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.LocalDataDir)
-// 	testenv.AssertNoError(t, err)
+	// Take a second snapshot
+	snapID2, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.LocalDataDir)
+	testenv.AssertNoError(t, err)
 
 	// Get the second snapshot's metadata
 	ssMeta2, err := eng.Checker.GetSnapshotMetadata(snapID2)
