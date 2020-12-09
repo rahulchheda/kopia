@@ -88,7 +88,7 @@ func NewEngine(workingDir string) (*Engine, error) {
 		RunnerCount: DefaultRunnerCount,
 	}
 
-	if os.Getenv(EngineModeEnvKey) == EngineModeBasic {
+	if os.Getenv(EngineModeEnvKey) == EngineModeBasic || os.Getenv(EngineModeEnvKey) == "" {
 		e.RunnerCount = 1
 	}
 
@@ -102,6 +102,7 @@ func NewEngine(workingDir string) (*Engine, error) {
 		e.CleanComponents()
 		return nil, err
 	}
+
 	// Fill the snapshot store interface
 	snapStore, err := snapmeta.New(baseDirPath)
 	if err != nil {
@@ -109,8 +110,11 @@ func NewEngine(workingDir string) (*Engine, error) {
 		return nil, err
 	}
 
+	e.MetaStore = snapStore
+
+	e.cleanupRoutines = append(e.cleanupRoutines, snapStore.Cleanup)
+
 	for i := 0; i < e.RunnerCount; i++ {
-		var snapshotter snap.Snapshotter
 
 		singleChecker, singleCheckerErr := checker.NewChecker(kopiaSnapper[i], snapStore, fswalker.NewWalkCompare(), baseDirPath)
 		if singleCheckerErr != nil {
@@ -118,46 +122,28 @@ func NewEngine(workingDir string) (*Engine, error) {
 			return nil, singleCheckerErr
 		}
 
+		e.cleanupRoutines = append(e.cleanupRoutines, singleChecker.Cleanup)
+
 		fileWriter, fileWriterErr := fio.NewRunner()
 		if fileWriterErr != nil {
 			e.CleanComponents()
 			return nil, fileWriterErr
 		}
 
+		e.cleanupRoutines = append(e.cleanupRoutines, fileWriter.Cleanup, kopiaSnapper[i].Cleanup)
+
+		err := e.setupLogging()
+		if err != nil {
+			e.CleanComponents()
+			return nil, err
+		}
+
+		multipleSnapshotter[i] = kopiaSnapper[i]
 		multipleFileWriter[i] = fileWriter
-
-		e.cleanupRoutines = append(e.cleanupRoutines, fileWriter.Cleanup)
-
-		err = e.setupLogging()
-		if err != nil {
-			e.CleanComponents()
-			return nil, err
-		}
-
-		e.cleanupRoutines = append(e.cleanupRoutines, kopiaSnapper[i].Cleanup)
-
-		snapshotter = kopiaSnapper[i]
-
-		multipleSnapshotter[i] = snapshotter
-
-		e.cleanupRoutines = append(e.cleanupRoutines, snapStore.Cleanup)
-
-		e.MetaStore = snapStore
-
-		e.setupLogging() //nolint:errcheck
-
-		// Create the data integrity checker
-		e.cleanupRoutines = append(e.cleanupRoutines, singleChecker.Cleanup)
-
-		if err != nil {
-			e.CleanComponents()
-			return nil, err
-		}
-
 		multipleChecker[i] = singleChecker
-
-		e.cleanupRoutines = append(e.cleanupRoutines, e.cleanUpServer)
 	}
+
+	e.cleanupRoutines = append(e.cleanupRoutines, e.cleanUpServer)
 
 	e.FileWriter = multipleFileWriter
 	e.TestRepo = multipleSnapshotter
