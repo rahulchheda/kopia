@@ -9,9 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/kopia/kopia/tests/robustness/engine"
 	"github.com/kopia/kopia/tests/testenv"
-	"golang.org/x/sync/errgroup"
 )
 
 func TestManySmallFiles(t *testing.T) {

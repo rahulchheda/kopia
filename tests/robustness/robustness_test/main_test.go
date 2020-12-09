@@ -13,10 +13,11 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/kopia/kopia/tests/robustness/engine"
 	"github.com/kopia/kopia/tests/tools/fio"
 	"github.com/kopia/kopia/tests/tools/kopiarunner"
-	"golang.org/x/sync/errgroup"
 )
 
 var eng *engine.Engine
