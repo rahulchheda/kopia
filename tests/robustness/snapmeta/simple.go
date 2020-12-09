@@ -1,8 +1,9 @@
 package snapmeta
 
 import (
-	"errors"
 	"sync"
+
+	"github.com/pkg/errors"
 )
 
 // ErrKeyNotFound is returned when the store can't find the key provided.
@@ -30,15 +31,27 @@ func NewSimple() *Simple {
 	}
 }
 
+// Operation defines several operations implemented on Index.
 type Operation string
 
 const (
-	StoreOperation           Operation = "store"
-	DeleteOperation          Operation = "delete"
-	AddToIndexOperation      Operation = "addToIndex"
+	// StoreOperation stores the value in Index.
+	StoreOperation Operation = "store"
+	// DeleteOperation deletes value from Index.
+	DeleteOperation Operation = "delete"
+	// AddToIndexOperation add value in Index.
+	AddToIndexOperation Operation = "addToIndex"
+	// RemoveFromIndexOperation removes value from Index.
 	RemoveFromIndexOperation Operation = "removeFromIndex"
 )
 
+var (
+	errStoreOperation           error = errors.New("Unknown value for Store Operation")
+	errAddToIndexOperation      error = errors.New("Unknown value for AddToIndex Operation")
+	errRemoveFromIndexOperation error = errors.New("Unknown value for Remove From Index Operation")
+)
+
+// OperationEntry defines operations on Index.
 type OperationEntry struct {
 	Operation Operation
 	Key       string
@@ -72,7 +85,7 @@ func (s *Simple) Delete(key string) {
 	delete(s.Data, key)
 }
 
-// AddToIndex implements the Storer interface AddToIndex method
+// AddToIndex implements the Storer interface AddToIndex method.
 func (s *Simple) AddToIndex(key, indexName string) {
 	s.Idx.AddToIndex(key, indexName)
 }
@@ -88,37 +101,44 @@ func (s *Simple) GetKeys(indexName string) []string {
 }
 
 // IndexOperation implements the Indexer interface IndexOperation method
-// To add a particular indexKey use true, and to remove use false
+// to add a particular indexKey use true, and to remove use false.
 func (s *Simple) IndexOperation(operationEntrys ...OperationEntry) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	for _, op := range operationEntrys {
 		switch op.Operation {
-
 		case StoreOperation:
 			// StoreOperation value is []byte
 			storeValue, ok := op.Data.([]byte)
+
 			if !ok {
-				return errors.New("Unknown value for Store Operation")
+				return errStoreOperation
 			}
-			s.Store(op.Key, storeValue)
+
+			if err := s.Store(op.Key, storeValue); err != nil {
+				return err
+			}
+
 		case DeleteOperation:
-			//DeleteOperation value is string
+			// DeleteOperation value is string
 			s.Delete(op.Key)
 		case AddToIndexOperation:
 			// AddToIndexOperation value is string
 			addToIndexValue, ok := op.Data.(string)
 			if !ok {
-				return errors.New("Unknown value for AddToIndex Operation")
+				return errAddToIndexOperation
 			}
+
 			s.AddToIndex(op.Key, addToIndexValue)
+
 		case RemoveFromIndexOperation:
 			// RemoveToIndexOperation value is string
 			removeFromIndexValue, ok := op.Data.(string)
 			if !ok {
-				return errors.New("Unknown value for Remove From Index Operation")
+				return errRemoveFromIndexOperation
 			}
+
 			s.RemoveFromIndex(op.Key, removeFromIndexValue)
 		}
 	}

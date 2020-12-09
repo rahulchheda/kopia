@@ -25,9 +25,11 @@ func TestManySmallFiles(t *testing.T) {
 		engine.MaxNumFilesPerWriteField: strconv.Itoa(numFiles),
 		engine.MinNumFilesPerWriteField: strconv.Itoa(numFiles),
 	}
+
 	var errs errgroup.Group
-	//b := &strings.Builder{}
+
 	log.Printf("Printing the length: %v", len(eng.Checker))
+
 	for i := range eng.Checker {
 		func(index int) {
 			errs.Go(func() error {
@@ -43,7 +45,6 @@ func TestManySmallFiles(t *testing.T) {
 				}
 				_, err = eng.ExecAction(engine.RestoreSnapshotActionKey, snapOut, index)
 				return err
-
 			})
 		}(i)
 	}
@@ -65,8 +66,9 @@ func TestOneLargeFile(t *testing.T) {
 	}
 
 	var errs errgroup.Group
-	//b := &strings.Builder{}
+
 	log.Printf("Printing the length: %v", len(eng.Checker))
+
 	for i := 0; i < eng.RunnerCount; i++ {
 		func(index int) {
 			errs.Go(func() error {
@@ -82,14 +84,12 @@ func TestOneLargeFile(t *testing.T) {
 				}
 				_, err = eng.ExecAction(engine.RestoreSnapshotActionKey, snapOut, index)
 				return err
-
 			})
 		}(i)
 	}
 
 	err := errs.Wait()
 	testenv.AssertNoError(t, err)
-
 }
 
 func TestManySmallFilesAcrossDirecoryTree(t *testing.T) {
@@ -109,8 +109,9 @@ func TestManySmallFilesAcrossDirecoryTree(t *testing.T) {
 	}
 
 	var errs errgroup.Group
-	//b := &strings.Builder{}
+
 	log.Printf("Printing the length: %v", len(eng.Checker))
+
 	for i := 0; i < eng.RunnerCount; i++ {
 		func(index int) {
 			errs.Go(func() error {
@@ -126,7 +127,6 @@ func TestManySmallFilesAcrossDirecoryTree(t *testing.T) {
 				}
 				_, err = eng.ExecAction(engine.RestoreSnapshotActionKey, snapOut, index)
 				return err
-
 			})
 		}(i)
 	}
@@ -152,7 +152,9 @@ func TestRandomizedSmall(t *testing.T) {
 	}
 
 	var errs errgroup.Group
+
 	log.Printf("Printing the length: %v", len(eng.Checker))
+
 	for i := 0; i < eng.RunnerCount; i++ {
 		func(index int) {
 			errs.Go(func() error {

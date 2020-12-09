@@ -85,7 +85,7 @@ func (e *Engine) ExecAction(actionKey ActionKey, opts map[string]string, index i
 
 // RandomAction executes a random action picked by the relative weights given
 // in actionOpts[ActionControlActionKey], or uniform probability if that
-// key is not present in the input options
+// key is not present in the input options.
 func (e *Engine) RandomAction(actionOpts ActionOpts, index int) error {
 	actionControlOpts := actionOpts.getActionControlOpts()
 
@@ -186,7 +186,6 @@ type ActionKey string
 var actions = map[ActionKey]Action{
 	SnapshotRootDirActionKey: {
 		f: func(e *Engine, opts map[string]string, l *LogEntry, index int) (out map[string]string, err error) {
-
 			log.Printf("Creating snapshot of root directory %s", e.FileWriter[index].LocalDataDir)
 
 			ctx := context.TODO()
@@ -247,7 +246,6 @@ var actions = map[ActionKey]Action{
 	},
 	WriteRandomFilesActionKey: {
 		f: func(e *Engine, opts map[string]string, l *LogEntry, index int) (out map[string]string, err error) {
-
 			// Directory depth
 			maxDirDepth := getOptAsIntOrDefault(MaxDirDepthField, opts, defaultMaxDirDepth)
 			dirDepth := rand.Intn(maxDirDepth + 1) //nolint:gosec
@@ -352,7 +350,8 @@ var actions = map[ActionKey]Action{
 				"percent":  strconv.Itoa(pcnt),
 			})
 
-			err = e.FileWriter[index].DeleteContentsAtDepth("", dirDepth, float32(pcnt)/100)
+			const pcntConv = 100
+			err = e.FileWriter[index].DeleteContentsAtDepth("", dirDepth, float32(pcnt)/pcntConv)
 			if errors.Is(err, fio.ErrNoDirFound) {
 				log.Print(err)
 				return nil, ErrNoOp

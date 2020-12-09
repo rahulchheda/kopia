@@ -135,7 +135,7 @@ func (chk *Checker) VerifySnapshotMetadata() error {
 			log.Printf("Metadata present for snapID %v but not found in list of repo snapshots", metaSnapID)
 
 			if chk.RecoveryMode {
-				chk.snapshotMetadataStore.IndexOperation(
+				if operationErr := chk.snapshotMetadataStore.IndexOperation(
 					snapmeta.OperationEntry{
 						Operation: snapmeta.DeleteOperation,
 						Key:       metaSnapID,
@@ -145,7 +145,9 @@ func (chk *Checker) VerifySnapshotMetadata() error {
 						Key:       metaSnapID,
 						Data:      liveSnapshotsIdxName,
 					},
-				)
+				); operationErr != nil {
+					return operationErr
+				}
 			} else {
 				errCount++
 			}
@@ -218,7 +220,8 @@ func (chk *Checker) TakeSnapshot(ctx context.Context, sourceDir string) (snapID 
 	if err != nil {
 		return snapID, err
 	}
-	chk.snapshotMetadataStore.IndexOperation(
+
+	if err := chk.snapshotMetadataStore.IndexOperation(
 		snapmeta.OperationEntry{
 			Operation: snapmeta.AddToIndexOperation,
 			Key:       snapID,
@@ -229,7 +232,9 @@ func (chk *Checker) TakeSnapshot(ctx context.Context, sourceDir string) (snapID 
 			Key:       snapID,
 			Data:      liveSnapshotsIdxName,
 		},
-	)
+	); err != nil {
+		return snapID, err
+	}
 
 	return snapID, nil
 }
@@ -320,7 +325,7 @@ func (chk *Checker) DeleteSnapshot(ctx context.Context, snapID string) error {
 		return err
 	}
 
-	chk.snapshotMetadataStore.IndexOperation(
+	if err := chk.snapshotMetadataStore.IndexOperation(
 		snapmeta.OperationEntry{
 			Operation: snapmeta.AddToIndexOperation,
 			Key:       snapID,
@@ -331,7 +336,9 @@ func (chk *Checker) DeleteSnapshot(ctx context.Context, snapID string) error {
 			Key:       snapID,
 			Data:      liveSnapshotsIdxName,
 		},
-	)
+	); err != nil {
+		return err
+	}
 
 	return nil
 }

@@ -1,10 +1,8 @@
 package snapmeta
 
-import "sync"
-
+// Index defines in-memory map.
 type Index struct {
 	index map[string]map[string]struct{}
-	mux   sync.Mutex
 }
 
 // AddToIndex adds a key to the index of the given name.

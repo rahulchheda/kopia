@@ -67,20 +67,17 @@ func TestMain(m *testing.M) {
 	}
 	// Restore a random snapshot into the data directory
 	var errs errgroup.Group
+
 	for i := range eng.Checker {
 		func(index int) {
 			errs.Go(func() error {
 				_, err = eng.ExecAction(engine.RestoreIntoDataDirectoryActionKey, nil, index)
 				if err != nil && err != engine.ErrNoOp {
-					eng.Cleanup(index) //nolint:errcheck
+					eng.Cleanup(index)
 					fmt.Printf("error restoring into the data directory: %s\n", err.Error())
 					panic(err)
-					//return err
-					//os.Exit(1)
-
 				}
 				return nil
-
 			})
 		}(i)
 	}
@@ -93,19 +90,19 @@ func TestMain(m *testing.M) {
 	result := m.Run()
 
 	var errsCleaner errgroup.Group
+
 	for i := range eng.Checker {
 		func(index int) {
 			errs.Go(func() error {
-				err = eng.Cleanup(i)
+				err = eng.Cleanup(index)
 				if err != nil {
-					//return err
 					panic(err)
 				}
 				return nil
-
 			})
 		}(i)
 	}
+
 	err = errsCleaner.Wait()
 	if err != nil {
 		log.Printf("error cleaning up the engine: %s\n", err.Error())

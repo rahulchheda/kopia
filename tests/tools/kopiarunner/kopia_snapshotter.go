@@ -57,15 +57,20 @@ func NewKopiaSnapshotter(baseDir string) (*KopiaSnapshotter, error) {
 	}, nil
 }
 
+// NewMultipleKopiaSnapshotter initializes multiple Kopia Snapshotter.
 func NewMultipleKopiaSnapshotter(baseDir string, count int) ([]*KopiaSnapshotter, error) {
 	var multipleKopiaSnapshotter []*KopiaSnapshotter
+
 	for i := 0; i < count; i++ {
 		var kopiaSnapshotter KopiaSnapshotter
+
 		runner, err := NewRunner(baseDir)
 		if err != nil {
 			return nil, err
 		}
+
 		kopiaSnapshotter.Runner = runner
+
 		multipleKopiaSnapshotter = append(multipleKopiaSnapshotter, &kopiaSnapshotter)
 	}
 
@@ -123,14 +128,14 @@ func (ks *KopiaSnapshotter) ConnectOrCreateS3(bucketName, pathPrefix string) err
 	return ks.ConnectOrCreateRepo(args...)
 }
 
-// ConnectOrCreateS3WithServer attempts to connect or create S3 bucket, but with TLS client/server Model
+// ConnectOrCreateS3WithServer attempts to connect or create S3 bucket, but with TLS client/server Model.
 func (ks *KopiaSnapshotter) ConnectOrCreateS3WithServer(serverAddr, bucketName, pathPrefix string) (*exec.Cmd, string, error) {
 	repoArgs := []string{"s3", "--bucket", bucketName, "--prefix", pathPrefix}
 	return ks.createAndConnectServer(serverAddr, repoArgs...)
 }
 
 // ConnectOrCreateFilesystemWithServer attempts to connect or create repo in local filesystem,
-// but with TLS server/client Model
+// but with TLS server/client Model.
 func (ks *KopiaSnapshotter) ConnectOrCreateFilesystemWithServer(serverAddr, repoPath string) (*exec.Cmd, string, error) {
 	repoArgs := []string{"filesystem", "--path", repoPath}
 	return ks.createAndConnectServer(serverAddr, repoArgs...)
