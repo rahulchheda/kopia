@@ -1,6 +1,7 @@
 package snapmeta
 
-// Index defines in-memory map.
+// Index is a map of index name to the keys associated
+// with that index name.
 type Index map[string]map[string]struct{}
 
 // AddToIndex adds a key to the index of the given name.
