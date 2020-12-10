@@ -13,8 +13,7 @@ type Store interface {
 
 // Indexer describes methods surrounding categorization of keys via a named index.
 type Indexer interface {
-	IndexOperation(indexOperations ...OperationEntry) error
-	GetKeys(indexName string) (ret []string)
+	IndexOperation(indexOperations ...OperationEntry) (interface{}, error)
 }
 
 // Persister describes the ability to flush metadata

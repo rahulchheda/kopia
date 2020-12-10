@@ -25,9 +25,7 @@ type Simple struct {
 func NewSimple() *Simple {
 	return &Simple{
 		Data: make(map[string][]byte),
-		Idx: Index{
-			index: (make(map[string]map[string]struct{})),
-		},
+		Idx:  Index(make(map[string]map[string]struct{})),
 	}
 }
 
@@ -35,6 +33,10 @@ func NewSimple() *Simple {
 type Operation string
 
 const (
+	// GetKeysOperation returns the list of keys associated with the given index name.
+	GetKeysOperation Operation = "getkeys"
+	// LoadOperation implements the Storer interface Load method.
+	LoadOperation Operation = "load"
 	// StoreOperation stores the value in Index.
 	StoreOperation Operation = "store"
 	// DeleteOperation deletes value from Index.
@@ -102,22 +104,30 @@ func (s *Simple) GetKeys(indexName string) []string {
 
 // IndexOperation implements the Indexer interface IndexOperation method
 // to add a particular indexKey use true, and to remove use false.
-func (s *Simple) IndexOperation(operationEntrys ...OperationEntry) error {
+func (s *Simple) IndexOperation(operationEntrys ...OperationEntry) (interface{}, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	for _, op := range operationEntrys {
 		switch op.Operation {
+		case GetKeysOperation:
+			indexName := op.Data.(string)
+
+			return s.Idx.GetKeys(indexName), nil
+
+		case LoadOperation:
+			return s.Load(op.Key)
+
 		case StoreOperation:
 			// StoreOperation value is []byte
 			storeValue, ok := op.Data.([]byte)
 
 			if !ok {
-				return errStoreOperation
+				return nil, errStoreOperation
 			}
 
 			if err := s.Store(op.Key, storeValue); err != nil {
-				return err
+				return nil, err
 			}
 
 		case DeleteOperation:
@@ -127,21 +137,21 @@ func (s *Simple) IndexOperation(operationEntrys ...OperationEntry) error {
 			// AddToIndexOperation value is string
 			addToIndexValue, ok := op.Data.(string)
 			if !ok {
-				return errAddToIndexOperation
+				return nil, errAddToIndexOperation
 			}
 
-			s.AddToIndex(op.Key, addToIndexValue)
+			s.Idx.AddToIndex(op.Key, addToIndexValue)
 
 		case RemoveFromIndexOperation:
 			// RemoveToIndexOperation value is string
 			removeFromIndexValue, ok := op.Data.(string)
 			if !ok {
-				return errRemoveFromIndexOperation
+				return nil, errRemoveFromIndexOperation
 			}
 
-			s.RemoveFromIndex(op.Key, removeFromIndexValue)
+			s.Idx.RemoveFromIndex(op.Key, removeFromIndexValue)
 		}
 	}
 
-	return nil
+	return nil, nil
 }

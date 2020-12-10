@@ -110,8 +110,6 @@ func NewEngine(workingDir string) (*Engine, error) {
 		return nil, err
 	}
 
-	e.MetaStore = snapStore
-
 	e.cleanupRoutines = append(e.cleanupRoutines, snapStore.Cleanup)
 
 	for i := 0; i < e.RunnerCount; i++ {
@@ -130,6 +128,8 @@ func NewEngine(workingDir string) (*Engine, error) {
 		}
 
 		e.cleanupRoutines = append(e.cleanupRoutines, fileWriter.Cleanup, kopiaSnapper[i].Cleanup)
+
+		e.MetaStore = snapStore
 
 		err := e.setupLogging()
 		if err != nil {
