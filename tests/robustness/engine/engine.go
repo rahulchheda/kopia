@@ -115,7 +115,6 @@ func NewEngine(workingDir string) (*Engine, error) {
 	e.cleanupRoutines = append(e.cleanupRoutines, snapStore.Cleanup)
 
 	for i := 0; i < e.RunnerCount; i++ {
-
 		singleChecker, singleCheckerErr := checker.NewChecker(kopiaSnapper[i], snapStore, fswalker.NewWalkCompare(), baseDirPath)
 		if singleCheckerErr != nil {
 			e.CleanComponents()
