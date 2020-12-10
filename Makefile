@@ -104,16 +104,19 @@ travis-release:
 	$(MAKE) lint
 else
 
-#	$(MAKE) goreleaser
-travis-release: gotestsum
-	$(MAKE) lint vet test-with-coverage
+travis-release:
+	$(retry) $(MAKE) goreleaser
+	$(retry) $(MAKE) kopia-ui
+	$(MAKE) lint vet test-with-coverage html-ui-tests
 	$(retry) $(MAKE) layering-test
 	$(retry) $(MAKE) integration-tests
 ifeq ($(TRAVIS_OS_NAME),linux)
 	$(MAKE) publish-packages
 	$(MAKE) robustness-tool-tests
+	$(MAKE) website
 	$(MAKE) stress-test
 	$(MAKE) travis-create-long-term-repository
+	$(MAKE) upload-coverage
 endif
 
 endif
@@ -334,5 +337,3 @@ perf-benchmark-results:
 	gcloud compute scp $(PERF_BENCHMARK_INSTANCE):psrecord-* tests/perf_benchmark --zone=$(PERF_BENCHMARK_INSTANCE_ZONE) 
 	gcloud compute scp $(PERF_BENCHMARK_INSTANCE):repo-size-* tests/perf_benchmark --zone=$(PERF_BENCHMARK_INSTANCE_ZONE)
 	(cd tests/perf_benchmark && go run process_results.go)
-
-

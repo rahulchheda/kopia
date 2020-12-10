@@ -273,7 +273,5 @@ else
 maybehugo=
 endif
 
-gotestsum: $(gotestsum)
-
 all-tools: $(gotestsum) $(npm) $(goreleaser) $(linter) $(maybehugo) $(go_bindata) windows-signing-tools
 
