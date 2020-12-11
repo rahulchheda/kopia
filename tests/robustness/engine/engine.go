@@ -365,7 +365,7 @@ func (e *Engine) InitFilesystemWithServer(ctx context.Context, testRepoPath, met
 	e.serverCmd = cmd
 
 	for i := 1; i < e.RunnerCount; i++ {
-		clientArgs := []string{"--server-cert-fingerprint", fingerprint}
+		clientArgs := []string{"--server-cert-fingerprint", fingerprint, fmt.Sprintf("--override-username=engine-%v", i), fmt.Sprintf("--override-hostname=engine-%v", i)}
 		if err := e.TestRepo[i].ConnectServer(fmt.Sprintf("https://%v", defaultAddr), clientArgs...); err != nil {
 			return err
 		}
