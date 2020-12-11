@@ -22,21 +22,12 @@ func (e *Engine) SaveLog() error {
 		return err
 	}
 
-	_, operationErr := e.MetaStore.IndexOperation(snapmeta.OperationEntry{
-		Operation: snapmeta.StoreOperation,
-		Key:       engineLogsStoreKey,
-		Data:      b,
-	})
-
-	return operationErr
+	return e.MetaStore.Store(engineLogsStoreKey, b, nil)
 }
 
 // LoadLog loads the engine log from the metadata store.
 func (e *Engine) LoadLog() error {
-	b, err := e.MetaStore.IndexOperation(snapmeta.OperationEntry{
-		Operation: snapmeta.LoadOperation,
-		Key:       engineLogsStoreKey,
-	})
+	b, err := e.MetaStore.Load(engineLogsStoreKey)
 	if err != nil {
 		if errors.Is(err, snapmeta.ErrKeyNotFound) {
 			// Swallow key-not-found error. May not have historical logs
@@ -46,7 +37,7 @@ func (e *Engine) LoadLog() error {
 		return err
 	}
 
-	err = json.Unmarshal(b.([]byte), &e.EngineLog)
+	err = json.Unmarshal(b, &e.EngineLog)
 	if err != nil {
 		return err
 	}
@@ -63,22 +54,12 @@ func (e *Engine) SaveStats() error {
 		return err
 	}
 
-	_, operationErr := e.MetaStore.IndexOperation(snapmeta.OperationEntry{
-		Operation: snapmeta.StoreOperation,
-		Key:       engineStatsStoreKey,
-		Data:      cumulStatRaw,
-	})
-
-	return operationErr
+	return e.MetaStore.Store(engineStatsStoreKey, cumulStatRaw, nil)
 }
 
 // LoadStats loads the engine Stats from the metadata store.
 func (e *Engine) LoadStats() error {
-	b, err := e.MetaStore.IndexOperation(snapmeta.OperationEntry{
-		Operation: snapmeta.LoadOperation,
-		Key:       engineStatsStoreKey,
-		Data:      nil,
-	})
+	b, err := e.MetaStore.Load(engineStatsStoreKey)
 	if err != nil {
 		if errors.Is(err, snapmeta.ErrKeyNotFound) {
 			// Swallow key-not-found error. We may not have historical
@@ -92,5 +73,5 @@ func (e *Engine) LoadStats() error {
 		return err
 	}
 
-	return json.Unmarshal(b.([]byte), &e.CumulativeStats)
+	return json.Unmarshal(b, &e.CumulativeStats)
 }

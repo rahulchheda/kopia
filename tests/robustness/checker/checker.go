@@ -71,14 +71,7 @@ func (chk *Checker) Cleanup() {
 
 // GetSnapIDs gets the list of snapshot IDs being tracked by the checker's snapshot store.
 func (chk *Checker) GetSnapIDs() []string {
-	snapIDs, _ := chk.snapshotMetadataStore.IndexOperation(
-		snapmeta.OperationEntry{
-			Operation: snapmeta.GetKeysOperation,
-			Data:      allSnapshotsIdxName,
-		},
-	)
-
-	return snapIDs.([]string)
+	return chk.snapshotMetadataStore.GetKeys(allSnapshotsIdxName)
 }
 
 // SnapshotMetadata holds metadata associated with a given snapshot.
@@ -98,14 +91,7 @@ func (chk *Checker) GetSnapshotMetadata(snapID string) (*SnapshotMetadata, error
 // GetLiveSnapIDs gets the list of snapshot IDs being tracked by the checker's snapshot store
 // that do not have a deletion time associated with them.
 func (chk *Checker) GetLiveSnapIDs() []string {
-	snapIDs, _ := chk.snapshotMetadataStore.IndexOperation(
-		snapmeta.OperationEntry{
-			Operation: snapmeta.GetKeysOperation,
-			Data:      liveSnapshotsIdxName,
-		},
-	)
-
-	return snapIDs.([]string)
+	return chk.snapshotMetadataStore.GetKeys(liveSnapshotsIdxName)
 }
 
 // IsSnapshotIDDeleted reports whether the metadata associated with the provided snapshot ID
@@ -149,19 +135,15 @@ func (chk *Checker) VerifySnapshotMetadata() error {
 			log.Printf("Metadata present for snapID %v but not found in list of repo snapshots", metaSnapID)
 
 			if chk.RecoveryMode {
-				if _, operationErr := chk.snapshotMetadataStore.IndexOperation(
-					snapmeta.OperationEntry{
-						Operation: snapmeta.DeleteOperation,
-						Key:       metaSnapID,
-					},
-					snapmeta.OperationEntry{
-						Operation: snapmeta.RemoveFromIndexOperation,
-						Key:       metaSnapID,
-						Data:      string(liveSnapshotsIdxName),
-					},
-				); operationErr != nil {
-					return operationErr
+				chk.snapshotMetadataStore.Delete(metaSnapID)
+
+				indexUpdates := map[string]snapmeta.IndexOperation{
+					liveSnapshotsIdxName: snapmeta.RemoveFromIndexOperation,
 				}
+
+				chk.saveSnapshotMetadata(&SnapshotMetadata{ // nolint:errcheck
+					SnapID: metaSnapID,
+				}, indexUpdates)
 			} else {
 				errCount++
 			}
@@ -230,23 +212,13 @@ func (chk *Checker) TakeSnapshot(ctx context.Context, sourceDir string) (snapID 
 		ValidationData: b,
 	}
 
-	err = chk.saveSnapshotMetadata(ssMeta)
-	if err != nil {
-		return snapID, err
+	indexUpdates := map[string]snapmeta.IndexOperation{
+		allSnapshotsIdxName:  snapmeta.AddToIndexOperation,
+		liveSnapshotsIdxName: snapmeta.AddToIndexOperation,
 	}
 
-	if _, err := chk.snapshotMetadataStore.IndexOperation(
-		snapmeta.OperationEntry{
-			Operation: snapmeta.AddToIndexOperation,
-			Key:       snapID,
-			Data:      allSnapshotsIdxName,
-		},
-		snapmeta.OperationEntry{
-			Operation: snapmeta.AddToIndexOperation,
-			Key:       snapID,
-			Data:      liveSnapshotsIdxName,
-		},
-	); err != nil {
+	err = chk.saveSnapshotMetadata(ssMeta, indexUpdates)
+	if err != nil {
 		return snapID, err
 	}
 
@@ -301,7 +273,7 @@ func (chk *Checker) RestoreVerifySnapshot(ctx context.Context, snapID, destPath 
 			ValidationData: b,
 		}
 
-		return chk.saveSnapshotMetadata(ssMeta)
+		return chk.saveSnapshotMetadata(ssMeta, nil)
 	}
 
 	err = chk.validator.Compare(ctx, destPath, ssMeta.ValidationData, reportOut)
@@ -334,54 +306,31 @@ func (chk *Checker) DeleteSnapshot(ctx context.Context, snapID string) error {
 	ssMeta.DeletionTime = time.Now()
 	ssMeta.ValidationData = nil
 
-	err = chk.saveSnapshotMetadata(ssMeta)
-	if err != nil {
-		return err
+	indexUpdates := map[string]snapmeta.IndexOperation{
+		deletedSnapshotsIdxName: snapmeta.AddToIndexOperation,
+		liveSnapshotsIdxName:    snapmeta.RemoveFromIndexOperation,
 	}
 
-	if _, err := chk.snapshotMetadataStore.IndexOperation(
-		snapmeta.OperationEntry{
-			Operation: snapmeta.AddToIndexOperation,
-			Key:       snapID,
-			Data:      deletedSnapshotsIdxName,
-		},
-		snapmeta.OperationEntry{
-			Operation: snapmeta.RemoveFromIndexOperation,
-			Key:       snapID,
-			Data:      liveSnapshotsIdxName,
-		},
-	); err != nil {
+	err = chk.saveSnapshotMetadata(ssMeta, indexUpdates)
+	if err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (chk *Checker) saveSnapshotMetadata(ssMeta *SnapshotMetadata) error {
+func (chk *Checker) saveSnapshotMetadata(ssMeta *SnapshotMetadata, indexUpdates map[string]snapmeta.IndexOperation) error {
 	ssMetaRaw, err := json.Marshal(ssMeta)
 	if err != nil {
 		return err
 	}
 
-	_, err = chk.snapshotMetadataStore.IndexOperation(snapmeta.OperationEntry{
-		Operation: snapmeta.StoreOperation,
-		Key:       ssMeta.SnapID,
-		Data:      ssMetaRaw,
-	})
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return chk.snapshotMetadataStore.Store(ssMeta.SnapID, ssMetaRaw, indexUpdates)
 }
 
 func (chk *Checker) loadSnapshotMetadata(snapID string) (*SnapshotMetadata, error) {
 	// Lookup metadata by snapshot ID
-	b, err := chk.snapshotMetadataStore.IndexOperation(snapmeta.OperationEntry{
-		Operation: snapmeta.LoadOperation,
-		Key:       snapID,
-		Data:      nil,
-	})
+	b, err := chk.snapshotMetadataStore.Load(snapID)
 	if err != nil {
 		return nil, err
 	}
@@ -392,7 +341,7 @@ func (chk *Checker) loadSnapshotMetadata(snapID string) (*SnapshotMetadata, erro
 
 	ssMeta := &SnapshotMetadata{}
 
-	err = json.Unmarshal(b.([]byte), ssMeta)
+	err = json.Unmarshal(b, ssMeta)
 	if err != nil {
 		return nil, err
 	}

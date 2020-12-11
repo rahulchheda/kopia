@@ -9,10 +9,13 @@ func TestSimpleWithIndex(t *testing.T) {
 
 	storeKey := "key-to-store"
 	data := []byte("some stored data")
-	simple.Store(storeKey, data)
+	simple.Store(storeKey, data, nil)
 
 	idxName := "index-name"
-	simple.AddToIndex(storeKey, idxName)
+	indexUpdates := map[string]IndexOperation{
+		idxName: AddToIndexOperation,
+	}
+	simple.Store(storeKey, nil, indexUpdates)
 
 	idxKeys := simple.GetKeys(idxName)
 	if got, want := len(idxKeys), 1; got != want {
