@@ -135,15 +135,11 @@ func (chk *Checker) VerifySnapshotMetadata() error {
 			log.Printf("Metadata present for snapID %v but not found in list of repo snapshots", metaSnapID)
 
 			if chk.RecoveryMode {
-				chk.snapshotMetadataStore.Delete(metaSnapID)
-
 				indexUpdates := map[string]snapmeta.IndexOperation{
 					liveSnapshotsIdxName: snapmeta.RemoveFromIndexOperation,
 				}
 
-				chk.saveSnapshotMetadata(&SnapshotMetadata{ // nolint:errcheck
-					SnapID: metaSnapID,
-				}, indexUpdates)
+				chk.snapshotMetadataStore.Delete(metaSnapID, indexUpdates)
 			} else {
 				errCount++
 			}

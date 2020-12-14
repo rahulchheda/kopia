@@ -9,15 +9,9 @@ import "github.com/kopia/kopia/tests/robustness/snap"
 type Store interface {
 	Store(key string, val []byte, indexUpdates map[string]IndexOperation) error
 	Load(key string) ([]byte, error)
-	Delete(key string)
+	Delete(key string, indexUpdates map[string]IndexOperation)
 	GetKeys(indexName string) []string
 }
-
-// // Indexer describes methods surrounding categorization of keys via a named index.
-// type Indexer interface {
-// 	IndexOperation(indexOperations ...OperationEntry) error
-// 	GetKeys(indexName string) (ret []string)
-// }
 
 // Persister describes the ability to flush metadata
 // to, and load it again, from a repository.

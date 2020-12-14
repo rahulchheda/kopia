@@ -41,12 +41,12 @@ const (
 
 // Store implements the Storer interface Store method.
 func (s *Simple) Store(key string, val []byte, indexUpdates map[string]IndexOperation) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	buf := make([]byte, len(val))
 
 	_ = copy(buf, val)
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	s.Data[key] = buf
 
@@ -68,6 +68,9 @@ func (s *Simple) processIndexUpdates(key string, indexUpdates map[string]IndexOp
 
 // Load implements the Storer interface Load method.
 func (s *Simple) Load(key string) ([]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if buf, found := s.Data[key]; found {
 		retBuf := make([]byte, len(buf))
 		_ = copy(retBuf, buf)
@@ -79,11 +82,26 @@ func (s *Simple) Load(key string) ([]byte, error) {
 }
 
 // Delete implements the Storer interface Delete method.
-func (s *Simple) Delete(key string) {
+func (s *Simple) Delete(key string, indexUpdates map[string]IndexOperation) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	delete(s.Data, key)
+
+	for indexName, indexOp := range indexUpdates {
+		switch indexOp {
+		case AddToIndexOperation:
+			s.Idx.AddToIndex(key, indexName)
+		case RemoveFromIndexOperation:
+			s.Idx.RemoveFromIndex(key, indexName)
+		}
+	}
 }
 
 // GetKeys implements the Indexer interface GetKeys method.
 func (s *Simple) GetKeys(indexName string) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	return s.Idx.GetKeys(indexName)
 }
