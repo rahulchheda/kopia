@@ -41,12 +41,11 @@ const (
 
 // Store implements the Storer interface Store method.
 func (s *Simple) Store(key string, val []byte, indexUpdates map[string]IndexOperation) error {
+	buf := make([]byte, len(val))
+	_ = copy(buf, val)
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	buf := make([]byte, len(val))
-
-	_ = copy(buf, val)
 
 	s.Data[key] = buf
 
@@ -88,14 +87,7 @@ func (s *Simple) Delete(key string, indexUpdates map[string]IndexOperation) {
 
 	delete(s.Data, key)
 
-	for indexName, indexOp := range indexUpdates {
-		switch indexOp {
-		case AddToIndexOperation:
-			s.Idx.AddToIndex(key, indexName)
-		case RemoveFromIndexOperation:
-			s.Idx.RemoveFromIndex(key, indexName)
-		}
-	}
+	s.processIndexUpdates(key, indexUpdates)
 }
 
 // GetKeys implements the Indexer interface GetKeys method.
