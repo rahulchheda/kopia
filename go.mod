@@ -54,5 +54,4 @@ require (
 	google.golang.org/protobuf v1.25.0
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	gopkg.in/kothar/go-backblaze.v0 v0.0.0-20191215213626-7594ed38700f
-	istio.io/pkg v0.0.0-20201214221311-89c9b1cade38
 )
