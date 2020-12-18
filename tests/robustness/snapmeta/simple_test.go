@@ -59,6 +59,23 @@ func TestSimple(t *testing.T) {
 				todo: false,
 			},
 		},
+		{
+			storeOperations: storeOperation{
+				todo: true,
+				key:  storeKey,
+				val:  []byte("some stored data"),
+				indexUpdates: map[string]IndexOperation{
+					idxName: AddToIndexOperation,
+				},
+			},
+			deleteOperations: deleteOperation{
+				todo: true,
+				key:  storeKey,
+				indexUpdates: map[string]IndexOperation{
+					idxName: RemoveFromIndexOperation,
+				},
+			},
+		},
 	}
 
 	for _, v := range testcases {
@@ -85,11 +102,39 @@ func TestSimple(t *testing.T) {
 					t.Fatalf("expected %v keys but got %v", want, got)
 				}
 
-				if got, want := idxKeys[0], storeKey; got != want {
+				if got, want := idxKeys[0], v.storeOperations.key; got != want {
 					t.Fatalf("expected key %v but got %v", want, got)
 				}
 			}
 		}
+
+		if v.deleteOperations.todo == true {
+			simple.Delete(v.storeOperations.key, v.storeOperations.indexUpdates)
+		}
+
+		// Check if the value is deleted correctly
+		_, err = simple.Load(v.deleteOperations.key)
+		if err == nil {
+			t.Fatalf("expected %v keys but got %v", nil, err)
+		}
+
+		if !reflect.DeepEqual(checkStoredData, data) {
+			t.Fatalf("expected datas %v but got %v", data, checkStoredData)
+		}
+
+		if v.deleteOperations.indexUpdates != nil {
+			for idx := range v.deleteOperations.indexUpdates {
+				idxKeys := simple.GetKeys(idx)
+				if got, want := len(idxKeys), 1; got != want {
+					t.Fatalf("expected %v keys but got %v", want, got)
+				}
+
+				if got, want := idxKeys[0], v.deleteOperations.key; got != want {
+					t.Fatalf("expected key %v but got %v", want, got)
+				}
+			}
+		}
+
 	}
 }
 
