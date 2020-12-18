@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestSimple(t *testing.T) {
+func TestSimple(t *testing.T) { // nolint: gocyclo
 	storeKey := "key-to-store"
 	data := []byte("some stored data")
 	idxName := "index-name"
@@ -16,19 +16,13 @@ func TestSimple(t *testing.T) {
 		val          []byte
 		indexUpdates map[string]IndexOperation
 	}
+
 	type deleteOperation struct {
 		todo         bool
 		key          string
 		indexUpdates map[string]IndexOperation
 	}
-	type loadOperation struct {
-		tovalidate bool
-		key        string
-	}
-	type getKeysOperation struct {
-		tovalidate bool
-		indexName  string
-	}
+
 	type testcase struct {
 		storeOperations  storeOperation
 		deleteOperations deleteOperation
@@ -134,7 +128,6 @@ func TestSimple(t *testing.T) {
 				}
 			}
 		}
-
 	}
 }
 
