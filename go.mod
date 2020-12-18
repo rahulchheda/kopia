@@ -8,7 +8,8 @@ require (
 	contrib.go.opencensus.io/exporter/prometheus v0.2.0
 	github.com/Azure/azure-pipeline-go v0.2.3 // indirect
 	github.com/Azure/azure-storage-blob-go v0.10.0
-	github.com/alecthomas/units v0.0.0-20190924025748-f65c72e2690d // indirect
+	github.com/alecthomas/kingpin v0.0.0-20200323085623-b6657d9477a6 // this is pulling master, which is newer than v2
+	github.com/alecthomas/units v0.0.0-20201120081800-1786d5ef83d4 // indirect
 	github.com/aws/aws-sdk-go v1.34.29
 	github.com/bgentry/speakeasy v0.1.0
 	github.com/chmduquesne/rollinghash v4.0.0+incompatible
@@ -22,12 +23,12 @@ require (
 	github.com/google/readahead v0.0.0-20161222183148-eaceba169032 // indirect
 	github.com/google/uuid v1.1.2
 	github.com/gorilla/mux v1.8.0
-	github.com/klauspost/compress v1.11.0
+	github.com/klauspost/compress v1.11.3
 	github.com/klauspost/pgzip v1.2.5
 	github.com/kylelemons/godebug v1.1.0
 	github.com/mattn/go-colorable v0.1.7 // indirect
-	github.com/minio/minio v0.0.0-20200922223427-0537a21b7948
-	github.com/minio/minio-go/v6 v6.0.58-0.20200612001654-a57fec8037ec
+	github.com/minio/minio v0.0.0-20201202102351-ce0e17b62bcc
+	github.com/minio/minio-go/v7 v7.0.6
 	github.com/natefinch/atomic v0.0.0-20200526193002-18c0533a5b09
 	github.com/op/go-logging v0.0.0-20160315200505-970db520ece7
 	github.com/pkg/errors v0.9.1
@@ -52,6 +53,5 @@ require (
 	golang.org/x/sys v0.0.0-20200922070232-aee5d888a860
 	google.golang.org/api v0.32.0
 	google.golang.org/protobuf v1.25.0
-	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	gopkg.in/kothar/go-backblaze.v0 v0.0.0-20191215213626-7594ed38700f
 )
