@@ -5,44 +5,132 @@ import (
 	"testing"
 )
 
-func TestSimpleWithIndex(t *testing.T) {
-	simple := NewSimple()
-
+func TestSimple(t *testing.T) {
 	storeKey := "key-to-store"
 	data := []byte("some stored data")
-	simple.Store(storeKey, data, nil)
-
-	checkStoredData, err := simple.Load(storeKey)
-	if err != nil {
-		t.Fatalf("expected %v keys but got %v", nil, err)
-	}
-
-	if !reflect.DeepEqual(checkStoredData, data) {
-		t.Fatalf("expected datas %v but got %v", data, checkStoredData)
-	}
-
 	idxName := "index-name"
-	indexUpdates := map[string]IndexOperation{
-		idxName: AddToIndexOperation,
+
+	type storeOperation struct {
+		todo         bool
+		key          string
+		val          []byte
+		indexUpdates map[string]IndexOperation
+	}
+	type deleteOperation struct {
+		todo         bool
+		key          string
+		indexUpdates map[string]IndexOperation
+	}
+	type loadOperation struct {
+		tovalidate bool
+		key        string
+	}
+	type getKeysOperation struct {
+		tovalidate bool
+		indexName  string
+	}
+	type testcase struct {
+		storeOperations  storeOperation
+		deleteOperations deleteOperation
 	}
 
-	simple.Store(storeKey, nil, indexUpdates)
-
-	checkStoredData, err = simple.Load(storeKey)
-	if err != nil {
-		t.Fatalf("expected error %v but got %v", nil, err)
+	testcases := []testcase{
+		{
+			storeOperations: storeOperation{
+				todo:         true,
+				key:          storeKey,
+				val:          []byte("some stored data"),
+				indexUpdates: nil,
+			},
+			deleteOperations: deleteOperation{
+				todo: false,
+			},
+		},
+		{
+			storeOperations: storeOperation{
+				todo: true,
+				key:  storeKey,
+				val:  []byte("some stored data"),
+				indexUpdates: map[string]IndexOperation{
+					idxName: AddToIndexOperation,
+				},
+			},
+			deleteOperations: deleteOperation{
+				todo: false,
+			},
+		},
 	}
 
-	if !reflect.DeepEqual(checkStoredData, []byte{}) {
-		t.Fatalf("expected data %v but got %v", data, checkStoredData)
-	}
+	for _, v := range testcases {
+		simple := NewSimple()
 
-	idxKeys := simple.GetKeys(idxName)
-	if got, want := len(idxKeys), 1; got != want {
-		t.Fatalf("expected %v keys but got %v", want, got)
-	}
+		if v.storeOperations.todo == true {
+			simple.Store(v.storeOperations.key, v.storeOperations.val, v.storeOperations.indexUpdates)
+		}
 
-	if got, want := idxKeys[0], storeKey; got != want {
-		t.Fatalf("expected key %v but got %v", want, got)
+		// Check if the value is loaded correctly
+		checkStoredData, err := simple.Load(v.storeOperations.key)
+		if err != nil {
+			t.Fatalf("expected %v keys but got %v", nil, err)
+		}
+
+		if !reflect.DeepEqual(checkStoredData, data) {
+			t.Fatalf("expected datas %v but got %v", data, checkStoredData)
+		}
+
+		if v.storeOperations.indexUpdates != nil {
+			for idx := range v.storeOperations.indexUpdates {
+				idxKeys := simple.GetKeys(idx)
+				if got, want := len(idxKeys), 1; got != want {
+					t.Fatalf("expected %v keys but got %v", want, got)
+				}
+
+				if got, want := idxKeys[0], storeKey; got != want {
+					t.Fatalf("expected key %v but got %v", want, got)
+				}
+			}
+		}
 	}
 }
+
+// func TestSimpleWithIndex(t *testing.T) {
+// 	simple := NewSimple()
+
+// 	storeKey := "key-to-store"
+// 	data := []byte("some stored data")
+// 	simple.Store(storeKey, data, nil)
+
+// 	checkStoredData, err := simple.Load(storeKey)
+// 	if err != nil {
+// 		t.Fatalf("expected %v keys but got %v", nil, err)
+// 	}
+
+// 	if !reflect.DeepEqual(checkStoredData, data) {
+// 		t.Fatalf("expected datas %v but got %v", data, checkStoredData)
+// 	}
+
+// 	idxName := "index-name"
+// 	indexUpdates := map[string]IndexOperation{
+// 		idxName: AddToIndexOperation,
+// 	}
+
+// 	simple.Store(storeKey, nil, indexUpdates)
+
+// 	checkStoredData, err = simple.Load(storeKey)
+// 	if err != nil {
+// 		t.Fatalf("expected error %v but got %v", nil, err)
+// 	}
+
+// 	if !reflect.DeepEqual(checkStoredData, []byte{}) {
+// 		t.Fatalf("expected data %v but got %v", data, checkStoredData)
+// 	}
+
+// 	idxKeys := simple.GetKeys(idxName)
+// 	if got, want := len(idxKeys), 1; got != want {
+// 		t.Fatalf("expected %v keys but got %v", want, got)
+// 	}
+
+// 	if got, want := idxKeys[0], storeKey; got != want {
+// 		t.Fatalf("expected key %v but got %v", want, got)
+// 	}
+// }
