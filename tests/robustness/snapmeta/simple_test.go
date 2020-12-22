@@ -1,174 +1,166 @@
 package snapmeta
 
 import (
-	"reflect"
+	"bytes"
 	"testing"
 )
 
-func TestSimple(t *testing.T) { // nolint: gocyclo
-	storeKey := "key-to-store"
-	data := []byte("some stored data")
-	idxName := "index-name"
+func TestSimpleWithIndex(t *testing.T) {
+	type opType int
+	const (
+		storeOpType opType = iota
+		deleteOpType
+	)
 
-	type storeOperation struct {
-		todo         bool
-		key          string
-		val          []byte
-		indexUpdates map[string]IndexOperation
+	type storeOp struct {
+		op    opType
+		key   string
+		value []byte
+		idxOp map[string]IndexOperation
 	}
 
-	type deleteOperation struct {
-		todo         bool
-		key          string
-		indexUpdates map[string]IndexOperation
+	type expResult struct {
+		expErr   bool
+		expValue []byte
 	}
 
-	type testcase struct {
-		storeOperations  storeOperation
-		deleteOperations deleteOperation
-	}
-
-	testcases := []testcase{
+	for _, tc := range []struct {
+		name            string
+		storeOperations []storeOp
+		expectedKVs     map[string]expResult // List of expected key-values
+		expectedIdxKeys map[string][]string  // List of expected keys in the given index
+	}{
 		{
-			storeOperations: storeOperation{
-				todo:         true,
-				key:          storeKey,
-				val:          []byte("some stored data"),
-				indexUpdates: nil,
-			},
-			deleteOperations: deleteOperation{
-				todo: false,
-			},
-		},
-		{
-			storeOperations: storeOperation{
-				todo: true,
-				key:  storeKey,
-				val:  []byte("some stored data"),
-				indexUpdates: map[string]IndexOperation{
-					idxName: AddToIndexOperation,
+			name: "Test key value change",
+			storeOperations: []storeOp{
+				{
+					op:    storeOpType,
+					key:   "some-key",
+					value: []byte("some-value"),
+					idxOp: nil,
+				},
+				{
+					op:    storeOpType,
+					key:   "some-key",
+					value: []byte("some-different-value"),
+					idxOp: nil,
 				},
 			},
-			deleteOperations: deleteOperation{
-				todo: false,
-			},
-		},
-		{
-			storeOperations: storeOperation{
-				todo: true,
-				key:  storeKey,
-				val:  []byte("some stored data"),
-				indexUpdates: map[string]IndexOperation{
-					idxName: AddToIndexOperation,
-				},
-			},
-			deleteOperations: deleteOperation{
-				todo: true,
-				key:  storeKey,
-				indexUpdates: map[string]IndexOperation{
-					idxName: RemoveFromIndexOperation,
+			expectedKVs: map[string]expResult{
+				"some-key": {
+					expErr:   false,
+					expValue: []byte("some-different-value"),
 				},
 			},
 		},
-	}
 
-	for _, v := range testcases {
+		{
+			name: "Test key value change + AddtoIndex",
+			storeOperations: []storeOp{
+				{
+					op:    storeOpType,
+					key:   "some-key",
+					value: []byte("some-value"),
+					idxOp: map[string]IndexOperation{
+						"some-index-key": AddToIndexOperation,
+					},
+				},
+				{
+					op:    storeOpType,
+					key:   "some-key",
+					value: []byte("some-different-value"),
+					idxOp: nil,
+				},
+			},
+			expectedKVs: map[string]expResult{
+				"some-key": {
+					expErr:   false,
+					expValue: []byte("some-different-value"),
+				},
+			},
+			expectedIdxKeys: map[string][]string{
+				"some-index-key": {"some-key"},
+			},
+		},
+
+		{
+			name: "Test key value change + DeleteFromIndex",
+			storeOperations: []storeOp{
+				{
+					op:    storeOpType,
+					key:   "some-key",
+					value: []byte("some-value"),
+					idxOp: map[string]IndexOperation{
+						"some-index-key":      AddToIndexOperation,
+						"some-more-index-key": AddToIndexOperation,
+					},
+				},
+				{
+					op:    storeOpType,
+					key:   "some-key",
+					value: []byte("some-different-value"),
+					idxOp: map[string]IndexOperation{
+						"some-index-key": RemoveFromIndexOperation,
+					},
+				},
+			},
+			expectedKVs: map[string]expResult{
+				"some-key": {
+					expErr:   false,
+					expValue: []byte("some-different-value"),
+				},
+			},
+			expectedIdxKeys: map[string][]string{
+				"some-index-key":      {},
+				"some-more-index-key": {"some-key"},
+			},
+		},
+	} {
+		t.Log(tc.name)
+
 		simple := NewSimple()
 
-		if v.storeOperations.todo == true {
-			simple.Store(v.storeOperations.key, v.storeOperations.val, v.storeOperations.indexUpdates)
-		}
-
-		// Check if the value is loaded correctly
-		checkStoredData, err := simple.Load(v.storeOperations.key)
-		if err != nil {
-			t.Fatalf("expected %v keys but got %v", nil, err)
-		}
-
-		if !reflect.DeepEqual(checkStoredData, data) {
-			t.Fatalf("expected datas %v but got %v", data, checkStoredData)
-		}
-
-		if v.storeOperations.indexUpdates != nil {
-			for idx := range v.storeOperations.indexUpdates {
-				idxKeys := simple.GetKeys(idx)
-				if got, want := len(idxKeys), 1; got != want {
-					t.Fatalf("expected %v keys but got %v", want, got)
-				}
-
-				if got, want := idxKeys[0], v.storeOperations.key; got != want {
-					t.Fatalf("expected key %v but got %v", want, got)
-				}
+		for _, op := range tc.storeOperations {
+			switch op.op {
+			case storeOpType:
+				simple.Store(op.key, op.value, op.idxOp)
+			case deleteOpType:
+				simple.Delete(op.key, op.idxOp)
 			}
 		}
 
-		if v.deleteOperations.todo == true {
-			simple.Delete(v.storeOperations.key, v.storeOperations.indexUpdates)
+		// Check keys present and expected value
+		for wantK, expResult := range tc.expectedKVs {
+			gotV, err := simple.Load(wantK)
+			if expResult.expErr != (err != nil) {
+				t.Fatalf("expected %v error but got %v", nil, expResult.expErr)
+			}
+			if bytes.Compare(expResult.expValue, gotV) != 0 {
+				t.Fatalf("expected %v key but got %v", wantK, gotV)
+			}
 		}
 
-		// Check if the value is deleted correctly
-		_, err = simple.Load(v.deleteOperations.key)
-		if err == nil {
-			t.Fatalf("expected %v keys but got %v", nil, err)
-		}
-
-		if !reflect.DeepEqual(checkStoredData, data) {
-			t.Fatalf("expected datas %v but got %v", data, checkStoredData)
-		}
-
-		if v.deleteOperations.indexUpdates != nil {
-			for idx := range v.deleteOperations.indexUpdates {
-				idxKeys := simple.GetKeys(idx)
-				if got, want := len(idxKeys), 1; got != want {
-					t.Fatalf("expected %v keys but got %v", want, got)
-				}
-
-				if got, want := idxKeys[0], v.deleteOperations.key; got != want {
-					t.Fatalf("expected key %v but got %v", want, got)
-				}
+		// Check indices contain expected keys
+		for idxName, wantKeys := range tc.expectedIdxKeys {
+			gotKeys := simple.GetKeys(idxName)
+			if !compareSlices(gotKeys, wantKeys) {
+				t.Fatalf("expected %v keys but got %v", wantKeys, gotKeys)
 			}
 		}
 	}
 }
 
-// func TestSimpleWithIndex(t *testing.T) {
-// 	simple := NewSimple()
+func compareSlices(slice1 []string, slice2 []string) bool {
 
-// 	storeKey := "key-to-store"
-// 	data := []byte("some stored data")
-// 	simple.Store(storeKey, data, nil)
+	if len(slice1) != len(slice2) {
+		return false
+	}
 
-// 	checkStoredData, err := simple.Load(storeKey)
-// 	if err != nil {
-// 		t.Fatalf("expected %v keys but got %v", nil, err)
-// 	}
+	for i, v := range slice1 {
+		if v != slice2[i] {
+			return false
+		}
+	}
 
-// 	if !reflect.DeepEqual(checkStoredData, data) {
-// 		t.Fatalf("expected datas %v but got %v", data, checkStoredData)
-// 	}
-
-// 	idxName := "index-name"
-// 	indexUpdates := map[string]IndexOperation{
-// 		idxName: AddToIndexOperation,
-// 	}
-
-// 	simple.Store(storeKey, nil, indexUpdates)
-
-// 	checkStoredData, err = simple.Load(storeKey)
-// 	if err != nil {
-// 		t.Fatalf("expected error %v but got %v", nil, err)
-// 	}
-
-// 	if !reflect.DeepEqual(checkStoredData, []byte{}) {
-// 		t.Fatalf("expected data %v but got %v", data, checkStoredData)
-// 	}
-
-// 	idxKeys := simple.GetKeys(idxName)
-// 	if got, want := len(idxKeys), 1; got != want {
-// 		t.Fatalf("expected %v keys but got %v", want, got)
-// 	}
-
-// 	if got, want := idxKeys[0], storeKey; got != want {
-// 		t.Fatalf("expected key %v but got %v", want, got)
-// 	}
-// }
+	return true
+}
