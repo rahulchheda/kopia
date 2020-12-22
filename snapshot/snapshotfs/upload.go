@@ -64,6 +64,9 @@ type Uploader struct {
 	// Number of files to hash and upload in parallel.
 	ParallelUploads int
 
+	// Enable snapshot actions
+	EnableActions bool
+
 	// How frequently to create checkpoint snapshot entries.
 	CheckpointInterval time.Duration
 
@@ -124,7 +127,7 @@ func (u *Uploader) uploadFileInternal(ctx context.Context, parentCheckpointRegis
 		// nolint:govet
 		checkpointID, err := writer.Checkpoint()
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, "checkpoint error")
 		}
 
 		if checkpointID == "" {
@@ -143,12 +146,12 @@ func (u *Uploader) uploadFileInternal(ctx context.Context, parentCheckpointRegis
 
 	fi2, err := file.Entry()
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "unable to get file entry after copying")
 	}
 
 	r, err := writer.Result()
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "unable to get result")
 	}
 
 	de, err := newDirEntry(fi2, r)
@@ -185,7 +188,7 @@ func (u *Uploader) uploadSymlinkInternal(ctx context.Context, relativePath strin
 
 	r, err := writer.Result()
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "unable to get result")
 	}
 
 	de, err := newDirEntry(f, r)
@@ -208,7 +211,7 @@ func (u *Uploader) copyWithProgress(dst io.Writer, src io.Reader, completed, len
 
 	for {
 		if u.IsCanceled() {
-			return 0, errCanceled
+			return 0, errors.Wrap(errCanceled, "canceled when copying data")
 		}
 
 		readBytes, readErr := src.Read(uploadBuf)
@@ -228,6 +231,7 @@ func (u *Uploader) copyWithProgress(dst io.Writer, src io.Reader, completed, len
 			}
 
 			if writeErr != nil {
+				// nolint:wrapcheck
 				return written, writeErr
 			}
 
@@ -237,10 +241,11 @@ func (u *Uploader) copyWithProgress(dst io.Writer, src io.Reader, completed, len
 		}
 
 		if readErr != nil {
-			if readErr == io.EOF {
+			if errors.Is(readErr, io.EOF) {
 				break
 			}
 
+			// nolint:wrapcheck
 			return written, readErr
 		}
 	}
@@ -372,7 +377,7 @@ func (u *Uploader) periodicallyCheckpoint(ctx context.Context, cp *checkpointReg
 					return
 				}
 
-				// test hook
+				// test action
 				if u.checkpointFinished != nil {
 					u.checkpointFinished <- struct{}{}
 				}
@@ -395,7 +400,22 @@ func (u *Uploader) uploadDirWithCheckpointing(ctx context.Context, rootDir fs.Di
 	cancelCheckpointer := u.periodicallyCheckpoint(ctx, &cp, &snapshot.Manifest{Source: sourceInfo})
 	defer cancelCheckpointer()
 
-	return uploadDirInternal(ctx, u, rootDir, policyTree, previousDirs, ".", &dmb, &cp)
+	var hc actionContext
+
+	localDirPathOrEmpty := rootDir.LocalFilesystemPath()
+
+	overrideDir, err := u.executeBeforeFolderAction(ctx, "before-snapshot-root", policyTree.EffectivePolicy().Actions.BeforeSnapshotRoot, localDirPathOrEmpty, &hc)
+	if err != nil {
+		return nil, dirReadError{errors.Wrap(err, "error executing before-snapshot-root action")}
+	}
+
+	if overrideDir != nil {
+		rootDir = overrideDir
+	}
+
+	defer u.executeAfterFolderAction(ctx, "after-snapshot-root", policyTree.EffectivePolicy().Actions.AfterSnapshotRoot, localDirPathOrEmpty, &hc)
+
+	return uploadDirInternal(ctx, u, rootDir, policyTree, previousDirs, localDirPathOrEmpty, ".", &dmb, &cp)
 }
 
 func (u *Uploader) foreachEntryUnlessCanceled(ctx context.Context, parallel int, relativePath string, entries fs.Entries, cb func(ctx context.Context, entry fs.Entry, entryRelativePath string) error) error {
@@ -430,6 +450,7 @@ func (u *Uploader) foreachEntryUnlessCanceled(ctx context.Context, parallel int,
 		eg.Go(func() error {
 			for entry := range ch {
 				if u.IsCanceled() {
+					// nolint:wrapcheck
 					return errCanceled
 				}
 
@@ -448,7 +469,9 @@ func (u *Uploader) foreachEntryUnlessCanceled(ctx context.Context, parallel int,
 
 func rootCauseError(err error) error {
 	err = errors.Cause(err)
-	if oserr, ok := err.(*os.PathError); ok {
+
+	var oserr *os.PathError
+	if errors.As(err, &oserr) {
 		err = oserr.Err
 	}
 
@@ -563,8 +586,16 @@ func isDir(e *snapshot.DirEntry) bool {
 	return e.Type == snapshot.EntryTypeDirectory
 }
 
-func (u *Uploader) processChildren(ctx context.Context, parentDirCheckpointRegistry *checkpointRegistry, parentDirBuilder *dirManifestBuilder, relativePath string, entries fs.Entries, policyTree *policy.Tree, previousEntries []fs.Entries) error {
-	if err := u.processSubdirectories(ctx, parentDirCheckpointRegistry, parentDirBuilder, relativePath, entries, policyTree, previousEntries); err != nil {
+func (u *Uploader) processChildren(
+	ctx context.Context,
+	parentDirCheckpointRegistry *checkpointRegistry,
+	parentDirBuilder *dirManifestBuilder,
+	localDirPathOrEmpty, relativePath string,
+	entries fs.Entries,
+	policyTree *policy.Tree,
+	previousEntries []fs.Entries,
+) error {
+	if err := u.processSubdirectories(ctx, parentDirCheckpointRegistry, parentDirBuilder, localDirPathOrEmpty, relativePath, entries, policyTree, previousEntries); err != nil {
 		return err
 	}
 
@@ -575,7 +606,15 @@ func (u *Uploader) processChildren(ctx context.Context, parentDirCheckpointRegis
 	return nil
 }
 
-func (u *Uploader) processSubdirectories(ctx context.Context, parentDirCheckpointRegistry *checkpointRegistry, parentDirBuilder *dirManifestBuilder, relativePath string, entries fs.Entries, policyTree *policy.Tree, previousEntries []fs.Entries) error {
+func (u *Uploader) processSubdirectories(
+	ctx context.Context,
+	parentDirCheckpointRegistry *checkpointRegistry,
+	parentDirBuilder *dirManifestBuilder,
+	localDirPathOrEmpty, relativePath string,
+	entries fs.Entries,
+	policyTree *policy.Tree,
+	previousEntries []fs.Entries,
+) error {
 	// for now don't process subdirectories in parallel, we need a mechanism to
 	// prevent explosion of parallelism
 	const parallelism = 1
@@ -598,7 +637,12 @@ func (u *Uploader) processSubdirectories(ctx context.Context, parentDirCheckpoin
 
 		childDirBuilder := &dirManifestBuilder{}
 
-		de, err := uploadDirInternal(ctx, u, dir, policyTree.Child(entry.Name()), previousDirs, entryRelativePath, childDirBuilder, parentDirCheckpointRegistry)
+		childLocalDirPathOrEmpty := ""
+		if localDirPathOrEmpty != "" {
+			childLocalDirPathOrEmpty = filepath.Join(localDirPathOrEmpty, entry.Name())
+		}
+
+		de, err := uploadDirInternal(ctx, u, dir, policyTree.Child(entry.Name()), previousDirs, childLocalDirPathOrEmpty, entryRelativePath, childDirBuilder, parentDirCheckpointRegistry)
 		if errors.Is(err, errCanceled) {
 			return err
 		}
@@ -608,7 +652,9 @@ func (u *Uploader) processSubdirectories(ctx context.Context, parentDirCheckpoin
 			// root itself. The intention is to always fail if the top level directory can't be read,
 			// otherwise a meaningless, empty snapshot is created that can't be restored.
 			ignoreDirErr := u.shouldIgnoreDirectoryReadErrors(policyTree)
-			if dre, ok := err.(dirReadError); ok && ignoreDirErr {
+
+			var dre dirReadError
+			if errors.As(err, &dre) && ignoreDirErr {
 				rc := rootCauseError(dre.error)
 
 				u.Progress.IgnoredError(entryRelativePath, rc)
@@ -795,7 +841,7 @@ func uploadDirInternal(
 	directory fs.Directory,
 	policyTree *policy.Tree,
 	previousDirs []fs.Directory,
-	dirRelativePath string,
+	localDirPathOrEmpty, dirRelativePath string,
 	thisDirBuilder *dirManifestBuilder,
 	thisCheckpointRegistry *checkpointRegistry,
 ) (*snapshot.DirEntry, error) {
@@ -803,6 +849,26 @@ func uploadDirInternal(
 
 	u.Progress.StartedDirectory(dirRelativePath)
 	defer u.Progress.FinishedDirectory(dirRelativePath)
+
+	var definedActions policy.ActionsPolicy
+
+	if p := policyTree.DefinedPolicy(); p != nil {
+		definedActions = p.Actions
+	}
+
+	var hc actionContext
+	defer cleanupActionContext(ctx, &hc)
+
+	overrideDir, herr := u.executeBeforeFolderAction(ctx, "before-folder", definedActions.BeforeFolder, localDirPathOrEmpty, &hc)
+	if herr != nil {
+		return nil, dirReadError{errors.Wrap(herr, "error executing before-folder action")}
+	}
+
+	defer u.executeAfterFolderAction(ctx, "after-folder", definedActions.AfterFolder, localDirPathOrEmpty, &hc)
+
+	if overrideDir != nil {
+		directory = overrideDir
+	}
 
 	t0 := u.repo.Time()
 	entries, direrr := directory.Readdir(ctx)
@@ -842,7 +908,7 @@ func uploadDirInternal(
 	})
 	defer thisCheckpointRegistry.removeCheckpointCallback(directory)
 
-	if err := u.processChildren(ctx, childCheckpointRegistry, thisDirBuilder, dirRelativePath, entries, policyTree, prevEntries); err != nil && !errors.Is(err, errCanceled) {
+	if err := u.processChildren(ctx, childCheckpointRegistry, thisDirBuilder, localDirPathOrEmpty, dirRelativePath, entries, policyTree, prevEntries); err != nil && !errors.Is(err, errCanceled) {
 		return nil, err
 	}
 
@@ -907,6 +973,7 @@ func NewUploader(r repo.Repository) *Uploader {
 		Progress:           &NullUploadProgress{},
 		IgnoreReadErrors:   false,
 		ParallelUploads:    1,
+		EnableActions:      r.ClientOptions().EnableActions,
 		CheckpointInterval: DefaultCheckpointInterval,
 		getTicker:          time.Tick,
 		uploadBufPool: sync.Pool{

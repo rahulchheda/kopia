@@ -51,6 +51,10 @@ func (s *sourceSnapshots) Device() fs.DeviceInfo {
 	return fs.DeviceInfo{}
 }
 
+func (s *sourceSnapshots) LocalFilesystemPath() string {
+	return ""
+}
+
 func safeName(path string) string {
 	path = strings.TrimLeft(path, "/")
 	return strings.Replace(path, "/", "_", -1)
@@ -63,7 +67,7 @@ func (s *sourceSnapshots) Child(ctx context.Context, name string) (fs.Entry, err
 func (s *sourceSnapshots) Readdir(ctx context.Context) (fs.Entries, error) {
 	manifests, err := snapshot.ListSnapshots(ctx, s.rep, s.src)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "unable to list snapshots")
 	}
 
 	var result fs.Entries

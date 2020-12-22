@@ -24,6 +24,7 @@ var (
 	connectCheckForUpdates        bool
 	connectReadonly               bool
 	connectDescription            string
+	connectEnableActions          bool
 )
 
 func setupConnectOptions(cmd *kingpin.CmdClause) {
@@ -39,6 +40,7 @@ func setupConnectOptions(cmd *kingpin.CmdClause) {
 	cmd.Flag("check-for-updates", "Periodically check for Kopia updates on GitHub").Default("true").Envar(checkForUpdatesEnvar).BoolVar(&connectCheckForUpdates)
 	cmd.Flag("readonly", "Make repository read-only to avoid accidental changes").BoolVar(&connectReadonly)
 	cmd.Flag("description", "Human-readable description of the repository").StringVar(&connectDescription)
+	cmd.Flag("enable-actions", "Allow snapshot actions").BoolVar(&connectEnableActions)
 }
 
 func connectOptions() *repo.ConnectOptions {
@@ -51,10 +53,11 @@ func connectOptions() *repo.ConnectOptions {
 			MaxListCacheDurationSec:   int(connectMaxListCacheDuration.Seconds()),
 		},
 		ClientOptions: repo.ClientOptions{
-			Hostname:    connectHostname,
-			Username:    connectUsername,
-			ReadOnly:    connectReadonly,
-			Description: connectDescription,
+			Hostname:      connectHostname,
+			Username:      connectUsername,
+			ReadOnly:      connectReadonly,
+			Description:   connectDescription,
+			EnableActions: connectEnableActions,
 		},
 	}
 }
@@ -75,7 +78,7 @@ func runConnectCommandWithStorage(ctx context.Context, st blob.Storage) error {
 func runConnectCommandWithStorageAndPassword(ctx context.Context, st blob.Storage, password string) error {
 	configFile := repositoryConfigFileName()
 	if err := repo.Connect(ctx, configFile, st, password, connectOptions()); err != nil {
-		return err
+		return errors.Wrap(err, "error connecting to repository")
 	}
 
 	log(ctx).Infof("Connected to repository.")

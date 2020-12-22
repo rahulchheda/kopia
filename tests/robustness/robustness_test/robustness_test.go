@@ -154,8 +154,6 @@ func TestRandomizedSmall(t *testing.T) {
 
 	var errs errgroup.Group
 
-	log.Printf("Printing the length: %v", len(eng.Checker))
-
 	for i := 0; i < eng.RunnerCount; i++ {
 		func(index int) {
 			errs.Go(func() error {

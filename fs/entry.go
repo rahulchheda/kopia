@@ -2,11 +2,12 @@ package fs
 
 import (
 	"context"
-	"errors"
 	"io"
 	"os"
 	"sort"
 	"time"
+
+	"github.com/pkg/errors"
 )
 
 // Entry represents a filesystem entry, which can be Directory, File, or Symlink.
@@ -14,6 +15,7 @@ type Entry interface {
 	os.FileInfo
 	Owner() OwnerInfo
 	Device() DeviceInfo
+	LocalFilesystemPath() string // returns full local filesystem path or "" if not a local filesystem
 }
 
 // OwnerInfo describes owner of a filesystem entry.
@@ -65,11 +67,12 @@ var ErrEntryNotFound = errors.New("entry not found")
 func ReadDirAndFindChild(ctx context.Context, d Directory, name string) (Entry, error) {
 	children, err := d.Readdir(ctx)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "error reading directory")
 	}
 
 	e := children.FindByName(name)
 	if e == nil {
+		// nolint:wrapcheck
 		return nil, ErrEntryNotFound
 	}
 

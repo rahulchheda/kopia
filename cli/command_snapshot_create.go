@@ -32,6 +32,8 @@ var (
 	snapshotCreateParallelUploads         = snapshotCreateCommand.Flag("parallel", "Upload N files in parallel").PlaceHolder("N").Default("0").Int()
 	snapshotCreateStartTime               = snapshotCreateCommand.Flag("start-time", "Override snapshot start timestamp.").String()
 	snapshotCreateEndTime                 = snapshotCreateCommand.Flag("end-time", "Override snapshot end timestamp.").String()
+	snapshotCreateForceEnableActions      = snapshotCreateCommand.Flag("force-enable-actions", "Enable snapshot actions even if globally disabled on this client").Hidden().Bool()
+	snapshotCreateForceDisableActions     = snapshotCreateCommand.Flag("force-disable-actions", "Disable snapshot actions even if globally enabled on this client").Hidden().Bool()
 )
 
 func runSnapshotCommand(ctx context.Context, rep repo.Repository) error {
@@ -115,6 +117,14 @@ func setupUploader(rep repo.Repository) *snapshotfs.Uploader {
 	u := snapshotfs.NewUploader(rep)
 	u.MaxUploadBytes = *snapshotCreateCheckpointUploadLimitMB << 20 //nolint:gomnd
 
+	if *snapshotCreateForceEnableActions {
+		u.EnableActions = true
+	}
+
+	if *snapshotCreateForceDisableActions {
+		u.EnableActions = false
+	}
+
 	if interval := *snapshotCreateCheckpointInterval; interval != 0 {
 		u.CheckpointInterval = interval
 	}
@@ -166,7 +176,7 @@ func snapshotSingleSource(ctx context.Context, rep repo.Repository, u *snapshotf
 
 	manifest, err := u.Upload(ctx, localEntry, policyTree, sourceInfo, previous...)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "upload error")
 	}
 
 	manifest.Description = *snapshotCreateDescription
@@ -220,7 +230,7 @@ func snapshotSingleSource(ctx context.Context, rep repo.Repository, u *snapshotf
 
 	log(ctx).Infof("Created%v snapshot with root %v and ID %v in %v", maybePartial, manifest.RootObjectID(), snapID, clock.Since(t0).Truncate(time.Second))
 
-	return err
+	return errors.Wrap(err, "error snapshotting")
 }
 
 // findPreviousSnapshotManifest returns the list of previous snapshots for a given source, including

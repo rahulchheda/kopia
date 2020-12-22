@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	repoPassword = "qWQPJ2hiiLgWRRCr" // nolint:gosec
+	repoPassword = "qWQPJ2hiiLgWRRCr"
 )
 
 // Runner is a helper for running kopia commands.
@@ -64,7 +64,6 @@ func (kr *Runner) Run(args ...string) (stdout, stderr string, err error) {
 	argsStr := strings.Join(args, " ")
 	log.Printf("running '%s %v'", kr.Exe, argsStr)
 	cmdArgs := append(append([]string(nil), kr.fixedArgs...), args...)
-	// nolint:gosec
 	c := exec.Command(kr.Exe, cmdArgs...)
 	c.Env = append(os.Environ(), kr.environment...)
 
@@ -79,15 +78,14 @@ func (kr *Runner) Run(args ...string) (stdout, stderr string, err error) {
 
 // RunAsync will execute the kopia command with the given args in background.
 func (kr *Runner) RunAsync(args ...string) (*exec.Cmd, error) {
-	argsStr := strings.Join(args, " ")
-	log.Printf("running async '%s %v'", kr.Exe, argsStr)
+	log.Printf("running async '%s %v'", kr.Exe, strings.Join(args, " "))
 	cmdArgs := append(append([]string(nil), kr.fixedArgs...), args...)
 	//nolint:gosec //G204
 	c := exec.Command(kr.Exe, cmdArgs...)
 	c.Env = append(os.Environ(), kr.environment...)
+	c.Stderr = &bytes.Buffer{}
 
-	errOut := &bytes.Buffer{}
-	c.Stderr = errOut
+	setpdeath(c)
 
 	err := c.Start()
 	if err != nil {
