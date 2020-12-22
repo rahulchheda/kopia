@@ -2,6 +2,7 @@ package snapmeta
 
 import (
 	"bytes"
+	"sort"
 	"testing"
 )
 
@@ -166,6 +167,10 @@ func TestSimpleWithIndex(t *testing.T) {
 					expValue: []byte{},
 				},
 			},
+
+			expectedIdxKeys: map[string][]string{
+				"some-index-key": {},
+			},
 		},
 	} {
 		t.Log(tc.name)
@@ -185,7 +190,7 @@ func TestSimpleWithIndex(t *testing.T) {
 		for wantK, expResult := range tc.expectedKVs {
 			gotV, err := simple.Load(wantK)
 			if expResult.expErr != (err != nil) {
-				t.Fatalf("expected %v error but got %v", nil, expResult.expErr)
+				t.Fatalf("expected %v error but got %v", expResult.expErr, err)
 			}
 
 			if bytes.Compare(expResult.expValue, gotV) != 0 { // nolint:gosimple
@@ -207,6 +212,9 @@ func compareSlices(slice1, slice2 []string) bool {
 	if len(slice1) != len(slice2) {
 		return false
 	}
+
+	sort.Strings(slice1)
+	sort.Strings(slice2)
 
 	for i, v := range slice1 {
 		if v != slice2[i] {
