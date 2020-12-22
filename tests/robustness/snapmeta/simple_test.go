@@ -31,7 +31,7 @@ func TestSimpleWithIndex(t *testing.T) {
 		expectedIdxKeys map[string][]string  // List of expected keys in the given index
 	}{
 		{
-			name: "Test key value change",
+			name: "Test Store Operation",
 			storeOperations: []storeOp{
 				{
 					op:    storeOpType,
@@ -53,9 +53,32 @@ func TestSimpleWithIndex(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "Test Delete Operation",
+			storeOperations: []storeOp{
+				{
+					op:    storeOpType,
+					key:   "some-key",
+					value: []byte("some-value"),
+					idxOp: nil,
+				},
+				{
+					op:    deleteOpType,
+					key:   "some-key",
+					value: []byte("some-different-value"),
+					idxOp: nil,
+				},
+			},
+			expectedKVs: map[string]expResult{
+				"some-key": {
+					expErr:   true,
+					expValue: []byte{},
+				},
+			},
+		},
 
 		{
-			name: "Test key value change + AddtoIndex",
+			name: "Test Store Operation + AddtoIndex",
 			storeOperations: []storeOp{
 				{
 					op:    storeOpType,
@@ -84,7 +107,7 @@ func TestSimpleWithIndex(t *testing.T) {
 		},
 
 		{
-			name: "Test key value change + DeleteFromIndex",
+			name: "Test Store Operation + DeleteFromIndex",
 			storeOperations: []storeOp{
 				{
 					op:    storeOpType,
@@ -113,6 +136,34 @@ func TestSimpleWithIndex(t *testing.T) {
 			expectedIdxKeys: map[string][]string{
 				"some-index-key":      {},
 				"some-more-index-key": {"some-key"},
+			},
+		},
+
+		{
+			name: "Test Delete Operation + DeleteFromIndex",
+			storeOperations: []storeOp{
+				{
+					op:    storeOpType,
+					key:   "some-key",
+					value: []byte("some-value"),
+					idxOp: map[string]IndexOperation{
+						"some-index-key": AddToIndexOperation,
+					},
+				},
+				{
+					op:    deleteOpType,
+					key:   "some-key",
+					value: []byte("some-different-value"),
+					idxOp: map[string]IndexOperation{
+						"some-index-key": RemoveFromIndexOperation,
+					},
+				},
+			},
+			expectedKVs: map[string]expResult{
+				"some-key": {
+					expErr:   true,
+					expValue: []byte{},
+				},
 			},
 		},
 	} {
