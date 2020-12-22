@@ -7,6 +7,7 @@ import (
 
 func TestSimpleWithIndex(t *testing.T) {
 	type opType int
+
 	const (
 		storeOpType opType = iota
 		deleteOpType
@@ -186,7 +187,8 @@ func TestSimpleWithIndex(t *testing.T) {
 			if expResult.expErr != (err != nil) {
 				t.Fatalf("expected %v error but got %v", nil, expResult.expErr)
 			}
-			if bytes.Compare(expResult.expValue, gotV) != 0 {
+
+			if bytes.Compare(expResult.expValue, gotV) != 0 { // nolint:gosimple
 				t.Fatalf("expected %v key but got %v", wantK, gotV)
 			}
 		}
@@ -201,8 +203,7 @@ func TestSimpleWithIndex(t *testing.T) {
 	}
 }
 
-func compareSlices(slice1 []string, slice2 []string) bool {
-
+func compareSlices(slice1, slice2 []string) bool {
 	if len(slice1) != len(slice2) {
 		return false
 	}

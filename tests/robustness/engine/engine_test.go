@@ -495,7 +495,7 @@ func TestActionsFilesystem(t *testing.T) {
 	numActions := 10
 	for loop := 0; loop < numActions; loop++ {
 		err := eng.RandomAction(actionOpts, 0)
-		if !(err == nil || err == ErrNoOp) {
+		if !(err == nil || errors.Is(err, ErrNoOp)) {
 			t.Error("Hit error", err)
 		}
 	}
@@ -538,7 +538,7 @@ func TestActionsS3(t *testing.T) {
 	numActions := 10
 	for loop := 0; loop < numActions; loop++ {
 		err := eng.RandomAction(actionOpts, 0)
-		if !(err == nil || err == ErrNoOp) {
+		if !(err == nil || errors.Is(err, ErrNoOp)) {
 			t.Error("Hit error", err)
 		}
 	}

@@ -3,6 +3,7 @@
 package robustness
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"strconv"
@@ -160,7 +161,7 @@ func TestRandomizedSmall(t *testing.T) {
 				log.Printf("Printing the Engine: %v", index)
 				for time.Since(st) <= *randomizedTestDur {
 					err := eng.RandomAction(opts, index)
-					if err == engine.ErrNoOp {
+					if errors.Is(err, engine.ErrNoOp) {
 						t.Log("Random action resulted in no-op")
 						err = nil
 					}
