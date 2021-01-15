@@ -22,7 +22,7 @@ func (e *Engine) SaveLog() error {
 		return err
 	}
 
-	return e.MetaStore.Store(engineLogsStoreKey, b)
+	return e.MetaStore.Store(engineLogsStoreKey, b, nil)
 }
 
 // LoadLog loads the engine log from the metadata store.
@@ -54,7 +54,7 @@ func (e *Engine) SaveStats() error {
 		return err
 	}
 
-	return e.MetaStore.Store(engineStatsStoreKey, cumulStatRaw)
+	return e.MetaStore.Store(engineStatsStoreKey, cumulStatRaw, nil)
 }
 
 // LoadStats loads the engine Stats from the metadata store.

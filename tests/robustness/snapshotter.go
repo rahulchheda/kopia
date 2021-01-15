@@ -24,6 +24,7 @@ type Snapshotter interface {
 type RepoManager interface {
 	ConnectOrCreateS3(bucketName, pathPrefix string) error
 	ConnectOrCreateFilesystem(path string) error
-	ConnectOrCreateS3WithServer(serverAddr, bucketName, pathPrefix string) (*exec.Cmd, error)
-	ConnectOrCreateFilesystemWithServer(serverAddr, repoPath string) (*exec.Cmd, error)
+	ConnectOrCreateS3WithServer(serverAddr, bucketName, pathPrefix string) (*exec.Cmd, string, error)
+	ConnectOrCreateFilesystemWithServer(serverAddr, repoPath string) (*exec.Cmd, string, error)
+	ConnectServer(addr string, args ...string) error
 }

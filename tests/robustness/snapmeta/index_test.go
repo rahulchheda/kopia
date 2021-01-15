@@ -5,7 +5,7 @@ import (
 )
 
 func TestIndex(t *testing.T) {
-	idx := Index{}
+	idx := Index(make(map[string]map[string]struct{}))
 
 	const (
 		snapshotIndexName = "snapshotIndex"

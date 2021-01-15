@@ -1,19 +1,24 @@
 package robustness
 
+// IndexOperation defines several operations implemented on indices associated with the Store.
+type IndexOperation string
+
+const (
+	// AddToIndexOperation adds value to an index.
+	AddToIndexOperation IndexOperation = "addToIndex"
+	// RemoveFromIndexOperation removes value from an index.
+	RemoveFromIndexOperation IndexOperation = "removeFromIndex"
+)
+
 // Store describes the ability to store and retrieve
 // a buffer of metadata, indexed by a string key.
+// Updates to multiple search indices can be performed with
+// Store and Delete operations if desired.
 type Store interface {
-	Store(key string, val []byte) error
+	Store(key string, val []byte, indexUpdates map[string]IndexOperation) error
 	Load(key string) ([]byte, error)
-	Delete(key string)
-	Indexer
-}
-
-// Indexer describes methods surrounding categorization of keys via a named index.
-type Indexer interface {
-	AddToIndex(key, indexName string)
-	RemoveFromIndex(key, indexName string)
-	GetKeys(indexName string) (ret []string)
+	Delete(key string, indexUpdates map[string]IndexOperation)
+	GetKeys(indexName string) []string
 }
 
 // Persister describes the ability to flush metadata

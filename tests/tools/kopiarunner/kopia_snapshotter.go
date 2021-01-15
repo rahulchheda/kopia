@@ -57,6 +57,26 @@ func NewKopiaSnapshotter(baseDir string) (*KopiaSnapshotter, error) {
 	}, nil
 }
 
+// NewMultipleKopiaSnapshotter initializes multiple Kopia Snapshotter.
+func NewMultipleKopiaSnapshotter(baseDir string, count int) ([]*KopiaSnapshotter, error) {
+	var multipleKopiaSnapshotter []*KopiaSnapshotter
+
+	for i := 0; i < count; i++ {
+		var kopiaSnapshotter KopiaSnapshotter
+
+		runner, err := NewRunner(baseDir)
+		if err != nil {
+			return nil, err
+		}
+
+		kopiaSnapshotter.Runner = runner
+
+		multipleKopiaSnapshotter = append(multipleKopiaSnapshotter, &kopiaSnapshotter)
+	}
+
+	return multipleKopiaSnapshotter, nil
+}
+
 // Cleanup cleans up the kopia Runner.
 func (ks *KopiaSnapshotter) Cleanup() {
 	if ks.Runner != nil {
@@ -109,14 +129,14 @@ func (ks *KopiaSnapshotter) ConnectOrCreateS3(bucketName, pathPrefix string) err
 }
 
 // ConnectOrCreateS3WithServer attempts to connect or create S3 bucket, but with TLS client/server Model.
-func (ks *KopiaSnapshotter) ConnectOrCreateS3WithServer(serverAddr, bucketName, pathPrefix string) (*exec.Cmd, error) {
+func (ks *KopiaSnapshotter) ConnectOrCreateS3WithServer(serverAddr, bucketName, pathPrefix string) (*exec.Cmd, string, error) {
 	repoArgs := []string{"s3", "--bucket", bucketName, "--prefix", pathPrefix}
 	return ks.createAndConnectServer(serverAddr, repoArgs...)
 }
 
 // ConnectOrCreateFilesystemWithServer attempts to connect or create repo in local filesystem,
 // but with TLS server/client Model.
-func (ks *KopiaSnapshotter) ConnectOrCreateFilesystemWithServer(serverAddr, repoPath string) (*exec.Cmd, error) {
+func (ks *KopiaSnapshotter) ConnectOrCreateFilesystemWithServer(serverAddr, repoPath string) (*exec.Cmd, string, error) {
 	repoArgs := []string{"filesystem", "--path", repoPath}
 	return ks.createAndConnectServer(serverAddr, repoArgs...)
 }
@@ -286,9 +306,9 @@ func (ks *KopiaSnapshotter) waitUntilServerStarted(ctx context.Context, addr str
 }
 
 // createAndConnectServer creates Repository and a TLS server/client model for interaction.
-func (ks *KopiaSnapshotter) createAndConnectServer(serverAddr string, args ...string) (*exec.Cmd, error) {
+func (ks *KopiaSnapshotter) createAndConnectServer(serverAddr string, args ...string) (*exec.Cmd, string, error) {
 	if err := ks.ConnectOrCreateRepo(args...); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	var tempDir string
@@ -296,7 +316,7 @@ func (ks *KopiaSnapshotter) createAndConnectServer(serverAddr string, args ...st
 	var tempDirErr error
 
 	if tempDir, tempDirErr = ioutil.TempDir("", "kopia"); tempDirErr != nil {
-		return nil, tempDirErr
+		return nil, "", tempDirErr
 	}
 
 	defer os.RemoveAll(tempDir)
@@ -311,11 +331,11 @@ func (ks *KopiaSnapshotter) createAndConnectServer(serverAddr string, args ...st
 	var cmdErr error
 
 	if cmd, cmdErr = ks.CreateServer(serverAddr, serverArgs...); cmdErr != nil {
-		return nil, cmdErr
+		return nil, "", cmdErr
 	}
 
 	if err := certKeyExist(context.TODO(), tlsCertFile, tlsKeyFile); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	var fingerprint string
@@ -323,21 +343,21 @@ func (ks *KopiaSnapshotter) createAndConnectServer(serverAddr string, args ...st
 	var fingerprintError error
 
 	if fingerprint, fingerprintError = getFingerPrintFromCert(tlsCertFile); fingerprintError != nil {
-		return nil, fingerprintError
+		return nil, "", fingerprintError
 	}
 
 	serverAddr = fmt.Sprintf("https://%v", serverAddr)
 
 	if err := ks.waitUntilServerStarted(context.TODO(), serverAddr, "--server-cert-fingerprint", fingerprint); err != nil {
-		return cmd, err
+		return cmd, "", err
 	}
 
 	clientArgs := []string{"--server-cert-fingerprint", fingerprint}
 	if err := ks.ConnectServer(serverAddr, clientArgs...); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
-	return cmd, nil
+	return cmd, fingerprint, nil
 }
 
 func getFingerPrintFromCert(path string) (string, error) {
