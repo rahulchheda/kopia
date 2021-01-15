@@ -36,6 +36,8 @@ const (
 	EngineModeServer = "SERVER"
 	// defaultAddr is used for setting the address of Kopia Server.
 	defaultAddr = "localhost:51515"
+	// DefaultRunnerCount is used for setting the number of concurrent clients to be spawned.
+	DefaultRunnerCount = 3
 )
 
 var (
@@ -51,10 +53,10 @@ var (
 
 // Engine is the outer level testing framework for robustness testing.
 type Engine struct {
-	FileWriter      *fio.Runner
-	TestRepo        snap.Snapshotter
+	FileWriter      []*fio.Runner
+	TestRepo        []snap.Snapshotter
 	MetaStore       snapmeta.Persister
-	Checker         *checker.Checker
+	Checker         []*checker.Checker
 	cleanupRoutines []func()
 	baseDirPath     string
 	serverCmd       *exec.Cmd
@@ -62,6 +64,7 @@ type Engine struct {
 	RunStats        Stats
 	CumulativeStats Stats
 	EngineLog       Log
+	RunnerCount     int
 }
 
 // NewEngine instantiates a new Engine and returns its pointer. It is
@@ -83,26 +86,23 @@ func NewEngine(workingDir string) (*Engine, error) {
 			CreationTime:   time.Now(),
 			PerActionStats: make(map[ActionKey]*ActionStats),
 		},
+		RunnerCount: DefaultRunnerCount,
 	}
 
-	// Fill the file writer
-	e.FileWriter, err = fio.NewRunner()
-	if err != nil {
-		e.CleanComponents()
-		return nil, err
+	if os.Getenv(EngineModeEnvKey) == EngineModeBasic || os.Getenv(EngineModeEnvKey) == "" {
+		e.RunnerCount = 1
 	}
 
-	e.cleanupRoutines = append(e.cleanupRoutines, e.FileWriter.Cleanup)
+	multipleFileWriter := make([]*fio.Runner, e.RunnerCount)
+	multipleSnapshotter := make([]snap.Snapshotter, e.RunnerCount)
+	multipleChecker := make([]*checker.Checker, e.RunnerCount)
 
 	// Fill Snapshotter interface
-	kopiaSnapper, err := kopiarunner.NewKopiaSnapshotter(baseDirPath)
+	kopiaSnapper, err := kopiarunner.NewMultipleKopiaSnapshotter(baseDirPath, e.RunnerCount)
 	if err != nil {
 		e.CleanComponents()
 		return nil, err
 	}
-
-	e.cleanupRoutines = append(e.cleanupRoutines, kopiaSnapper.Cleanup)
-	e.TestRepo = kopiaSnapper
 
 	// Fill the snapshot store interface
 	snapStore, err := snapmeta.New(baseDirPath)
@@ -113,32 +113,47 @@ func NewEngine(workingDir string) (*Engine, error) {
 
 	e.cleanupRoutines = append(e.cleanupRoutines, snapStore.Cleanup)
 
-	e.MetaStore = snapStore
+	for i := 0; i < e.RunnerCount; i++ {
+		singleChecker, singleCheckerErr := checker.NewChecker(kopiaSnapper[i], snapStore, fswalker.NewWalkCompare(), baseDirPath)
+		if singleCheckerErr != nil {
+			e.CleanComponents()
+			return nil, singleCheckerErr
+		}
 
-	err = e.setupLogging()
-	if err != nil {
-		e.CleanComponents()
-		return nil, err
-	}
+		e.cleanupRoutines = append(e.cleanupRoutines, singleChecker.Cleanup)
 
-	// Create the data integrity checker
-	chk, err := checker.NewChecker(kopiaSnapper, snapStore, fswalker.NewWalkCompare(), baseDirPath)
-	e.cleanupRoutines = append(e.cleanupRoutines, chk.Cleanup)
+		fileWriter, fileWriterErr := fio.NewRunner()
+		if fileWriterErr != nil {
+			e.CleanComponents()
+			return nil, fileWriterErr
+		}
 
-	if err != nil {
-		e.CleanComponents()
-		return nil, err
+		e.cleanupRoutines = append(e.cleanupRoutines, fileWriter.Cleanup, kopiaSnapper[i].Cleanup)
+
+		e.MetaStore = snapStore
+
+		err := e.setupLogging()
+		if err != nil {
+			e.CleanComponents()
+			return nil, err
+		}
+
+		multipleSnapshotter[i] = kopiaSnapper[i]
+		multipleFileWriter[i] = fileWriter
+		multipleChecker[i] = singleChecker
 	}
 
 	e.cleanupRoutines = append(e.cleanupRoutines, e.cleanUpServer)
 
-	e.Checker = chk
+	e.FileWriter = multipleFileWriter
+	e.TestRepo = multipleSnapshotter
+	e.Checker = multipleChecker
 
 	return e, nil
 }
 
 // Cleanup cleans up after each component of the test engine.
-func (e *Engine) Cleanup() error {
+func (e *Engine) Cleanup(index int) error {
 	// Perform a snapshot action to capture the state of the data directory
 	// at the end of the run
 	lastWriteEntry := e.EngineLog.FindLastThisRun(WriteRandomFilesActionKey)
@@ -147,7 +162,7 @@ func (e *Engine) Cleanup() error {
 	if lastWriteEntry != nil {
 		if lastSnapEntry == nil || lastSnapEntry.Idx < lastWriteEntry.Idx {
 			// Only force a final snapshot if the data tree has been modified since the last snapshot
-			e.ExecAction(SnapshotRootDirActionKey, make(map[string]string)) //nolint:errcheck
+			e.ExecAction(SnapshotRootDirActionKey, make(map[string]string), index) //nolint:errcheck
 		}
 	}
 
@@ -248,7 +263,7 @@ func (e *Engine) InitS3(ctx context.Context, bucketName, testRepoPath, metaRepoP
 		return err
 	}
 
-	err = e.TestRepo.ConnectOrCreateS3(bucketName, testRepoPath)
+	err = e.TestRepo[0].ConnectOrCreateS3(bucketName, testRepoPath)
 	if err != nil {
 		return err
 	}
@@ -266,7 +281,7 @@ func (e *Engine) InitFilesystem(ctx context.Context, testRepoPath, metaRepoPath 
 		return err
 	}
 
-	err = e.TestRepo.ConnectOrCreateFilesystem(testRepoPath)
+	err = e.TestRepo[0].ConnectOrCreateFilesystem(testRepoPath)
 	if err != nil {
 		return err
 	}
@@ -292,12 +307,26 @@ func (e *Engine) init(ctx context.Context) error {
 		return err
 	}
 
-	_, _, err = e.TestRepo.Run("policy", "set", "--global", "--keep-latest", strconv.Itoa(1<<31-1), "--compression", "s2-default")
-	if err != nil {
-		return err
+	for i := 0; i < e.RunnerCount; i++ {
+		_, _, err = e.TestRepo[i].Run("policy", "set", "--global", "--keep-latest", strconv.Itoa(1<<31-1), "--compression", "s2-default")
+		if err != nil {
+			return err
+		}
 	}
 
-	return e.Checker.VerifySnapshotMetadata()
+	for i := 0; i < e.RunnerCount; i++ {
+		if err := e.Checker[i].VerifySnapshotMetadata(); err != nil {
+			return err
+		}
+	}
+
+	for i := 0; i < e.RunnerCount; i++ {
+		if err := e.Checker[i].VerifySnapshotMetadata(); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // InitS3WithServer initializes the Engine with InitS3 for use with the server/client model.
@@ -306,12 +335,19 @@ func (e *Engine) InitS3WithServer(ctx context.Context, bucketName, testRepoPath,
 		return err
 	}
 
-	cmd, err := e.TestRepo.ConnectOrCreateS3WithServer(addr, bucketName, testRepoPath)
+	cmd, fingerprint, err := e.TestRepo[0].ConnectOrCreateS3WithServer(addr, bucketName, testRepoPath)
 	if err != nil {
 		return err
 	}
 
 	e.serverCmd = cmd
+
+	for i := 0; i < e.RunnerCount; i++ {
+		clientArgs := []string{"--server-cert-fingerprint", fingerprint, fmt.Sprintf("--override-username=engine-%v", i), fmt.Sprintf("--override-hostname=engine-%v", i)}
+		if err := e.TestRepo[i].ConnectServer(fmt.Sprintf("https://%v", defaultAddr), clientArgs...); err != nil {
+			return err
+		}
+	}
 
 	return e.init(ctx)
 }
@@ -322,12 +358,19 @@ func (e *Engine) InitFilesystemWithServer(ctx context.Context, testRepoPath, met
 		return err
 	}
 
-	cmd, err := e.TestRepo.ConnectOrCreateFilesystemWithServer(addr, testRepoPath)
+	cmd, fingerprint, err := e.TestRepo[0].ConnectOrCreateFilesystemWithServer(addr, testRepoPath)
 	if err != nil {
 		return err
 	}
 
 	e.serverCmd = cmd
+
+	for i := 1; i < e.RunnerCount; i++ {
+		clientArgs := []string{"--server-cert-fingerprint", fingerprint, fmt.Sprintf("--override-username=engine-%v", i), fmt.Sprintf("--override-hostname=engine-%v", i)}
+		if err := e.TestRepo[i].ConnectServer(fmt.Sprintf("https://%v", defaultAddr), clientArgs...); err != nil {
+			return err
+		}
+	}
 
 	return e.init(ctx)
 }

@@ -73,14 +73,18 @@ const metadataStoreFileName = "metadata-store-latest"
 
 // ConnectOrCreateS3WithServer implements the RepoManager interface, creates a server
 // connects it a repo in an S3 bucket and creates a client to perform operations.
-func (store *kopiaMetadata) ConnectOrCreateS3WithServer(serverAddr, bucketName, pathPrefix string) (*exec.Cmd, error) {
+func (store *kopiaMetadata) ConnectOrCreateS3WithServer(serverAddr, bucketName, pathPrefix string) (*exec.Cmd, string, error) {
 	return store.snap.ConnectOrCreateS3WithServer(serverAddr, bucketName, pathPrefix)
 }
 
 // ConnectOrCreateFilesystemWithServer implements the RepoManager interface, creates a server
 // connects it a repo in the filesystem and creates a client to perform operations.
-func (store *kopiaMetadata) ConnectOrCreateFilesystemWithServer(repoPath, serverAddr string) (*exec.Cmd, error) {
+func (store *kopiaMetadata) ConnectOrCreateFilesystemWithServer(repoPath, serverAddr string) (*exec.Cmd, string, error) {
 	return store.snap.ConnectOrCreateFilesystemWithServer(repoPath, serverAddr)
+}
+
+func (store *kopiaMetadata) ConnectServer(addr string, args ...string) error {
+	return store.snap.ConnectServer(addr, args...)
 }
 
 // LoadMetadata implements the DataPersister interface, restores the latest
@@ -93,7 +97,7 @@ func (store *kopiaMetadata) LoadMetadata() error {
 	}
 
 	if len(snapIDs) == 0 {
-		return nil // No snapshot IDs fouund in repository
+		return nil // No snapshot IDs found in repository
 	}
 
 	lastSnapID := snapIDs[len(snapIDs)-1]

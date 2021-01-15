@@ -1,8 +1,9 @@
 package snapmeta
 
 import (
-	"errors"
 	"sync"
+
+	"github.com/pkg/errors"
 )
 
 // ErrKeyNotFound is returned when the store can't find the key provided.
@@ -28,8 +29,18 @@ func NewSimple() *Simple {
 	}
 }
 
+// IndexOperation defines several operations implemented on Index.
+type IndexOperation string
+
+const (
+	// AddToIndexOperation add value in Index.
+	AddToIndexOperation IndexOperation = "addToIndex"
+	// RemoveFromIndexOperation removes value from Index.
+	RemoveFromIndexOperation IndexOperation = "removeFromIndex"
+)
+
 // Store implements the Storer interface Store method.
-func (s *Simple) Store(key string, val []byte) error {
+func (s *Simple) Store(key string, val []byte, indexUpdates map[string]IndexOperation) error {
 	buf := make([]byte, len(val))
 	_ = copy(buf, val)
 
@@ -38,7 +49,20 @@ func (s *Simple) Store(key string, val []byte) error {
 
 	s.Data[key] = buf
 
+	s.processIndexUpdates(key, indexUpdates)
+
 	return nil
+}
+
+func (s *Simple) processIndexUpdates(key string, indexUpdates map[string]IndexOperation) {
+	for indexName, indexOp := range indexUpdates {
+		switch indexOp {
+		case AddToIndexOperation:
+			s.Idx.AddToIndex(key, indexName)
+		case RemoveFromIndexOperation:
+			s.Idx.RemoveFromIndex(key, indexName)
+		}
+	}
 }
 
 // Load implements the Storer interface Load method.
@@ -57,27 +81,13 @@ func (s *Simple) Load(key string) ([]byte, error) {
 }
 
 // Delete implements the Storer interface Delete method.
-func (s *Simple) Delete(key string) {
+func (s *Simple) Delete(key string, indexUpdates map[string]IndexOperation) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	delete(s.Data, key)
-}
 
-// AddToIndex implements the Storer interface AddToIndex method.
-func (s *Simple) AddToIndex(key, indexName string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.Idx.AddToIndex(key, indexName)
-}
-
-// RemoveFromIndex implements the Indexer interface RemoveFromIndex method.
-func (s *Simple) RemoveFromIndex(key, indexName string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.Idx.RemoveFromIndex(key, indexName)
+	s.processIndexUpdates(key, indexUpdates)
 }
 
 // GetKeys implements the Indexer interface GetKeys method.

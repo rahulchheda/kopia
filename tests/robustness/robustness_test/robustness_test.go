@@ -5,9 +5,12 @@ package robustness
 import (
 	"errors"
 	"fmt"
+	"log"
 	"strconv"
 	"testing"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/kopia/kopia/tests/robustness/engine"
 	"github.com/kopia/kopia/tests/testenv"
@@ -25,13 +28,30 @@ func TestManySmallFiles(t *testing.T) {
 		engine.MinNumFilesPerWriteField: strconv.Itoa(numFiles),
 	}
 
-	_, err := eng.ExecAction(engine.WriteRandomFilesActionKey, fileWriteOpts)
-	testenv.AssertNoError(t, err)
+	var errs errgroup.Group
 
-	snapOut, err := eng.ExecAction(engine.SnapshotRootDirActionKey, nil)
-	testenv.AssertNoError(t, err)
+	log.Printf("Printing the length: %v", len(eng.Checker))
 
-	_, err = eng.ExecAction(engine.RestoreSnapshotActionKey, snapOut)
+	for i := range eng.Checker {
+		func(index int) {
+			errs.Go(func() error {
+				log.Printf("Printing the Engine: %v", index)
+				_, err := eng.ExecAction(engine.WriteRandomFilesActionKey, fileWriteOpts, index)
+				if err != nil {
+					return err
+				}
+
+				snapOut, err := eng.ExecAction(engine.SnapshotRootDirActionKey, nil, index)
+				if err != nil {
+					return err
+				}
+				_, err = eng.ExecAction(engine.RestoreSnapshotActionKey, snapOut, index)
+				return err
+			})
+		}(i)
+	}
+
+	err := errs.Wait()
 	testenv.AssertNoError(t, err)
 }
 
@@ -47,13 +67,30 @@ func TestOneLargeFile(t *testing.T) {
 		engine.MinNumFilesPerWriteField: strconv.Itoa(numFiles),
 	}
 
-	_, err := eng.ExecAction(engine.WriteRandomFilesActionKey, fileWriteOpts)
-	testenv.AssertNoError(t, err)
+	var errs errgroup.Group
 
-	snapOut, err := eng.ExecAction(engine.SnapshotRootDirActionKey, nil)
-	testenv.AssertNoError(t, err)
+	log.Printf("Printing the length: %v", len(eng.Checker))
 
-	_, err = eng.ExecAction(engine.RestoreSnapshotActionKey, snapOut)
+	for i := 0; i < eng.RunnerCount; i++ {
+		func(index int) {
+			errs.Go(func() error {
+				log.Printf("Printing the Engine: %v", index)
+				_, err := eng.ExecAction(engine.WriteRandomFilesActionKey, fileWriteOpts, index)
+				if err != nil {
+					return err
+				}
+
+				snapOut, err := eng.ExecAction(engine.SnapshotRootDirActionKey, nil, index)
+				if err != nil {
+					return err
+				}
+				_, err = eng.ExecAction(engine.RestoreSnapshotActionKey, snapOut, index)
+				return err
+			})
+		}(i)
+	}
+
+	err := errs.Wait()
 	testenv.AssertNoError(t, err)
 }
 
@@ -73,14 +110,28 @@ func TestManySmallFilesAcrossDirecoryTree(t *testing.T) {
 		engine.ActionRepeaterField:      strconv.Itoa(actionRepeats),
 	}
 
-	_, err := eng.ExecAction(engine.WriteRandomFilesActionKey, fileWriteOpts)
-	testenv.AssertNoError(t, err)
+	var errs errgroup.Group
 
-	snapOut, err := eng.ExecAction(engine.SnapshotRootDirActionKey, nil)
-	testenv.AssertNoError(t, err)
+	log.Printf("Printing the length: %v", len(eng.Checker))
 
-	_, err = eng.ExecAction(engine.RestoreSnapshotActionKey, snapOut)
-	testenv.AssertNoError(t, err)
+	for i := 0; i < eng.RunnerCount; i++ {
+		func(index int) {
+			errs.Go(func() error {
+				log.Printf("Printing the Engine: %v", index)
+				_, err := eng.ExecAction(engine.WriteRandomFilesActionKey, fileWriteOpts, index)
+				if err != nil {
+					return err
+				}
+
+				snapOut, err := eng.ExecAction(engine.SnapshotRootDirActionKey, nil, index)
+				if err != nil {
+					return err
+				}
+				_, err = eng.ExecAction(engine.RestoreSnapshotActionKey, snapOut, index)
+				return err
+			})
+		}(i)
+	}
 }
 
 func TestRandomizedSmall(t *testing.T) {
@@ -102,14 +153,23 @@ func TestRandomizedSmall(t *testing.T) {
 		},
 	}
 
-	for time.Since(st) <= *randomizedTestDur {
-		err := eng.RandomAction(opts)
-		if errors.Is(err, engine.ErrNoOp) {
-			t.Log("Random action resulted in no-op")
+	var errs errgroup.Group
 
-			err = nil
-		}
+	for i := 0; i < eng.RunnerCount; i++ {
+		func(index int) {
+			errs.Go(func() error {
+				log.Printf("Printing the Engine: %v", index)
+				for time.Since(st) <= *randomizedTestDur {
+					err := eng.RandomAction(opts, index)
+					if errors.Is(err, engine.ErrNoOp) {
+						t.Log("Random action resulted in no-op")
+						err = nil
+					}
 
-		testenv.AssertNoError(t, err)
+					testenv.AssertNoError(t, err)
+				}
+				return nil
+			})
+		}(i)
 	}
 }

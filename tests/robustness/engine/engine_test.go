@@ -51,7 +51,7 @@ func TestEngineWritefilesBasicFS(t *testing.T) {
 	testenv.AssertNoError(t, err)
 
 	defer func() {
-		cleanupErr := eng.Cleanup()
+		cleanupErr := eng.Cleanup(0)
 		testenv.AssertNoError(t, cleanupErr)
 
 		os.RemoveAll(fsRepoBaseDirPath)
@@ -66,19 +66,19 @@ func TestEngineWritefilesBasicFS(t *testing.T) {
 
 	fioOpts := fio.Options{}.WithFileSize(fileSize).WithNumFiles(numFiles)
 
-	err = eng.FileWriter.WriteFiles("", fioOpts)
+	err = eng.FileWriter[0].WriteFiles("", fioOpts)
 	testenv.AssertNoError(t, err)
 
-	snapIDs := eng.Checker.GetSnapIDs()
+	snapIDs := eng.Checker[0].GetSnapIDs()
 
-	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.LocalDataDir)
+	snapID, err := eng.Checker[0].TakeSnapshot(ctx, eng.FileWriter[0].LocalDataDir)
 	testenv.AssertNoError(t, err)
 
-	err = eng.Checker.RestoreSnapshot(ctx, snapID, os.Stdout)
+	err = eng.Checker[0].RestoreSnapshot(ctx, snapID, os.Stdout)
 	testenv.AssertNoError(t, err)
 
 	for _, sID := range snapIDs {
-		err = eng.Checker.RestoreSnapshot(ctx, sID, os.Stdout)
+		err = eng.Checker[0].RestoreSnapshot(ctx, sID, os.Stdout)
 		testenv.AssertNoError(t, err)
 	}
 }
@@ -161,7 +161,7 @@ func TestWriteFilesBasicS3(t *testing.T) {
 	testenv.AssertNoError(t, err)
 
 	defer func() {
-		cleanupErr := eng.Cleanup()
+		cleanupErr := eng.Cleanup(0)
 		testenv.AssertNoError(t, cleanupErr)
 	}()
 
@@ -174,19 +174,19 @@ func TestWriteFilesBasicS3(t *testing.T) {
 
 	fioOpts := fio.Options{}.WithFileSize(fileSize).WithNumFiles(numFiles)
 
-	err = eng.FileWriter.WriteFiles("", fioOpts)
+	err = eng.FileWriter[0].WriteFiles("", fioOpts)
 	testenv.AssertNoError(t, err)
 
-	snapIDs := eng.Checker.GetLiveSnapIDs()
+	snapIDs := eng.Checker[0].GetLiveSnapIDs()
 
-	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.LocalDataDir)
+	snapID, err := eng.Checker[0].TakeSnapshot(ctx, eng.FileWriter[0].LocalDataDir)
 	testenv.AssertNoError(t, err)
 
-	err = eng.Checker.RestoreSnapshot(ctx, snapID, os.Stdout)
+	err = eng.Checker[0].RestoreSnapshot(ctx, snapID, os.Stdout)
 	testenv.AssertNoError(t, err)
 
 	for _, sID := range snapIDs {
-		err = eng.Checker.RestoreSnapshot(ctx, sID, os.Stdout)
+		err = eng.Checker[0].RestoreSnapshot(ctx, sID, os.Stdout)
 		testenv.AssertNoError(t, err)
 	}
 }
@@ -203,7 +203,7 @@ func TestDeleteSnapshotS3(t *testing.T) {
 	testenv.AssertNoError(t, err)
 
 	defer func() {
-		cleanupErr := eng.Cleanup()
+		cleanupErr := eng.Cleanup(0)
 		testenv.AssertNoError(t, cleanupErr)
 	}()
 
@@ -216,19 +216,19 @@ func TestDeleteSnapshotS3(t *testing.T) {
 
 	fioOpts := fio.Options{}.WithFileSize(fileSize).WithNumFiles(numFiles)
 
-	err = eng.FileWriter.WriteFiles("", fioOpts)
+	err = eng.FileWriter[0].WriteFiles("", fioOpts)
 	testenv.AssertNoError(t, err)
 
-	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.LocalDataDir)
+	snapID, err := eng.Checker[0].TakeSnapshot(ctx, eng.FileWriter[0].LocalDataDir)
 	testenv.AssertNoError(t, err)
 
-	err = eng.Checker.RestoreSnapshot(ctx, snapID, os.Stdout)
+	err = eng.Checker[0].RestoreSnapshot(ctx, snapID, os.Stdout)
 	testenv.AssertNoError(t, err)
 
-	err = eng.Checker.DeleteSnapshot(ctx, snapID)
+	err = eng.Checker[0].DeleteSnapshot(ctx, snapID)
 	testenv.AssertNoError(t, err)
 
-	err = eng.Checker.RestoreSnapshot(ctx, snapID, os.Stdout)
+	err = eng.Checker[0].RestoreSnapshot(ctx, snapID, os.Stdout)
 	if err == nil {
 		t.Fatalf("Expected an error when trying to restore a deleted snapshot")
 	}
@@ -246,7 +246,7 @@ func TestSnapshotVerificationFail(t *testing.T) {
 	testenv.AssertNoError(t, err)
 
 	defer func() {
-		cleanupErr := eng.Cleanup()
+		cleanupErr := eng.Cleanup(0)
 		testenv.AssertNoError(t, cleanupErr)
 	}()
 
@@ -259,39 +259,39 @@ func TestSnapshotVerificationFail(t *testing.T) {
 	numFiles := 10
 	fioOpt := fio.Options{}.WithFileSize(fileSize).WithNumFiles(numFiles)
 
-	err = eng.FileWriter.WriteFiles("", fioOpt)
+	err = eng.FileWriter[0].WriteFiles("", fioOpt)
 	testenv.AssertNoError(t, err)
 
 	// Take a first snapshot
-	snapID1, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.LocalDataDir)
+	snapID1, err := eng.Checker[0].TakeSnapshot(ctx, eng.FileWriter[0].LocalDataDir)
 	testenv.AssertNoError(t, err)
 
 	// Get the metadata collected on that snapshot
-	ssMeta1, err := eng.Checker.GetSnapshotMetadata(snapID1)
+	ssMeta1, err := eng.Checker[0].GetSnapshotMetadata(snapID1)
 	testenv.AssertNoError(t, err)
 
 	// Do additional writes, writing 1 extra byte than before
-	err = eng.FileWriter.WriteFiles("", fioOpt.WithFileSize(fileSize+1))
+	err = eng.FileWriter[0].WriteFiles("", fioOpt.WithFileSize(fileSize+1))
 	testenv.AssertNoError(t, err)
 
 	// Take a second snapshot
-	snapID2, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.LocalDataDir)
+	snapID2, err := eng.Checker[0].TakeSnapshot(ctx, eng.FileWriter[0].LocalDataDir)
 	testenv.AssertNoError(t, err)
 
 	// Get the second snapshot's metadata
-	ssMeta2, err := eng.Checker.GetSnapshotMetadata(snapID2)
+	ssMeta2, err := eng.Checker[0].GetSnapshotMetadata(snapID2)
 	testenv.AssertNoError(t, err)
 
 	// Swap second snapshot's validation data into the first's metadata
 	ssMeta1.ValidationData = ssMeta2.ValidationData
 
-	restoreDir, err := ioutil.TempDir(eng.Checker.RestoreDir, fmt.Sprintf("restore-snap-%v", snapID1))
+	restoreDir, err := ioutil.TempDir(eng.Checker[0].RestoreDir, fmt.Sprintf("restore-snap-%v", snapID1))
 	testenv.AssertNoError(t, err)
 
 	defer os.RemoveAll(restoreDir)
 
 	// Restore snapshot ID 1 with snapshot 2's validation data in metadata, expect error
-	err = eng.Checker.RestoreVerifySnapshot(ctx, snapID1, restoreDir, ssMeta1, os.Stdout)
+	err = eng.Checker[0].RestoreVerifySnapshot(ctx, snapID1, restoreDir, ssMeta1, os.Stdout)
 	if err == nil {
 		t.Fatalf("Expected an integrity error when trying to restore a snapshot with incorrect metadata")
 	}
@@ -311,7 +311,7 @@ func TestDataPersistency(t *testing.T) {
 	testenv.AssertNoError(t, err)
 
 	defer func() {
-		cleanupErr := eng.Cleanup()
+		cleanupErr := eng.Cleanup(0)
 		testenv.AssertNoError(t, cleanupErr)
 	}()
 
@@ -328,15 +328,15 @@ func TestDataPersistency(t *testing.T) {
 
 	fioOpt := fio.Options{}.WithFileSize(fileSize).WithNumFiles(numFiles)
 
-	err = eng.FileWriter.WriteFiles("", fioOpt)
+	err = eng.FileWriter[0].WriteFiles("", fioOpt)
 	testenv.AssertNoError(t, err)
 
 	// Take a snapshot
-	snapID, err := eng.Checker.TakeSnapshot(ctx, eng.FileWriter.LocalDataDir)
+	snapID, err := eng.Checker[0].TakeSnapshot(ctx, eng.FileWriter[0].LocalDataDir)
 	testenv.AssertNoError(t, err)
 
 	// Get the walk data associated with the snapshot that was taken
-	dataDirWalk, err := eng.Checker.GetSnapshotMetadata(snapID)
+	dataDirWalk, err := eng.Checker[0].GetSnapshotMetadata(snapID)
 	testenv.AssertNoError(t, err)
 
 	// Flush the snapshot metadata to persistent storage
@@ -356,12 +356,12 @@ func TestDataPersistency(t *testing.T) {
 	err = eng2.InitFilesystem(ctx, dataRepoPath, metadataRepoPath)
 	testenv.AssertNoError(t, err)
 
-	err = eng2.Checker.RestoreSnapshotToPath(ctx, snapID, eng2.FileWriter.LocalDataDir, os.Stdout)
+	err = eng2.Checker[0].RestoreSnapshotToPath(ctx, snapID, eng2.FileWriter[0].LocalDataDir, os.Stdout)
 	testenv.AssertNoError(t, err)
 
 	// Compare the data directory of the second engine with the fingerprint
 	// of the snapshot taken earlier. They should match.
-	err = fswalker.NewWalkCompare().Compare(ctx, eng2.FileWriter.LocalDataDir, dataDirWalk.ValidationData, os.Stdout)
+	err = fswalker.NewWalkCompare().Compare(ctx, eng2.FileWriter[0].LocalDataDir, dataDirWalk.ValidationData, os.Stdout)
 	testenv.AssertNoError(t, err)
 }
 
@@ -468,7 +468,7 @@ func TestActionsFilesystem(t *testing.T) {
 	testenv.AssertNoError(t, err)
 
 	defer func() {
-		cleanupErr := eng.Cleanup()
+		cleanupErr := eng.Cleanup(0)
 		testenv.AssertNoError(t, cleanupErr)
 
 		os.RemoveAll(fsRepoBaseDirPath)
@@ -494,7 +494,7 @@ func TestActionsFilesystem(t *testing.T) {
 
 	numActions := 10
 	for loop := 0; loop < numActions; loop++ {
-		err := eng.RandomAction(actionOpts)
+		err := eng.RandomAction(actionOpts, 0)
 		if !(err == nil || errors.Is(err, ErrNoOp)) {
 			t.Error("Hit error", err)
 		}
@@ -513,7 +513,7 @@ func TestActionsS3(t *testing.T) {
 	testenv.AssertNoError(t, err)
 
 	defer func() {
-		cleanupErr := eng.Cleanup()
+		cleanupErr := eng.Cleanup(0)
 		testenv.AssertNoError(t, cleanupErr)
 	}()
 
@@ -537,7 +537,7 @@ func TestActionsS3(t *testing.T) {
 
 	numActions := 10
 	for loop := 0; loop < numActions; loop++ {
-		err := eng.RandomAction(actionOpts)
+		err := eng.RandomAction(actionOpts, 0)
 		if !(err == nil || errors.Is(err, ErrNoOp)) {
 			t.Error("Hit error", err)
 		}
@@ -560,7 +560,7 @@ func TestIOLimitPerWriteAction(t *testing.T) {
 	testenv.AssertNoError(t, err)
 
 	defer func() {
-		cleanupErr := eng.Cleanup()
+		cleanupErr := eng.Cleanup(0)
 		testenv.AssertNoError(t, cleanupErr)
 
 		os.RemoveAll(fsRepoBaseDirPath)
@@ -592,7 +592,7 @@ func TestIOLimitPerWriteAction(t *testing.T) {
 
 	numActions := 1
 	for loop := 0; loop < numActions; loop++ {
-		err := eng.RandomAction(actionOpts)
+		err := eng.RandomAction(actionOpts, 0)
 		testenv.AssertNoError(t, err)
 	}
 
