@@ -29,7 +29,7 @@ func (e *Engine) ExecAction(actionKey ActionKey, opts map[string]string, index i
 
 	e.RunStats.ActionCounter++
 	e.CumulativeStats.ActionCounter++
-	log.Printf("Engine executing ACTION: name=%q actionCount=%v totActCount=%v t=%vs (%vs)", actionKey, e.RunStats.ActionCounter, e.CumulativeStats.ActionCounter, e.RunStats.getLifetimeSeconds(), e.getRuntimeSeconds())
+	log.Printf("Engine executing ACTION: name=%q actionCount=%v totActCount=%v t=%vs engineIndex=%d (%vs)", actionKey, e.RunStats.ActionCounter, e.CumulativeStats.ActionCounter, e.RunStats.getLifetimeSeconds(), index, e.getRuntimeSeconds())
 
 	action := actions[actionKey]
 	st := time.Now()

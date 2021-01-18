@@ -5,7 +5,6 @@ package robustness
 import (
 	"errors"
 	"fmt"
-	"log"
 	"strconv"
 	"testing"
 	"time"
@@ -30,12 +29,9 @@ func TestManySmallFiles(t *testing.T) {
 
 	var errs errgroup.Group
 
-	log.Printf("Printing the length: %v", len(eng.Checker))
-
 	for i := range eng.Checker {
 		func(index int) {
 			errs.Go(func() error {
-				log.Printf("Printing the Engine: %v", index)
 				_, err := eng.ExecAction(engine.WriteRandomFilesActionKey, fileWriteOpts, index)
 				if err != nil {
 					return err
@@ -69,12 +65,9 @@ func TestOneLargeFile(t *testing.T) {
 
 	var errs errgroup.Group
 
-	log.Printf("Printing the length: %v", len(eng.Checker))
-
 	for i := 0; i < eng.RunnerCount; i++ {
 		func(index int) {
 			errs.Go(func() error {
-				log.Printf("Printing the Engine: %v", index)
 				_, err := eng.ExecAction(engine.WriteRandomFilesActionKey, fileWriteOpts, index)
 				if err != nil {
 					return err
@@ -112,12 +105,9 @@ func TestManySmallFilesAcrossDirecoryTree(t *testing.T) {
 
 	var errs errgroup.Group
 
-	log.Printf("Printing the length: %v", len(eng.Checker))
-
 	for i := 0; i < eng.RunnerCount; i++ {
 		func(index int) {
 			errs.Go(func() error {
-				log.Printf("Printing the Engine: %v", index)
 				_, err := eng.ExecAction(engine.WriteRandomFilesActionKey, fileWriteOpts, index)
 				if err != nil {
 					return err
@@ -158,7 +148,6 @@ func TestRandomizedSmall(t *testing.T) {
 	for i := 0; i < eng.RunnerCount; i++ {
 		func(index int) {
 			errs.Go(func() error {
-				log.Printf("Printing the Engine: %v", index)
 				for time.Since(st) <= *randomizedTestDur {
 					err := eng.RandomAction(opts, index)
 					if errors.Is(err, engine.ErrNoOp) {
