@@ -73,7 +73,7 @@ func TestMain(m *testing.M) {
 		func(index int) {
 			errs.Go(func() error {
 				_, err = eng.ExecAction(engine.RestoreIntoDataDirectoryActionKey, nil, index)
-				if err != nil && errors.Is(err, engine.ErrNoOp) {
+				if err != nil && !errors.Is(err, engine.ErrNoOp) {
 					eng.Cleanup(index)
 					log.Fatalln("error restoring into the data directory:", err)
 					panic(err)
