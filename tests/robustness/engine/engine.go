@@ -57,7 +57,7 @@ type Engine struct {
 	TestRepo        []robustness.Snapshotter
 	MetaStore       robustness.Persister
 	Checker         []*checker.Checker
-	cleanupRoutines []func()
+	cleanupRoutines map[string][]func()
 	baseDirPath     string
 	serverCmd       *exec.Cmd
 
@@ -86,7 +86,8 @@ func NewEngine(workingDir string) (*Engine, error) {
 			CreationTime:   time.Now(),
 			PerActionStats: make(map[ActionKey]*ActionStats),
 		},
-		RunnerCount: DefaultRunnerCount,
+		RunnerCount:     DefaultRunnerCount,
+		cleanupRoutines: make(map[string][]func()),
 	}
 
 	if os.Getenv(EngineModeEnvKey) == EngineModeBasic || os.Getenv(EngineModeEnvKey) == "" {
@@ -100,41 +101,41 @@ func NewEngine(workingDir string) (*Engine, error) {
 	// Fill Snapshotter interface
 	kopiaSnapper, err := kopiarunner.NewMultipleKopiaSnapshotter(baseDirPath, e.RunnerCount)
 	if err != nil {
-		e.CleanComponents()
+		e.CleanAllComponents()
 		return nil, err
 	}
 
 	// Fill the snapshot store interface
 	snapStore, err := snapmeta.New(baseDirPath)
 	if err != nil {
-		e.CleanComponents()
+		e.CleanAllComponents()
 		return nil, err
 	}
 
-	e.cleanupRoutines = append(e.cleanupRoutines, snapStore.Cleanup)
+	e.cleanupRoutines["engine"] = append(e.cleanupRoutines["engine"], snapStore.Cleanup)
 
 	for i := 0; i < e.RunnerCount; i++ {
 		singleChecker, singleCheckerErr := checker.NewChecker(kopiaSnapper[i], snapStore, fswalker.NewWalkCompare(), baseDirPath)
 		if singleCheckerErr != nil {
-			e.CleanComponents()
+			e.CleanAllComponents()
 			return nil, singleCheckerErr
 		}
 
-		e.cleanupRoutines = append(e.cleanupRoutines, singleChecker.Cleanup)
+		e.cleanupRoutines["engine-"+string(i)] = append(e.cleanupRoutines["engine-"+string(i)], singleChecker.Cleanup)
 
 		fileWriter, fileWriterErr := fio.NewRunner()
 		if fileWriterErr != nil {
-			e.CleanComponents()
+			e.CleanAllComponents()
 			return nil, fileWriterErr
 		}
 
-		e.cleanupRoutines = append(e.cleanupRoutines, fileWriter.Cleanup, kopiaSnapper[i].Cleanup)
+		e.cleanupRoutines["engine-"+string(i)] = append(e.cleanupRoutines["engine-"+string(i)], fileWriter.Cleanup, kopiaSnapper[i].Cleanup)
 
 		e.MetaStore = snapStore
 
 		err := e.setupLogging()
 		if err != nil {
-			e.CleanComponents()
+			e.CleanAllComponents()
 			return nil, err
 		}
 
@@ -143,7 +144,7 @@ func NewEngine(workingDir string) (*Engine, error) {
 		multipleChecker[i] = singleChecker
 	}
 
-	e.cleanupRoutines = append(e.cleanupRoutines, e.cleanUpServer)
+	e.cleanupRoutines["engine"] = append(e.cleanupRoutines["engine"], e.cleanUpServer)
 
 	e.FileWriter = multipleFileWriter
 	e.TestRepo = multipleSnapshotter
@@ -179,7 +180,7 @@ func (e *Engine) Cleanup(index int) error {
 	e.RunStats.RunTime = time.Since(e.RunStats.CreationTime)
 	e.CumulativeStats.RunTime += e.RunStats.RunTime
 
-	defer e.CleanComponents()
+	defer e.CleanEngineIndexComponents(index)
 
 	if e.MetaStore != nil {
 		err := e.SaveLog()
@@ -220,15 +221,40 @@ func (e *Engine) formatLogName() string {
 	return fmt.Sprintf("Log_%s", st.Format("2006_01_02_15_04_05"))
 }
 
-// CleanComponents cleans up each component part of the test engine.
-func (e *Engine) CleanComponents() {
-	for _, f := range e.cleanupRoutines {
+// CleanEngineIndexComponents cleans up each component part of the each test engine index.
+func (e *Engine) CleanEngineIndexComponents(idx int) {
+	log.Printf("Cleaning Engine: engine+%s", string(idx))
+	for _, f := range e.cleanupRoutines["engine-"+string(idx)] {
 		if f != nil {
 			f()
 		}
 	}
 
 	os.RemoveAll(e.baseDirPath) //nolint:errcheck
+}
+
+// CleanEngineComponents cleans up each component part of the test engine.
+func (e *Engine) CleanEngineComponents() {
+	for _, f := range e.cleanupRoutines["engine"] {
+		if f != nil {
+			f()
+		}
+	}
+
+	os.RemoveAll(e.baseDirPath) //nolint:errcheck
+}
+
+func (e *Engine) CleanAllComponents() {
+	log.Printf("Cleaning Whole")
+	for _, key := range e.cleanupRoutines {
+		if key != nil {
+			for _, f := range key {
+				if f != nil {
+					f()
+				}
+			}
+		}
+	}
 }
 
 // Init initializes the Engine to a repository location according to the environment setup.

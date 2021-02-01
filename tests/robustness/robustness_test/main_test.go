@@ -63,7 +63,7 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		// Clean the temporary dirs from the file system, don't write out the
 		// metadata, in case there was an issue loading it
-		eng.CleanComponents()
+		eng.CleanAllComponents()
 		log.Fatalln("error initializing engine for S3:", err)
 	}
 	// Restore a random snapshot into the data directory
