@@ -1,10 +1,10 @@
 package snapmeta
 
 import (
+	"errors"
 	"sync"
 
 	"github.com/kopia/kopia/tests/robustness"
-	"github.com/pkg/errors"
 )
 
 // ErrKeyNotFound is returned when the store can't find the key provided.
