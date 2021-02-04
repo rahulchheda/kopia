@@ -134,8 +134,9 @@ func (chk *Checker) VerifySnapshotMetadata() error {
 			log.Printf("Metadata present for snapID %v but not found in list of repo snapshots", metaSnapID)
 
 			if chk.RecoveryMode {
-				chk.snapshotMetadataStore.Delete(metaSnapID)
-				chk.snapshotMetadataStore.RemoveFromIndex(metaSnapID, liveSnapshotsIdxName)
+				chk.snapshotMetadataStore.Delete(metaSnapID, map[string]robustness.IndexOperation{
+					liveSnapshotsIdxName: robustness.RemoveFromIndexOperation,
+				})
 			} else {
 				errCount++
 			}
@@ -204,13 +205,13 @@ func (chk *Checker) TakeSnapshot(ctx context.Context, sourceDir string, opts map
 		ValidationData: b,
 	}
 
-	err = chk.saveSnapshotMetadata(ssMeta)
+	err = chk.saveSnapshotMetadata(ssMeta, map[string]robustness.IndexOperation{
+		allSnapshotsIdxName:  robustness.AddToIndexOperation,
+		liveSnapshotsIdxName: robustness.AddToIndexOperation,
+	})
 	if err != nil {
 		return snapID, err
 	}
-
-	chk.snapshotMetadataStore.AddToIndex(snapID, allSnapshotsIdxName)
-	chk.snapshotMetadataStore.AddToIndex(snapID, liveSnapshotsIdxName)
 
 	return snapID, nil
 }
@@ -263,7 +264,7 @@ func (chk *Checker) RestoreVerifySnapshot(ctx context.Context, snapID, destPath 
 			ValidationData: b,
 		}
 
-		return chk.saveSnapshotMetadata(ssMeta)
+		return chk.saveSnapshotMetadata(ssMeta, nil)
 	}
 
 	err = chk.validator.Compare(ctx, destPath, ssMeta.ValidationData, reportOut, opts)
@@ -296,24 +297,24 @@ func (chk *Checker) DeleteSnapshot(ctx context.Context, snapID string, opts map[
 	ssMeta.DeletionTime = time.Now()
 	ssMeta.ValidationData = nil
 
-	err = chk.saveSnapshotMetadata(ssMeta)
+	err = chk.saveSnapshotMetadata(ssMeta, map[string]robustness.IndexOperation{
+		deletedSnapshotsIdxName: robustness.AddToIndexOperation,
+		liveSnapshotsIdxName:    robustness.RemoveFromIndexOperation,
+	})
 	if err != nil {
 		return err
 	}
 
-	chk.snapshotMetadataStore.AddToIndex(ssMeta.SnapID, deletedSnapshotsIdxName)
-	chk.snapshotMetadataStore.RemoveFromIndex(ssMeta.SnapID, liveSnapshotsIdxName)
-
 	return nil
 }
 
-func (chk *Checker) saveSnapshotMetadata(ssMeta *SnapshotMetadata) error {
+func (chk *Checker) saveSnapshotMetadata(ssMeta *SnapshotMetadata, indexUpdates map[string]robustness.IndexOperation) error {
 	ssMetaRaw, err := json.Marshal(ssMeta)
 	if err != nil {
 		return err
 	}
 
-	err = chk.snapshotMetadataStore.Store(ssMeta.SnapID, ssMetaRaw)
+	err = chk.snapshotMetadataStore.Store(ssMeta.SnapID, ssMetaRaw, indexUpdates)
 	if err != nil {
 		return err
 	}

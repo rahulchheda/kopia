@@ -3,17 +3,10 @@ package robustness
 // Store describes the ability to store and retrieve
 // a buffer of metadata, indexed by a string key.
 type Store interface {
-	Store(key string, val []byte) error
+	Store(key string, val []byte, indexUpdates map[string]IndexOperation) error
 	Load(key string) ([]byte, error)
-	Delete(key string)
-	Indexer
-}
-
-// Indexer describes methods surrounding categorization of keys via a named index.
-type Indexer interface {
-	AddToIndex(key, indexName string)
-	RemoveFromIndex(key, indexName string)
-	GetKeys(indexName string) (ret []string)
+	Delete(key string, indexUpdates map[string]IndexOperation)
+	GetKeys(indexName string) []string
 }
 
 // Persister describes the ability to flush metadata
@@ -24,3 +17,13 @@ type Persister interface {
 	FlushMetadata() error
 	GetPersistDir() string
 }
+
+// IndexOperation defines several operations implemented on Index.
+type IndexOperation string
+
+const (
+	// AddToIndexOperation add value in Index.
+	AddToIndexOperation IndexOperation = "addToIndex"
+	// RemoveFromIndexOperation removes value from Index.
+	RemoveFromIndexOperation IndexOperation = "removeFromIndex"
+)
