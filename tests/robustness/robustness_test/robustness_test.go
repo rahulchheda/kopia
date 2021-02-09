@@ -122,6 +122,9 @@ func TestManySmallFilesAcrossDirecoryTree(t *testing.T) {
 			})
 		}(i)
 	}
+
+	err := errs.Wait()
+	testenv.AssertNoError(t, err)
 }
 
 func TestRandomizedSmall(t *testing.T) {
@@ -154,11 +157,13 @@ func TestRandomizedSmall(t *testing.T) {
 						t.Log("Random action resulted in no-op")
 						err = nil
 					}
-
-					testenv.AssertNoError(t, err)
+					return err
 				}
 				return nil
 			})
 		}(i)
 	}
+
+	err := errs.Wait()
+	testenv.AssertNoError(t, err)
 }

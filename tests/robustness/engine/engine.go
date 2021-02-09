@@ -57,13 +57,13 @@ type Engine struct {
 	TestRepo        []robustness.Snapshotter
 	MetaStore       robustness.Persister
 	Checker         []*checker.Checker
-	cleanupRoutines map[string][]func()
+	cleanupRoutines []func()
 	baseDirPath     string
 	serverCmd       *exec.Cmd
 
-	RunStats        Stats
-	CumulativeStats Stats
-	EngineLog       Log
+	RunStats        []Stats
+	CumulativeStats []Stats
+	EngineLog       []Log
 	RunnerCount     int
 }
 
@@ -80,14 +80,10 @@ func NewEngine(workingDir string) (*Engine, error) {
 	}
 
 	e := &Engine{
-		baseDirPath: baseDirPath,
-		RunStats: Stats{
-			RunCounter:     1,
-			CreationTime:   time.Now(),
-			PerActionStats: make(map[ActionKey]*ActionStats),
-		},
+		baseDirPath:     baseDirPath,
+		RunStats:        multipleRunStats(DefaultRunnerCount),
 		RunnerCount:     DefaultRunnerCount,
-		cleanupRoutines: make(map[string][]func()),
+		cleanupRoutines: make([]func(), 0),
 	}
 
 	if os.Getenv(EngineModeEnvKey) == EngineModeBasic || os.Getenv(EngineModeEnvKey) == "" {
@@ -112,7 +108,7 @@ func NewEngine(workingDir string) (*Engine, error) {
 		return nil, err
 	}
 
-	e.cleanupRoutines["engine"] = append(e.cleanupRoutines["engine"], snapStore.Cleanup)
+	e.cleanupRoutines = append(e.cleanupRoutines, snapStore.Cleanup)
 
 	for i := 0; i < e.RunnerCount; i++ {
 		singleChecker, singleCheckerErr := checker.NewChecker(kopiaSnapper[i], snapStore, fswalker.NewWalkCompare(), baseDirPath)
@@ -121,7 +117,7 @@ func NewEngine(workingDir string) (*Engine, error) {
 			return nil, singleCheckerErr
 		}
 
-		e.cleanupRoutines["engine-"+string(i)] = append(e.cleanupRoutines["engine-"+string(i)], singleChecker.Cleanup)
+		e.cleanupRoutines = append(e.cleanupRoutines, singleChecker.Cleanup)
 
 		fileWriter, fileWriterErr := fio.NewRunner()
 		if fileWriterErr != nil {
@@ -129,11 +125,11 @@ func NewEngine(workingDir string) (*Engine, error) {
 			return nil, fileWriterErr
 		}
 
-		e.cleanupRoutines["engine-"+string(i)] = append(e.cleanupRoutines["engine-"+string(i)], fileWriter.Cleanup, kopiaSnapper[i].Cleanup)
+		e.cleanupRoutines = append(e.cleanupRoutines, fileWriter.Cleanup, kopiaSnapper[i].Cleanup)
 
 		e.MetaStore = snapStore
 
-		err := e.setupLogging()
+		err := e.setupLogging(i)
 		if err != nil {
 			e.CleanAllComponents()
 			return nil, err
@@ -144,7 +140,7 @@ func NewEngine(workingDir string) (*Engine, error) {
 		multipleChecker[i] = singleChecker
 	}
 
-	e.cleanupRoutines["engine"] = append(e.cleanupRoutines["engine"], e.cleanUpServer)
+	e.cleanupRoutines = append(e.cleanupRoutines, e.cleanUpServer)
 
 	e.FileWriter = multipleFileWriter
 	e.TestRepo = multipleSnapshotter
@@ -154,55 +150,58 @@ func NewEngine(workingDir string) (*Engine, error) {
 }
 
 // Cleanup cleans up after each component of the test engine.
-func (e *Engine) Cleanup(index int) error {
+func (e *Engine) Cleanup() error {
 	// Perform a snapshot action to capture the state of the data directory
 	// at the end of the run
-	lastWriteEntry := e.EngineLog.FindLastThisRun(WriteRandomFilesActionKey)
-	lastSnapEntry := e.EngineLog.FindLastThisRun(SnapshotRootDirActionKey)
-
-	if lastWriteEntry != nil {
-		if lastSnapEntry == nil || lastSnapEntry.Idx < lastWriteEntry.Idx {
-			// Only force a final snapshot if the data tree has been modified since the last snapshot
-			e.ExecAction(SnapshotRootDirActionKey, make(map[string]string), index) //nolint:errcheck
+	defer e.CleanAllComponents()
+	for i := 0; i < e.RunnerCount; i++ {
+		lastWriteEntry := e.EngineLog[i].FindLastThisRun(WriteRandomFilesActionKey)
+		lastSnapEntry := e.EngineLog[i].FindLastThisRun(SnapshotRootDirActionKey)
+		log.Printf("%s %s engineIndex=%d", lastWriteEntry, lastSnapEntry, i)
+		if lastWriteEntry != nil {
+			if lastSnapEntry == nil || lastSnapEntry.Idx < lastWriteEntry.Idx {
+				// Only force a final snapshot if the data tree has been modified since the last snapshot
+				e.ExecAction(SnapshotRootDirActionKey, make(map[string]string), i) //nolint:errcheck
+			}
 		}
-	}
+		cleanupSummaryBuilder := new(strings.Builder)
+		cleanupSummaryBuilder.WriteString("\n================\n")
+		cleanupSummaryBuilder.WriteString("Cleanup Summary:\n\n")
+		cleanupSummaryBuilder.WriteString(e.Stats(i))
+		cleanupSummaryBuilder.WriteString("\n\n")
+		cleanupSummaryBuilder.WriteString(e.EngineLog[i].StringThisRun())
+		cleanupSummaryBuilder.WriteString("\n")
 
-	cleanupSummaryBuilder := new(strings.Builder)
-	cleanupSummaryBuilder.WriteString("\n================\n")
-	cleanupSummaryBuilder.WriteString("Cleanup Summary:\n\n")
-	cleanupSummaryBuilder.WriteString(e.Stats())
-	cleanupSummaryBuilder.WriteString("\n\n")
-	cleanupSummaryBuilder.WriteString(e.EngineLog.StringThisRun())
-	cleanupSummaryBuilder.WriteString("\n")
+		log.Printf("%s engineIndex=%d", cleanupSummaryBuilder.String(), i)
 
-	log.Print(cleanupSummaryBuilder.String())
+		e.RunStats[i].RunTime = time.Since(e.RunStats[i].CreationTime)
+		e.CumulativeStats[i].RunTime += e.RunStats[i].RunTime
 
-	e.RunStats.RunTime = time.Since(e.RunStats.CreationTime)
-	e.CumulativeStats.RunTime += e.RunStats.RunTime
+		if e.MetaStore != nil {
+			err := e.SaveLog(i)
+			if err != nil {
+				return err
+			}
 
-	defer e.CleanEngineIndexComponents(index)
+			err = e.SaveStats(i)
+			if err != nil {
+				return err
+			}
 
-	if e.MetaStore != nil {
-		err := e.SaveLog()
-		if err != nil {
-			return err
+			err = e.MetaStore.FlushMetadata()
+			if err != nil {
+				return err
+			}
 		}
-
-		err = e.SaveStats()
-		if err != nil {
-			return err
-		}
-
-		return e.MetaStore.FlushMetadata()
 	}
 
 	return nil
 }
 
-func (e *Engine) setupLogging() error {
+func (e *Engine) setupLogging(index int) error {
 	dirPath := e.MetaStore.GetPersistDir()
 
-	newLogPath := filepath.Join(dirPath, e.formatLogName())
+	newLogPath := filepath.Join(dirPath, e.formatLogName(index))
 
 	f, err := os.Create(newLogPath)
 	if err != nil {
@@ -216,45 +215,19 @@ func (e *Engine) setupLogging() error {
 	return nil
 }
 
-func (e *Engine) formatLogName() string {
-	st := e.RunStats.CreationTime
+func (e *Engine) formatLogName(index int) string {
+	st := e.RunStats[index].CreationTime
 	return fmt.Sprintf("Log_%s", st.Format("2006_01_02_15_04_05"))
 }
 
-// CleanEngineIndexComponents cleans up each component part of the each test engine index.
-func (e *Engine) CleanEngineIndexComponents(idx int) {
-	log.Printf("Cleaning Engine: engine+%s", string(idx))
-	for _, f := range e.cleanupRoutines["engine-"+string(idx)] {
-		if f != nil {
-			f()
-		}
-	}
-
-	os.RemoveAll(e.baseDirPath) //nolint:errcheck
-}
-
-// CleanEngineComponents cleans up each component part of the test engine.
-func (e *Engine) CleanEngineComponents() {
-	for _, f := range e.cleanupRoutines["engine"] {
-		if f != nil {
-			f()
-		}
-	}
-
-	os.RemoveAll(e.baseDirPath) //nolint:errcheck
-}
-
 func (e *Engine) CleanAllComponents() {
-	log.Printf("Cleaning Whole")
-	for _, key := range e.cleanupRoutines {
-		if key != nil {
-			for _, f := range key {
-				if f != nil {
-					f()
-				}
-			}
+	for _, f := range e.cleanupRoutines {
+		if f != nil {
+			f()
 		}
 	}
+
+	os.RemoveAll(e.baseDirPath) //nolint:errcheck
 }
 
 // Init initializes the Engine to a repository location according to the environment setup.
@@ -321,16 +294,24 @@ func (e *Engine) init(ctx context.Context) error {
 		return err
 	}
 
-	err = e.LoadStats()
-	if err != nil {
-		return err
+	if e.EngineLog == nil {
+		e.EngineLog = make([]Log, e.RunnerCount)
 	}
 
-	e.CumulativeStats.RunCounter++
+	e.CumulativeStats = make([]Stats, e.RunnerCount)
 
-	err = e.LoadLog()
-	if err != nil {
-		return err
+	for i := 0; i < e.RunnerCount; i++ {
+		err = e.LoadStats(i)
+		if err != nil {
+			return err
+		}
+
+		e.CumulativeStats[i].RunCounter++
+
+		err = e.LoadLog(i)
+		if err != nil {
+			return err
+		}
 	}
 
 	for i := 0; i < e.RunnerCount; i++ {
@@ -410,4 +391,17 @@ func (e *Engine) cleanUpServer() {
 	if err := e.serverCmd.Process.Signal(syscall.SIGTERM); err != nil {
 		log.Println("Failed to send termination signal to kopia server process:", err)
 	}
+}
+
+func multipleRunStats(count int) []Stats {
+	var multipleStats []Stats
+
+	for i := 0; i < count; i++ {
+		multipleStats = append(multipleStats, Stats{
+			RunCounter:     1,
+			CreationTime:   time.Now(),
+			PerActionStats: make(map[ActionKey]*ActionStats),
+		})
+	}
+	return multipleStats
 }

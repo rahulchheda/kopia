@@ -18,7 +18,7 @@ var (
 )
 
 // Stats prints the engine stats, cumulative and from the current run.
-func (e *Engine) Stats() string {
+func (e *Engine) Stats(index int) string {
 	b := &strings.Builder{}
 
 	fmt.Fprintln(b, "==================================")
@@ -35,15 +35,16 @@ func (e *Engine) Stats() string {
 	fmt.Fprintln(b, "==================================")
 	fmt.Fprintln(b, "Engine Action Summary (Cumulative)")
 	fmt.Fprintln(b, "==================================")
-	fmt.Fprintf(b, "  Engine runtime:   %10vs\n", e.getRuntimeSeconds())
+	fmt.Fprintf(b, "  Engine runtime:   %10vs\n", e.getRuntimeSeconds(index))
 	fmt.Fprintln(b, "")
-	fmt.Fprint(b, e.CumulativeStats.Stats())
+	fmt.Fprint(b, e.CumulativeStats[index].Stats())
 	fmt.Fprintln(b, "")
 
 	fmt.Fprintln(b, "==================================")
 	fmt.Fprintln(b, "Engine Action Summary (This Run)")
 	fmt.Fprintln(b, "==================================")
-	fmt.Fprint(b, e.RunStats.Stats())
+	fmt.Fprintf(b, "  Engine Index:     %10v\n", index)
+	fmt.Fprint(b, e.RunStats[index].Stats())
 	fmt.Fprintln(b, "")
 
 	return b.String()
@@ -146,10 +147,10 @@ func (s *ActionStats) avgRuntimeString() string {
 	return fmt.Sprintf("%vs", durationToSec(s.AverageRuntime()))
 }
 
-func (e *Engine) getTimestampS() int64 {
-	return e.getRuntimeSeconds()
+func (e *Engine) getTimestampS(index int) int64 {
+	return e.getRuntimeSeconds(index)
 }
 
-func (e *Engine) getRuntimeSeconds() int64 {
-	return durationToSec(e.CumulativeStats.RunTime + time.Since(e.RunStats.CreationTime))
+func (e *Engine) getRuntimeSeconds(index int) int64 {
+	return durationToSec(e.CumulativeStats[index].RunTime + time.Since(e.RunStats[index].CreationTime))
 }

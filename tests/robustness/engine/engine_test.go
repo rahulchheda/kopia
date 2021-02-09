@@ -51,7 +51,7 @@ func TestEngineWritefilesBasicFS(t *testing.T) {
 	testenv.AssertNoError(t, err)
 
 	defer func() {
-		cleanupErr := eng.Cleanup(0)
+		cleanupErr := eng.Cleanup()
 		testenv.AssertNoError(t, cleanupErr)
 
 		os.RemoveAll(fsRepoBaseDirPath)
@@ -163,7 +163,7 @@ func TestWriteFilesBasicS3(t *testing.T) {
 	testenv.AssertNoError(t, err)
 
 	defer func() {
-		cleanupErr := eng.Cleanup(0)
+		cleanupErr := eng.Cleanup()
 		testenv.AssertNoError(t, cleanupErr)
 	}()
 
@@ -205,7 +205,7 @@ func TestDeleteSnapshotS3(t *testing.T) {
 	testenv.AssertNoError(t, err)
 
 	defer func() {
-		cleanupErr := eng.Cleanup(0)
+		cleanupErr := eng.Cleanup()
 		testenv.AssertNoError(t, cleanupErr)
 	}()
 
@@ -248,7 +248,7 @@ func TestSnapshotVerificationFail(t *testing.T) {
 	testenv.AssertNoError(t, err)
 
 	defer func() {
-		cleanupErr := eng.Cleanup(0)
+		cleanupErr := eng.Cleanup()
 		testenv.AssertNoError(t, cleanupErr)
 	}()
 
@@ -313,7 +313,7 @@ func TestDataPersistency(t *testing.T) {
 	testenv.AssertNoError(t, err)
 
 	defer func() {
-		cleanupErr := eng.Cleanup(0)
+		cleanupErr := eng.Cleanup()
 		testenv.AssertNoError(t, cleanupErr)
 	}()
 
@@ -470,7 +470,7 @@ func TestActionsFilesystem(t *testing.T) {
 	testenv.AssertNoError(t, err)
 
 	defer func() {
-		cleanupErr := eng.Cleanup(0)
+		cleanupErr := eng.Cleanup()
 		testenv.AssertNoError(t, cleanupErr)
 
 		os.RemoveAll(fsRepoBaseDirPath)
@@ -515,7 +515,7 @@ func TestActionsS3(t *testing.T) {
 	testenv.AssertNoError(t, err)
 
 	defer func() {
-		cleanupErr := eng.Cleanup(0)
+		cleanupErr := eng.Cleanup()
 		testenv.AssertNoError(t, cleanupErr)
 	}()
 
@@ -562,7 +562,7 @@ func TestIOLimitPerWriteAction(t *testing.T) {
 	testenv.AssertNoError(t, err)
 
 	defer func() {
-		cleanupErr := eng.Cleanup(0)
+		cleanupErr := eng.Cleanup()
 		testenv.AssertNoError(t, cleanupErr)
 
 		os.RemoveAll(fsRepoBaseDirPath)
@@ -630,17 +630,19 @@ func TestStatsPersist(t *testing.T) {
 
 	eng := &Engine{
 		MetaStore: snapStore,
-		CumulativeStats: Stats{
-			ActionCounter: 11235,
-			CreationTime:  creationTime,
-			PerActionStats: map[ActionKey]*ActionStats{
-				ActionKey("some-action"): actionstats,
+		CumulativeStats: []Stats{
+			{
+				ActionCounter: 11235,
+				CreationTime:  creationTime,
+				PerActionStats: map[ActionKey]*ActionStats{
+					ActionKey("some-action"): actionstats,
+				},
+				DataRestoreCount: 99,
 			},
-			DataRestoreCount: 99,
 		},
 	}
 
-	err = eng.SaveStats()
+	err = eng.SaveStats(0)
 	testenv.AssertNoError(t, err)
 
 	err = eng.MetaStore.FlushMetadata()
@@ -660,15 +662,15 @@ func TestStatsPersist(t *testing.T) {
 		MetaStore: snapStoreNew,
 	}
 
-	err = engNew.LoadStats()
+	err = engNew.LoadStats(0)
 	testenv.AssertNoError(t, err)
 
-	if got, want := engNew.Stats(), eng.Stats(); got != want {
+	if got, want := engNew.Stats(0), eng.Stats(0); got != want {
 		t.Errorf("Stats do not match\n%v\n%v", got, want)
 	}
 
-	fmt.Println(eng.Stats())
-	fmt.Println(engNew.Stats())
+	fmt.Println(eng.Stats(0))
+	fmt.Println(engNew.Stats(0))
 }
 
 func TestLogsPersist(t *testing.T) {
@@ -707,10 +709,12 @@ func TestLogsPersist(t *testing.T) {
 
 	eng := &Engine{
 		MetaStore: snapStore,
-		EngineLog: log,
+		EngineLog: []Log{
+			log,
+		},
 	}
 
-	err = eng.SaveLog()
+	err = eng.SaveLog(0)
 	testenv.AssertNoError(t, err)
 
 	err = eng.MetaStore.FlushMetadata()
@@ -730,10 +734,10 @@ func TestLogsPersist(t *testing.T) {
 		MetaStore: snapStoreNew,
 	}
 
-	err = engNew.LoadLog()
+	err = engNew.LoadLog(0)
 	testenv.AssertNoError(t, err)
 
-	if got, want := engNew.EngineLog.String(), eng.EngineLog.String(); got != want {
+	if got, want := engNew.EngineLog[0].String(), eng.EngineLog[0].String(); got != want {
 		t.Errorf("Logs do not match\n%v\n%v", got, want)
 	}
 }

@@ -66,17 +66,17 @@ func TestMain(m *testing.M) {
 		eng.CleanAllComponents()
 		log.Fatalln("error initializing engine for S3:", err)
 	}
+
 	// Restore a random snapshot into the data directory
 	var errs errgroup.Group
 
-	for i := range eng.Checker {
+	for i := 0; i < eng.RunnerCount; i++ {
 		func(index int) {
 			errs.Go(func() error {
-				_, err = eng.ExecAction(engine.RestoreIntoDataDirectoryActionKey, nil, index)
+				_, err := eng.ExecAction(engine.RestoreIntoDataDirectoryActionKey, nil, index)
 				if err != nil && !errors.Is(err, engine.ErrNoOp) {
-					eng.Cleanup(index)
 					log.Fatalln("error restoring into the data directory:", err)
-					panic(err)
+					return err
 				}
 				return nil
 			})
@@ -85,26 +85,13 @@ func TestMain(m *testing.M) {
 
 	err = errs.Wait()
 	if err != nil {
+		eng.CleanAllComponents()
 		panic(err)
 	}
 
 	result := m.Run()
 
-	var errsCleaner errgroup.Group
-
-	for i := range eng.Checker {
-		func(index int) {
-			errs.Go(func() error {
-				err = eng.Cleanup(index)
-				if err != nil {
-					panic(err)
-				}
-				return nil
-			})
-		}(i)
-	}
-
-	err = errsCleaner.Wait()
+	err = eng.Cleanup()
 	if err != nil {
 		log.Printf("error cleaning up the engine: %s\n", err.Error())
 		os.Exit(2)

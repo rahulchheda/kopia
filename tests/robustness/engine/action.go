@@ -27,16 +27,16 @@ func (e *Engine) ExecAction(actionKey ActionKey, opts map[string]string, index i
 		opts = make(map[string]string)
 	}
 
-	e.RunStats.ActionCounter++
-	e.CumulativeStats.ActionCounter++
-	log.Printf("Engine executing ACTION: name=%q actionCount=%v totActCount=%v t=%vs engineIndex=%d (%vs)", actionKey, e.RunStats.ActionCounter, e.CumulativeStats.ActionCounter, e.RunStats.getLifetimeSeconds(), index, e.getRuntimeSeconds())
+	e.RunStats[index].ActionCounter++
+	e.CumulativeStats[index].ActionCounter++
+	log.Printf("Engine executing ACTION: name=%q actionCount=%v totActCount=%v t=%vs engineIndex=%d (%vs)", actionKey, e.RunStats[index].ActionCounter, e.CumulativeStats[index].ActionCounter, e.RunStats[index].getLifetimeSeconds(), index, e.getRuntimeSeconds(index))
 
 	action := actions[actionKey]
 	st := time.Now()
 
 	logEntry := &LogEntry{
 		StartTime:       st,
-		EngineTimestamp: e.getTimestampS(),
+		EngineTimestamp: e.getTimestampS(index),
 		Action:          actionKey,
 		ActionOpts:      opts,
 	}
@@ -58,27 +58,27 @@ func (e *Engine) ExecAction(actionKey ActionKey, opts map[string]string, index i
 	// If error was just a no-op, don't bother logging the action
 	switch {
 	case errors.Is(err, ErrNoOp):
-		e.RunStats.NoOpCount++
-		e.CumulativeStats.NoOpCount++
+		e.RunStats[index].NoOpCount++
+		e.CumulativeStats[index].NoOpCount++
 
 		return out, err
 
 	case err != nil:
-		log.Printf("error=%q", err.Error())
+		log.Printf("error=%q engineIndex=%d", err.Error(), index)
 	}
 
-	if e.RunStats.PerActionStats != nil && e.RunStats.PerActionStats[actionKey] == nil {
-		e.RunStats.PerActionStats[actionKey] = new(ActionStats)
+	if e.RunStats[index].PerActionStats != nil && e.RunStats[index].PerActionStats[actionKey] == nil {
+		e.RunStats[index].PerActionStats[actionKey] = new(ActionStats)
 	}
 
-	if e.CumulativeStats.PerActionStats != nil && e.CumulativeStats.PerActionStats[actionKey] == nil {
-		e.CumulativeStats.PerActionStats[actionKey] = new(ActionStats)
+	if e.CumulativeStats[index].PerActionStats != nil && e.CumulativeStats[index].PerActionStats[actionKey] == nil {
+		e.CumulativeStats[index].PerActionStats[actionKey] = new(ActionStats)
 	}
 
-	e.RunStats.PerActionStats[actionKey].Record(st, err)
-	e.CumulativeStats.PerActionStats[actionKey].Record(st, err)
+	e.RunStats[index].PerActionStats[actionKey].Record(st, err)
+	e.CumulativeStats[index].PerActionStats[actionKey].Record(st, err)
 
-	e.EngineLog.AddCompleted(logEntry, err)
+	e.EngineLog[index].AddCompleted(logEntry, err)
 
 	return out, err
 }
@@ -125,8 +125,8 @@ func (e *Engine) checkErrRecovery(incomingErr error, actionOpts ActionOpts, inde
 			return outgoingErr
 		}
 
-		e.RunStats.DataPurgeCount++
-		e.CumulativeStats.DataPurgeCount++
+		e.RunStats[index].DataPurgeCount++
+		e.CumulativeStats[index].DataPurgeCount++
 
 		// Restore a previoius snapshot to the data directory
 		restoreActionKey := RestoreIntoDataDirectoryActionKey
@@ -135,14 +135,14 @@ func (e *Engine) checkErrRecovery(incomingErr error, actionOpts ActionOpts, inde
 		if errors.Is(outgoingErr, ErrNoOp) {
 			outgoingErr = nil
 		} else {
-			e.RunStats.DataRestoreCount++
-			e.CumulativeStats.DataRestoreCount++
+			e.RunStats[index].DataRestoreCount++
+			e.CumulativeStats[index].DataRestoreCount++
 		}
 	}
 
 	if outgoingErr == nil {
-		e.RunStats.ErrorRecoveryCount++
-		e.CumulativeStats.ErrorRecoveryCount++
+		e.RunStats[index].ErrorRecoveryCount++
+		e.CumulativeStats[index].ErrorRecoveryCount++
 	}
 
 	return outgoingErr
@@ -186,7 +186,7 @@ type ActionKey string
 var actions = map[ActionKey]Action{
 	SnapshotRootDirActionKey: {
 		f: func(e *Engine, opts map[string]string, l *LogEntry, index int) (out map[string]string, err error) {
-			log.Printf("Creating snapshot of root directory %s", e.FileWriter[index].LocalDataDir)
+			log.Printf("Creating snapshot of root directory %s engineIndex=%d", e.FileWriter[index].LocalDataDir, index)
 
 			ctx := context.TODO()
 			snapID, err := e.Checker[index].TakeSnapshot(ctx, e.FileWriter[index].LocalDataDir)
@@ -210,14 +210,14 @@ var actions = map[ActionKey]Action{
 
 			setLogEntryCmdOpts(l, map[string]string{"snapID": snapID})
 
-			log.Printf("Restoring snapshot %s", snapID)
+			log.Printf("Restoring snapshot %s engineIndex=%d", snapID, index)
 
 			ctx := context.Background()
 			b := &bytes.Buffer{}
 
 			err = e.Checker[index].RestoreSnapshot(ctx, snapID, b)
 			if err != nil {
-				log.Print(b.String())
+				log.Printf("%s engineIndex=%d", b.String(), index)
 			}
 
 			return nil, err
@@ -230,7 +230,7 @@ var actions = map[ActionKey]Action{
 				return nil, err
 			}
 
-			log.Printf("Deleting snapshot %s", snapID)
+			log.Printf("Deleting snapshot %s engineIndex=%d", snapID, index)
 
 			setLogEntryCmdOpts(l, map[string]string{"snapID": snapID})
 
@@ -301,7 +301,7 @@ var actions = map[ActionKey]Action{
 
 			relBasePath := "."
 
-			log.Printf("Writing files at depth %v (fileSize: %v-%v, numFiles: %v, blockSize: %v, dedupPcnt: %v, ioLimit: %v)\n", dirDepth, minFileSizeB, maxFileSizeB, numFiles, blockSize, dedupPcnt, ioLimit)
+			log.Printf("Writing files at depth %v (fileSize: %v-%v, numFiles: %v, blockSize: %v, dedupPcnt: %v, ioLimit: %v) engineIndex=%d\n", dirDepth, minFileSizeB, maxFileSizeB, numFiles, blockSize, dedupPcnt, ioLimit, index)
 
 			setLogEntryCmdOpts(l, map[string]string{
 				"dirDepth":    strconv.Itoa(dirDepth),
@@ -323,13 +323,13 @@ var actions = map[ActionKey]Action{
 			}
 			dirDepth := rand.Intn(maxDirDepth) + 1 //nolint:gosec
 
-			log.Printf("Deleting directory at depth %v\n", dirDepth)
+			log.Printf("Deleting directory at depth %v engineIndex=%d\n", dirDepth, index)
 
 			setLogEntryCmdOpts(l, map[string]string{"dirDepth": strconv.Itoa(dirDepth)})
 
 			err = e.FileWriter[index].DeleteDirAtDepth("", dirDepth)
 			if errors.Is(err, fio.ErrNoDirFound) {
-				log.Print(err)
+				log.Printf("%s engineIndex=%d", err.Error(), index)
 				return nil, ErrNoOp
 			}
 
@@ -343,7 +343,7 @@ var actions = map[ActionKey]Action{
 
 			pcnt := getOptAsIntOrDefault(DeletePercentOfContentsField, opts, defaultDeletePercentOfContents)
 
-			log.Printf("Deleting %d%% of directory contents at depth %v\n", pcnt, dirDepth)
+			log.Printf("Deleting %d%% of directory contents at depth %v engineIndex=%d\n", pcnt, dirDepth, index)
 
 			setLogEntryCmdOpts(l, map[string]string{
 				"dirDepth": strconv.Itoa(dirDepth),
@@ -353,7 +353,7 @@ var actions = map[ActionKey]Action{
 			const pcntConv = 100
 			err = e.FileWriter[index].DeleteContentsAtDepth("", dirDepth, float32(pcnt)/pcntConv)
 			if errors.Is(err, fio.ErrNoDirFound) {
-				log.Print(err)
+				log.Printf("%s engineIndex=%d", err.Error(), index)
 				return nil, ErrNoOp
 			}
 
@@ -367,14 +367,14 @@ var actions = map[ActionKey]Action{
 				return nil, err
 			}
 
-			log.Printf("Restoring snap ID %v into data directory\n", snapID)
+			log.Printf("Restoring snap ID %v into data directory engineIndex=%d\n", snapID, index)
 
 			setLogEntryCmdOpts(l, map[string]string{"snapID": snapID})
 
 			b := &bytes.Buffer{}
 			err = e.Checker[index].RestoreSnapshotToPath(context.Background(), snapID, e.FileWriter[index].LocalDataDir, b)
 			if err != nil {
-				log.Print(b.String())
+				log.Printf("%s RestoreIntoDataDirectoryActionKey, engineIndex=%d", b.String(), index)
 				return nil, err
 			}
 

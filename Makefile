@@ -241,7 +241,7 @@ endurance-tests: build-integration-test-binary $(gotestsum)
 robustness-tests: export KOPIA_EXE ?= $(KOPIA_INTEGRATION_EXE)
 robustness-tests: build-integration-test-binary $(gotestsum)
 	FIO_DOCKER_IMAGE=$(FIO_DOCKER_TAG) \
-	$(GO_TEST) -count=1 github.com/kopia/kopia/tests/robustness/robustness_test $(TEST_FLAGS)
+	$(GO_TEST) -race -count=1 github.com/kopia/kopia/tests/robustness/robustness_test $(TEST_FLAGS)
 
 robustness-tool-tests: export KOPIA_EXE ?= $(KOPIA_INTEGRATION_EXE)
 robustness-tool-tests: build-integration-test-binary $(gotestsum)
